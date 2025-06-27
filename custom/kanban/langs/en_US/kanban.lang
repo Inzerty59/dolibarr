@@ -1,0 +1,42 @@
+# Translation file
+
+#
+# Generic
+#
+
+# Module label 'ModuleKanbanName'
+ModuleKanbanName = Kanban
+# Module description 'ModuleKanbanDesc'
+ModuleKanbanDesc = Kanban description
+
+#
+# Admin page
+#
+KanbanSetup = Kanban setup
+Settings = Settings
+KanbanSetupPage = Kanban setup page
+NewSection=New section
+KANBAN_MYPARAM1 = My param 1
+KANBAN_MYPARAM1Tooltip = My param 1 tooltip
+KANBAN_MYPARAM2=My param 2
+KANBAN_MYPARAM2Tooltip=My param 2 tooltip
+
+
+#
+# About page
+#
+About = About
+KanbanAbout = About Kanban
+KanbanAboutPage = Kanban about page
+
+#
+# Sample page
+#
+KanbanArea = Home Kanban
+MyPageName = My page name
+
+#
+# Sample widget
+#
+MyWidget = My widget
+MyWidgetDescription = My widget description
