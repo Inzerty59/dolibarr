@@ -256,10 +256,11 @@ print '</div></div>';
 
 print '<h2>Tableau de suivi des tâches</h2>';
 
-// Calcul de l'avancement global par projet et global
-$project_progress = [];
+// --- Calculs pour avancement global et projets ---
+$project_cards = [];
 $total_progress = 0;
 $total_projects = 0;
+$total_tickets = 0;
 
 $sql_proj = "SELECT p.rowid, p.title
     FROM ".MAIN_DB_PREFIX."projet p
@@ -269,40 +270,28 @@ $res_proj = $db->query($sql_proj);
 if ($res_proj) {
     while ($proj = $db->fetch_object($res_proj)) {
         // Moyenne d'avancement des tâches du projet
-        $sql_tasks = "SELECT AVG(progress) as avg_progress FROM ".MAIN_DB_PREFIX."projet_task WHERE fk_projet = ".$proj->rowid." AND entity = ".$conf->entity;
+        $sql_tasks = "SELECT COUNT(*) as nb, AVG(progress) as avg_progress, SUM(fk_statut=1) as nb_en_cours
+                      FROM ".MAIN_DB_PREFIX."projet_task
+                      WHERE fk_projet = ".$proj->rowid." AND entity = ".$conf->entity;
         $res_tasks = $db->query($sql_tasks);
-        $avg = 0;
+        $avg = 0; $nb = 0; $nb_en_cours = 0;
         if ($res_tasks && $row = $db->fetch_object($res_tasks)) {
             $avg = round($row->avg_progress, 1);
+            $nb = (int)$row->nb;
+            $nb_en_cours = (int)$row->nb_en_cours;
         }
-        $project_progress[] = [
+        $project_cards[] = [
             'title' => $proj->title,
-            'progress' => $avg
+            'progress' => $avg,
+            'nb' => $nb,
+            'nb_en_cours' => $nb_en_cours
         ];
         $total_progress += $avg;
         $total_projects++;
+        $total_tickets += $nb;
     }
 }
-
-// Calcul du pourcentage global
 $global_progress = $total_projects > 0 ? round($total_progress / $total_projects, 1) : 0;
-
-// Affichage de la barre globale
-print '<div id="kanban-progress-summary" style="margin:20px 0 30px 0;max-width:600px;">';
-print '<b>Avancement global des projets : '.$global_progress.'%</b>';
-print '<div style="background:#eee;border-radius:8px;height:22px;overflow:hidden;margin-top:5px;">';
-print '<div style="background:#28a745;height:100%;width:'.$global_progress.'%;transition:width 0.5s;border-radius:8px;"></div>';
-print '</div>';
-
-print '<div style="margin-top:18px;">';
-foreach ($project_progress as $p) {
-    print '<div style="margin-bottom:8px;"><span style="font-size:0.95em;">'.$p['title'].' : '.$p['progress'].'%</span>';
-    print '<div style="background:#eee;border-radius:8px;height:14px;overflow:hidden;margin-top:2px;">';
-    print '<div style="background:#007bff;height:100%;width:'.$p['progress'].'%;transition:width 0.5s;border-radius:8px;"></div>';
-    print '</div></div>';
-}
-print '</div>';
-print '</div>';
 
 // Statuts des tâches Dolibarr : 0 = À faire, 1 = En cours, 2 = Terminé
 $status_labels = [
@@ -571,6 +560,74 @@ document.addEventListener("DOMContentLoaded", function() {
     var sidenav = document.querySelector(".side-nav .vmenu");
     if (!sidenav) return;
 
+    // Crée le bouton et la section cachée
+    var globalBtnDiv = document.createElement("div");
+    globalBtnDiv.innerHTML = `
+        <button type="button" onclick="toggleGlobalProgress()" class="button button-small" style="width:100%;margin-bottom:8px;">
+            <span class="fa fa-chart-bar" style="margin-right:6px;"></span>
+            Avancement global des projets
+        </button>
+        <div id="global-progress-section" style="display:none;margin-top:10px;">
+            <div style="margin-bottom:12px;">
+                <b>Avancement global : {$global_progress}%</b>
+                <div style="background:#eee;border-radius:8px;height:22px;overflow:hidden;margin-top:5px;">
+                    <div style="background:#28a745;height:100%;width:{$global_progress}%;transition:width 0.5s;border-radius:8px;"></div>
+                </div>
+            </div>
+            <!-- Cards projets -->
+EOT;
+
+// Affichage des cards projets
+foreach ($project_cards as $p) {
+    print '<div class="project-card">';
+    print '<div class="project-card-title">'.dol_escape_htmltag($p['title']).'</div>';
+    print '<div class="project-card-bar"><div class="project-card-bar-inner" style="width:'.$p['progress'].'%"></div></div>';
+    print '<div style="font-size:0.95em;color:#555;">Avancement : <b>'.$p['progress'].'%</b></div>';
+    print '<div style="font-size:0.95em;color:#007bff;">Tickets en cours : <b>'.$p['nb_en_cours'].'</b> / '.$p['nb'].'</div>';
+    print '</div>';
+}
+print <<<EOT
+        </div>
+        <style>
+        #global-progress-section {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 18px 18px 10px 18px;
+            margin-bottom: 28px;
+            box-shadow: 0 1px 4px #eee;
+            max-width: 600px;
+        }
+        .project-card {
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            margin-bottom: 12px;
+            padding: 12px 14px;
+            box-shadow: 0 1px 2px #eee;
+        }
+        .project-card-title {
+            font-weight: bold;
+            margin-bottom: 6px;
+        }
+        .project-card-bar {
+            background: #eee;
+            border-radius: 8px;
+            height: 14px;
+            overflow: hidden;
+            margin-top: 4px;
+            margin-bottom: 6px;
+        }
+        .project-card-bar-inner {
+            background: #007bff;
+            height: 100%;
+            transition: width 0.5s;
+            border-radius: 8px;
+        }
+        </style>
+    `;
+    sidenav.insertBefore(globalBtnDiv, sidenav.firstChild);
+
+    // Formulaire de filtres
     var filterForm = document.createElement("form");
     filterForm.method = "GET";
     filterForm.action = "";
@@ -578,18 +635,24 @@ document.addEventListener("DOMContentLoaded", function() {
     filterForm.innerHTML = `
         <div style="margin-bottom:12px;">
             <label for="project_filter"><b>Filtrer par projet :</b></label><br>
-            <select name="project_id" id="project_filter" style="width:100%;" onchange="this.form.submit()">
+            <select name="project_id" id="project_filter" class="flat" style="width:100%;max-width:100%;" onchange="this.form.submit()">
                 $project_options
             </select>
         </div>
         <div>
             <label for="user_filter"><b>Filtrer par utilisateur :</b></label><br>
-            <select name="user_id" id="user_filter" style="width:100%;" onchange="this.form.submit()">
+            <select name="user_id" id="user_filter" class="flat" style="width:100%;max-width:100%;" onchange="this.form.submit()">
                 $user_options
             </select>
         </div>
     `;
-    sidenav.insertBefore(filterForm, sidenav.firstChild);
+    sidenav.insertBefore(filterForm, globalBtnDiv.nextSibling);
+
+    // Fonction JS pour afficher/masquer la section
+    window.toggleGlobalProgress = function() {
+        var sec = document.getElementById('global-progress-section');
+        if (sec) sec.style.display = (sec.style.display === 'none' ? '' : 'none');
+    }
 });
 </script>
 EOT;
