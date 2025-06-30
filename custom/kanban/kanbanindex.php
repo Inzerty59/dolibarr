@@ -119,6 +119,7 @@ $form = new Form($db);
 $formfile = new FormFile($db);
 
 llxHeader("", $langs->trans("KanbanArea"), '', '', 0, 0, '', '', '', 'mod-kanban page-index');
+print '<script>var dolibarr_token = "'.newToken().'";</script>';
 
 //print load_fiche_titre($langs->trans("KanbanArea"), '', 'kanban.png@kanban');
 
@@ -270,9 +271,10 @@ $res_proj = $db->query($sql_proj);
 if ($res_proj) {
     while ($proj = $db->fetch_object($res_proj)) {
         // Moyenne d'avancement des tâches du projet
-        $sql_tasks = "SELECT COUNT(*) as nb, AVG(progress) as avg_progress, SUM(fk_statut=1) as nb_en_cours
-                      FROM ".MAIN_DB_PREFIX."projet_task
-                      WHERE fk_projet = ".$proj->rowid." AND entity = ".$conf->entity;
+        $sql_tasks = "SELECT COUNT(*) as nb, AVG(progress) as avg_progress,
+                 SUM(fk_statut != 2) as nb_en_cours
+              FROM ".MAIN_DB_PREFIX."projet_task
+              WHERE fk_projet = ".$proj->rowid." AND entity = ".$conf->entity;
         $res_tasks = $db->query($sql_tasks);
         $avg = 0; $nb = 0; $nb_en_cours = 0;
         if ($res_tasks && $row = $db->fetch_object($res_tasks)) {
@@ -281,6 +283,7 @@ if ($res_proj) {
             $nb_en_cours = (int)$row->nb_en_cours;
         }
         $project_cards[] = [
+            'id' => $proj->rowid,
             'title' => $proj->title,
             'progress' => $avg,
             'nb' => $nb,
@@ -301,10 +304,53 @@ $status_labels = [
     3 => 'Archive'
 ];
 
+$project_id = GETPOST('project_id','int');
+if ($project_id) {
+    foreach ($project_cards as $p) {
+        if ($p['id'] == $project_id) {
+            print '
+            <style>
+            #project-progress-bar {
+                background: #f8f9fa;
+                border-radius: 8px;
+                padding: 18px 18px 10px 18px;
+                margin-bottom: 28px;
+                box-shadow: 0 1px 4px #eee;
+                max-width: 600px;
+            }
+            .project-card-bar {
+                background: #eee;
+                border-radius: 8px;
+                height: 22px;
+                overflow: hidden;
+                margin-top: 5px;
+                margin-bottom: 8px;
+            }
+            .project-card-bar-inner {
+                background: #007bff;
+                height: 100%;
+                transition: width 0.5s;
+                border-radius: 8px;
+            }
+            </style>
+            <div id="project-progress-bar">
+                <b>'.$p['title'].' : '.$p['progress'].'%</b>
+                <div class="project-card-bar">
+                    <div class="project-card-bar-inner" style="width:'.$p['progress'].'%"></div>
+                </div>
+            </div>
+            ';
+            break;
+        }
+    }
+}
+
 // Récupérer les tâches de projet
-$sql = "SELECT t.rowid, t.label, t.fk_statut, t.progress, t.fk_projet, t.fk_user_creat, u.login, u.firstname, u.lastname
+$sql = "SELECT t.rowid, t.label, t.fk_statut, t.progress, t.fk_projet, t.fk_user_creat, u.login, u.firstname, u.lastname, 
+        extrafields.priorite
         FROM ".MAIN_DB_PREFIX."projet_task t
         LEFT JOIN ".MAIN_DB_PREFIX."user u ON t.fk_user_creat = u.rowid
+        LEFT JOIN ".MAIN_DB_PREFIX."projet_task_extrafields extrafields ON t.rowid = extrafields.fk_object
         WHERE t.entity = ".$conf->entity;
 $project_id = GETPOST('project_id','int');
 if ($project_id) {
@@ -333,11 +379,15 @@ foreach ($status_labels as $status => $label) {
             $taskUrl = DOL_URL_ROOT.'/projet/tasks/task.php?id='.$task->rowid;
             $user = ($task->firstname || $task->lastname) ? dol_escape_htmltag(trim($task->firstname.' '.$task->lastname)) : dol_escape_htmltag($task->login);
             $progress = is_numeric($task->progress) ? intval($task->progress) : 0;
+            $priorite = isset($task->priorite) ? dol_escape_htmltag($task->priorite) : '';
 
             print '<div class="kanban-card" draggable="true" data-id="'.$task->rowid.'">';
             print '<a class="kanban-task-label" href="'.$taskUrl.'" target="_blank" style="text-decoration:none;color:inherit;">'.dol_escape_htmltag($task->label).'</a>';
             print '<span class="kanban-task-user">👤 '.($user ? $user : 'Non assigné').'</span>';
             print '<span class="kanban-task-progress">⏳ '.$progress.'%</span>';
+            if ($priorite !== '') {
+                print '<span class="kanban-task-priority">⭐ Priorité : '.$priorite.'</span>';
+            }
             print '</div>';
         }
     } else {
@@ -396,6 +446,11 @@ print <<<EOT
     font-size: 0.9em;
     color: #007bff;
 }
+.kanban-card .kanban-task-priority {
+    font-size: 0.9em;
+    color: #e67e22;
+    font-weight: bold;
+}
 .kanban-add-btn {
     margin-top: 10px;
     background: #007bff;
@@ -422,6 +477,11 @@ print <<<EOT
     padding: 2px 6px;
     margin-left: 5px;
     cursor: pointer;
+}
+.project-card-link:hover .project-card {
+    box-shadow: 0 2px 8px #007bff33;
+    border-color: #007bff;
+    background: #f0f8ff;
 }
 </style>
 
@@ -453,13 +513,14 @@ document.querySelectorAll('.kanban-column').forEach(col => {
             // Sauvegarde le changement de statut
             let taskId = draggedCard.getAttribute('data-id');
             let newStatus = col.getAttribute('data-status');
+            console.log('taskId:', taskId, 'newStatus:', newStatus, 'token:', window.dolibarr_token); // AJOUTE CETTE LIGNE
             fetch('/custom/kanban/save_kanban_status.php', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-    body: 'id=' + encodeURIComponent(taskId) +
-          '&status=' + encodeURIComponent(newStatus) +
-          '&token=' + encodeURIComponent(window.dolibarr_token)
-});
+                method: 'POST',
+                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                body: 'id=' + encodeURIComponent(taskId) +
+                      '&status=' + encodeURIComponent(newStatus) +
+                      '&token=' + encodeURIComponent(window.dolibarr_token)
+            });
         }
     });
 });
@@ -579,12 +640,15 @@ EOT;
 
 // Affichage des cards projets
 foreach ($project_cards as $p) {
+    $projectUrl = DOL_URL_ROOT.'/projet/card.php?id='.$p['id'];
+    print '<a href="'.$projectUrl.'" class="project-card-link" style="text-decoration:none;color:inherit;">';
     print '<div class="project-card">';
     print '<div class="project-card-title">'.dol_escape_htmltag($p['title']).'</div>';
     print '<div class="project-card-bar"><div class="project-card-bar-inner" style="width:'.$p['progress'].'%"></div></div>';
     print '<div style="font-size:0.95em;color:#555;">Avancement : <b>'.$p['progress'].'%</b></div>';
-    print '<div style="font-size:0.95em;color:#007bff;">Tickets en cours : <b>'.$p['nb_en_cours'].'</b> / '.$p['nb'].'</div>';
+    print '<div style="font-size:0.95em;color:#007bff;">Tickets en cours : <b>'.$p['nb_en_cours'].'</b></div>';
     print '</div>';
+    print '</a>';
 }
 print <<<EOT
         </div>
@@ -663,4 +727,3 @@ print '<style>#blockvmenusearch { display: none !important; }</style>';
 // End of page
 llxFooter();
 $db->close();
-print '<script>var dolibarr_token = "'.newToken().'";</script>';
