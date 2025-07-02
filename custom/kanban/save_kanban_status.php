@@ -4,7 +4,6 @@ ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
 
-// Affiche les erreurs fatales même si le script plante
 register_shutdown_function(function() {
     $error = error_get_last();
     if ($error) {
@@ -28,7 +27,6 @@ if (!$id || !in_array($status, [0,1,2,3])) {
     exit;
 }
 
-// Vérification du token CSRF
 file_put_contents('/tmp/kanban_debug.log', "Inclu security2.lib.php\n", FILE_APPEND);
 if (function_exists('formtoken_check')) {
     file_put_contents('/tmp/kanban_debug.log', "formtoken_check OK\n", FILE_APPEND);

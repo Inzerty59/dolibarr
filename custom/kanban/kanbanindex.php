@@ -257,7 +257,6 @@ print '</div></div>';
 
 print '<h2>Tableau de suivi des tâches</h2>';
 
-// --- Calculs pour avancement global et projets ---
 $project_cards = [];
 $total_progress = 0;
 $total_projects = 0;
@@ -270,7 +269,6 @@ $res_proj = $db->query($sql_proj);
 
 if ($res_proj) {
     while ($proj = $db->fetch_object($res_proj)) {
-        // Moyenne d'avancement des tâches du projet
         $sql_tasks = "SELECT COUNT(*) as nb, AVG(progress) as avg_progress,
                  SUM(fk_statut != 2) as nb_en_cours
               FROM ".MAIN_DB_PREFIX."projet_task
@@ -296,7 +294,6 @@ if ($res_proj) {
 }
 $global_progress = $total_projects > 0 ? round($total_progress / $total_projects, 1) : 0;
 
-// Statuts des tâches Dolibarr : 0 = À faire, 1 = En cours, 2 = Terminé
 $status_labels = [
     0 => 'À faire',
     1 => 'En cours',
@@ -345,7 +342,6 @@ if ($project_id) {
     }
 }
 
-// Récupérer les tâches de projet
 $sql = "SELECT t.rowid, t.label, t.fk_statut, t.progress, t.fk_projet, 
         extrafields.priorite,
         extrafields.user_assign,
@@ -585,15 +581,12 @@ document.querySelectorAll('.kanban-card a').forEach(link => {
 </script>
 EOT;
 
-// Récupérer la liste des projets
 $sql_projects = "SELECT rowid, title FROM ".MAIN_DB_PREFIX."projet WHERE entity = ".$conf->entity." ORDER BY title";
 $resql_projects = $db->query($sql_projects);
 
-// Récupérer la liste des utilisateurs
 $sql_users = "SELECT rowid, login, firstname, lastname FROM ".MAIN_DB_PREFIX."user WHERE entity = ".$conf->entity." ORDER BY lastname, firstname";
 $resql_users = $db->query($sql_users);
 
-// Génère les options projets et utilisateurs côté PHP
 $project_options = '<option value="">-- Tous les projets --</option>';
 if ($resql_projects) {
     $pid = GETPOST('project_id','int');
@@ -640,7 +633,6 @@ document.addEventListener("DOMContentLoaded", function() {
             <!-- Cards projets -->
 EOT;
 
-// Affichage des cards projets
 foreach ($project_cards as $p) {
     $projectUrl = DOL_URL_ROOT.'/projet/card.php?id='.$p['id'];
     print '<a href="'.$projectUrl.'" class="project-card-link" style="text-decoration:none;color:inherit;">';
@@ -723,9 +715,7 @@ print <<<EOT
 </script>
 EOT;
 
-// Masque le bloc de recherche rapide
 print '<style>#blockvmenusearch { display: none !important; }</style>';
 
-// End of page
 llxFooter();
 $db->close();
