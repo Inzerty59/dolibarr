@@ -346,11 +346,13 @@ if ($project_id) {
 }
 
 // Récupérer les tâches de projet
-$sql = "SELECT t.rowid, t.label, t.fk_statut, t.progress, t.fk_projet, t.fk_user_creat, u.login, u.firstname, u.lastname, 
-        extrafields.priorite
+$sql = "SELECT t.rowid, t.label, t.fk_statut, t.progress, t.fk_projet, 
+        extrafields.priorite,
+        extrafields.user_assign,
+        u.firstname as assigned_firstname, u.lastname as assigned_lastname
         FROM ".MAIN_DB_PREFIX."projet_task t
-        LEFT JOIN ".MAIN_DB_PREFIX."user u ON t.fk_user_creat = u.rowid
         LEFT JOIN ".MAIN_DB_PREFIX."projet_task_extrafields extrafields ON t.rowid = extrafields.fk_object
+        LEFT JOIN ".MAIN_DB_PREFIX."user u ON extrafields.user_assign = u.rowid
         WHERE t.entity = ".$conf->entity;
 $project_id = GETPOST('project_id','int');
 if ($project_id) {
@@ -358,7 +360,7 @@ if ($project_id) {
 }
 $user_id = GETPOST('user_id','int');
 if ($user_id) {
-    $sql .= " AND t.fk_user_creat = ".((int)$user_id);
+    $sql .= " AND extrafields.user_assign = ".((int)$user_id);
 }
 $resql = $db->query($sql);
 
@@ -377,13 +379,15 @@ foreach ($status_labels as $status => $label) {
     if (!empty($tasks[$status])) {
         foreach ($tasks[$status] as $task) {
             $taskUrl = DOL_URL_ROOT.'/projet/tasks/task.php?id='.$task->rowid;
-            $user = ($task->firstname || $task->lastname) ? dol_escape_htmltag(trim($task->firstname.' '.$task->lastname)) : dol_escape_htmltag($task->login);
+            $assigned = ($task->assigned_firstname || $task->assigned_lastname)
+                ? dol_escape_htmltag(trim($task->assigned_firstname.' '.$task->assigned_lastname))
+                : 'Non assigné';
             $progress = is_numeric($task->progress) ? intval($task->progress) : 0;
             $priorite = isset($task->priorite) ? dol_escape_htmltag($task->priorite) : '';
 
             print '<div class="kanban-card" draggable="true" data-id="'.$task->rowid.'">';
             print '<a class="kanban-task-label" href="'.$taskUrl.'" target="_blank" style="text-decoration:none;color:inherit;">'.dol_escape_htmltag($task->label).'</a>';
-            print '<span class="kanban-task-user">👤 '.($user ? $user : 'Non assigné').'</span>';
+            print '<span class="kanban-task-user">👤 '.$assigned.'</span>';
             print '<span class="kanban-task-progress">⏳ '.$progress.'%</span>';
             if ($priorite !== '') {
                 print '<span class="kanban-task-priority">⭐ Priorité : '.$priorite.'</span>';
@@ -393,7 +397,6 @@ foreach ($status_labels as $status => $label) {
     } else {
         print '<div class="kanban-card" style="opacity:0.5;">Aucune tâche</div>';
     }
-    // Ne plus afficher le bouton + Ajouter
     print '</div>';
 }
 print '</div>';
