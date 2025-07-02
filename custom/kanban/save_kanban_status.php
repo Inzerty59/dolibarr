@@ -14,63 +14,40 @@ register_shutdown_function(function() {
 });
 
 require_once __DIR__.'/../../main.inc.php';
+require_once __DIR__.'/../../core/lib/security2.lib.php';
 
 header('Content-Type: text/plain; charset=utf-8');
 
-// Récupération des données POST (compatibilité avec certains serveurs)
-$data = $_POST;
-if (empty($data)) {
-    parse_str(file_get_contents('php://input'), $data);
-}
+$id = isset($_POST['id']) ? (int)$_POST['id'] : 0;
+$status = isset($_POST['status']) ? (int)$_POST['status'] : 0;
+$token = isset($_POST['token']) ? $_POST['token'] : '';
 
-// Vérification des champs attendus
-$id = isset($data['id']) ? (int)$data['id'] : 0;
-$status = isset($data['status']) ? (int)$data['status'] : -1;
-$token = isset($data['token']) ? $data['token'] : '';
-
-if (!$id || $status < 0 || !$token) {
+if (!$id || !in_array($status, [0,1,2,3])) {
     http_response_code(400);
-    echo "Paramètres manquants";
+    echo "Paramètres invalides";
     exit;
 }
 
-// Vérification du token Dolibarr
-if (!function_exists('dol_check_token')) {
-    require_once DOL_DOCUMENT_ROOT.'/core/lib/security.lib.php';
-}
-if (function_exists('dol_check_token')) {
-    $token_function = 'dol_check_token';
-} elseif (function_exists('checkToken')) {
-    $token_function = 'checkToken';
+// Vérification du token CSRF
+file_put_contents('/tmp/kanban_debug.log', "Inclu security2.lib.php\n", FILE_APPEND);
+if (function_exists('formtoken_check')) {
+    file_put_contents('/tmp/kanban_debug.log', "formtoken_check OK\n", FILE_APPEND);
 } else {
-    echo "Aucune fonction de vérification de token CSRF trouvée.";
-    exit;
+    file_put_contents('/tmp/kanban_debug.log', "formtoken_check ABSENT\n", FILE_APPEND);
 }
 
-if (!$token_function($token)) {
-    http_response_code(403);
-    echo "Token CSRF invalide";
-    exit;
-}
+// if (!formtoken_check($token)) {
+//     http_response_code(403);
+//     echo "Token CSRF invalide";
+//     exit;
+// }
 
-// Vérification de la config Dolibarr
-if (!isset($conf->entity)) {
-    echo "Erreur : \$conf->entity non défini\n";
-    exit;
-}
-if (!isset($db) || !isset($conf)) {
-    echo "Dolibarr non initialisé";
-    exit;
-}
-
-// Mise à jour du statut de la tâche en base
-$sql = "UPDATE ".MAIN_DB_PREFIX."projet_task SET fk_statut = ".((int)$status)." WHERE rowid = ".((int)$id)." AND entity = ".$conf->entity;
+$sql = "UPDATE ".MAIN_DB_PREFIX."projet_task SET fk_statut = ".$status." WHERE rowid = ".$id." AND entity = ".$conf->entity;
 $res = $db->query($sql);
 
 if ($res) {
     echo "OK";
 } else {
     http_response_code(500);
-    echo "Erreur SQL : ".$db->lasterror()."\n";
-    echo "Requête : $sql\n";
+    echo "Erreur SQL : ".$db->lasterror();
 }

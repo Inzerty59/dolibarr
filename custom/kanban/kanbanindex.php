@@ -516,7 +516,6 @@ document.querySelectorAll('.kanban-column').forEach(col => {
             // Sauvegarde le changement de statut
             let taskId = draggedCard.getAttribute('data-id');
             let newStatus = col.getAttribute('data-status');
-            console.log('taskId:', taskId, 'newStatus:', newStatus, 'token:', window.dolibarr_token); // AJOUTE CETTE LIGNE
             fetch('/custom/kanban/save_kanban_status.php', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/x-www-form-urlencoded'},
