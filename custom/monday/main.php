@@ -31,23 +31,21 @@ if ($res) {
 
 llxHeader("", "Mes espaces", "");
 
-// Génére le token CSRF AVANT d'afficher le formulaire
 $formtoken = newToken();
 
-// Génère le HTML du menu (sans l'afficher tout de suite)
 $leftmenu = '<h3>Espaces de travail</h3>
+<form method="POST" id="add-workspace-form" style="margin: 10px 0;">
+    <input type="text" name="new_workspace" placeholder="Nouvel espace" required style="width:70%;">
+    <input type="hidden" name="token" value="' . $formtoken . '">
+    <button type="submit" style="padding:2px 8px;">+</button>
+</form>
 <ul id="workspace-list">';
 foreach ($workspaces as $w) {
     $leftmenu .= '<li class="workspace-item" data-id="' . $w->rowid . '">' . dol_escape_htmltag($w->label) . '</li>';
 }
-$leftmenu .= '</ul>
-<form method="POST" id="add-workspace-form" style="margin-top:10px;">
-    <input type="text" name="new_workspace" placeholder="Nouvel espace" required style="width:70%;">
-    <input type="hidden" name="token" value="' . $formtoken . '">
-    <button type="submit" style="padding:2px 8px;">+</button>
-</form>';
+$leftmenu .= '</ul>';
 
-// Injecte le menu dans la side-nav Dolibarr
+
 print <<<EOT
 <script>
 document.addEventListener("DOMContentLoaded", function() {
@@ -67,7 +65,6 @@ document.addEventListener("DOMContentLoaded", function() {
 </script>
 EOT;
 
-// Contenu principal
 print <<<EOT
 <link rel="stylesheet" href="custom/monday/styles.css">
 <div class="workspace-container">
