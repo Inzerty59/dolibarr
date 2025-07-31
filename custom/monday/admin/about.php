@@ -18,9 +18,9 @@
  */
 
 /**
- * \file    kanban/admin/about.php
- * \ingroup kanban
- * \brief   About page of module Kanban.
+ * \file    monday/admin/about.php
+ * \ingroup monday
+ * \brief   About page of module Monday.
  */
 
 // Load Dolibarr environment
@@ -58,7 +58,7 @@ if (!$res) {
 // Libraries
 require_once DOL_DOCUMENT_ROOT.'/core/lib/admin.lib.php';
 require_once DOL_DOCUMENT_ROOT.'/core/lib/functions2.lib.php';
-require_once '../lib/kanban.lib.php';
+require_once '../lib/monday.lib.php';
 
 /**
  * @var Conf $conf
@@ -69,7 +69,7 @@ require_once '../lib/kanban.lib.php';
  */
 
 // Translations
-$langs->loadLangs(array("errors", "admin", "kanban@kanban"));
+$langs->loadLangs(array("errors", "admin", "monday@monday"));
 
 // Access control
 if (!$user->admin) {
@@ -95,9 +95,9 @@ $backtopage = GETPOST('backtopage', 'alpha');
 $form = new Form($db);
 
 $help_url = '';
-$title = "KanbanSetup";
+$title = "MondaySetup";
 
-llxHeader('', $langs->trans($title), $help_url, '', 0, 0, '', '', '', 'mod-kanban page-admin_about');
+llxHeader('', $langs->trans($title), $help_url, '', 0, 0, '', '', '', 'mod-monday page-admin_about');
 
 // Subheader
 $linkback = '<a href="'.($backtopage ? $backtopage : DOL_URL_ROOT.'/admin/modules.php?restore_lastsearch_values=1').'">'.$langs->trans("BackToModuleList").'</a>';
@@ -105,11 +105,11 @@ $linkback = '<a href="'.($backtopage ? $backtopage : DOL_URL_ROOT.'/admin/module
 print load_fiche_titre($langs->trans($title), $linkback, 'title_setup');
 
 // Configuration header
-$head = kanbanAdminPrepareHead();
-print dol_get_fiche_head($head, 'about', $langs->trans($title), 0, 'kanban@kanban');
+$head = mondayAdminPrepareHead();
+print dol_get_fiche_head($head, 'about', $langs->trans($title), 0, 'monday@monday');
 
-dol_include_once('/kanban/core/modules/modKanban.class.php');
-$tmpmodule = new modKanban($db);
+dol_include_once('/monday/core/modules/modMonday.class.php');
+$tmpmodule = new modMonday($db);
 print $tmpmodule->getDescLong();
 
 // Page end

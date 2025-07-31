@@ -16,9 +16,9 @@
  */
 
 /**
- * \file    kanban/lib/kanban.lib.php
- * \ingroup kanban
- * \brief   Library files with common functions for Kanban
+ * \file    monday/lib/monday.lib.php
+ * \ingroup monday
+ * \brief   Library files with common functions for Monday
  */
 
 /**
@@ -26,7 +26,7 @@
  *
  * @return array<array{string,string,string}>
  */
-function kanbanAdminPrepareHead()
+function mondayAdminPrepareHead()
 {
 	global $langs, $conf;
 
@@ -34,18 +34,18 @@ function kanbanAdminPrepareHead()
 	// $extrafields = new ExtraFields($db);
 	// $extrafields->fetch_name_optionals_label('myobject');
 
-	$langs->load("kanban@kanban");
+	$langs->load("monday@monday");
 
 	$h = 0;
 	$head = array();
 
-	$head[$h][0] = dol_buildpath("/kanban/admin/setup.php", 1);
+	$head[$h][0] = dol_buildpath("/monday/admin/setup.php", 1);
 	$head[$h][1] = $langs->trans("Settings");
 	$head[$h][2] = 'settings';
 	$h++;
 
 	/*
-	$head[$h][0] = dol_buildpath("/kanban/admin/myobject_extrafields.php", 1);
+	$head[$h][0] = dol_buildpath("/monday/admin/myobject_extrafields.php", 1);
 	$head[$h][1] = $langs->trans("ExtraFields");
 	$nbExtrafields = is_countable($extrafields->attributes['myobject']['label']) ? count($extrafields->attributes['myobject']['label']) : 0;
 	if ($nbExtrafields > 0) {
@@ -55,7 +55,7 @@ function kanbanAdminPrepareHead()
 	$h++;
 	*/
 
-	$head[$h][0] = dol_buildpath("/kanban/admin/about.php", 1);
+	$head[$h][0] = dol_buildpath("/monday/admin/about.php", 1);
 	$head[$h][1] = $langs->trans("About");
 	$head[$h][2] = 'about';
 	$h++;
@@ -63,14 +63,14 @@ function kanbanAdminPrepareHead()
 	// Show more tabs from modules
 	// Entries must be declared in modules descriptor with line
 	//$this->tabs = array(
-	//	'entity:+tabname:Title:@kanban:/kanban/mypage.php?id=__ID__'
+	//	'entity:+tabname:Title:@monday:/monday/mypage.php?id=__ID__'
 	//); // to add new tab
 	//$this->tabs = array(
-	//	'entity:-tabname:Title:@kanban:/kanban/mypage.php?id=__ID__'
+	//	'entity:-tabname:Title:@monday:/monday/mypage.php?id=__ID__'
 	//); // to remove a tab
-	complete_head_from_modules($conf, $langs, null, $head, $h, 'kanban@kanban');
+	complete_head_from_modules($conf, $langs, null, $head, $h, 'monday@monday');
 
-	complete_head_from_modules($conf, $langs, null, $head, $h, 'kanban@kanban', 'remove');
+	complete_head_from_modules($conf, $langs, null, $head, $h, 'monday@monday', 'remove');
 
 	return $head;
 }

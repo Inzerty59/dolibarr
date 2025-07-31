@@ -1,11 +1,11 @@
-# KANBAN FOR [DOLIBARR ERP & CRM](https://www.dolibarr.org)
+# MONDAY FOR [DOLIBARR ERP & CRM](https://www.dolibarr.org)
 
 ## Features
 
 Description of the module...
 
 <!--
-![Screenshot kanban](img/screenshot_kanban.png?raw=true "Kanban"){imgmd}
+![Screenshot monday](img/screenshot_monday.png?raw=true "Monday"){imgmd}
 -->
 
 Other external modules are available on [Dolistore.com](https://www.dolistore.com).
@@ -66,11 +66,11 @@ Note: If this screen tells you that there is no "custom" directory, check that y
 
 ### From a GIT repository
 
-Clone the repository in `$dolibarr_main_document_root_alt/kanban`
+Clone the repository in `$dolibarr_main_document_root_alt/monday`
 
 ```shell
 cd ....../custom
-git clone git@github.com:gitlogin/kanban.git kanban
+git clone git@github.com:gitlogin/monday.git monday
 ```
 
 -->

@@ -1,0 +1,42 @@
+# Translation file
+
+#
+# Generic
+#
+
+# Module label 'ModuleMondayName'
+ModuleMondayName = Monday
+# Module description 'ModuleMondayDesc'
+ModuleMondayDesc = Monday description
+
+#
+# Admin page
+#
+MondaySetup = Monday setup
+Settings = Settings
+MondaySetupPage = Monday setup page
+NewSection=New section
+MONDAY_MYPARAM1 = My param 1
+MONDAY_MYPARAM1Tooltip = My param 1 tooltip
+MONDAY_MYPARAM2=My param 2
+MONDAY_MYPARAM2Tooltip=My param 2 tooltip
+
+
+#
+# About page
+#
+About = About
+MondayAbout = About Monday
+MondayAboutPage = Monday about page
+
+#
+# Sample page
+#
+MondayArea = Home Monday
+MyPageName = My page name
+
+#
+# Sample widget
+#
+MyWidget = My widget
+MyWidgetDescription = My widget description

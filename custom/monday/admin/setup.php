@@ -18,9 +18,9 @@
  */
 
 /**
- * \file    kanban/admin/setup.php
- * \ingroup kanban
- * \brief   Kanban setup page.
+ * \file    monday/admin/setup.php
+ * \ingroup monday
+ * \brief   Monday setup page.
  */
 
 // Load Dolibarr environment
@@ -57,7 +57,7 @@ if (!$res) {
 
 // Libraries
 require_once DOL_DOCUMENT_ROOT."/core/lib/admin.lib.php";
-require_once '../lib/kanban.lib.php';
+require_once '../lib/monday.lib.php';
 //require_once "../class/myclass.class.php";
 
 /**
@@ -69,11 +69,11 @@ require_once '../lib/kanban.lib.php';
  */
 
 // Translations
-$langs->loadLangs(array("admin", "kanban@kanban"));
+$langs->loadLangs(array("admin", "monday@monday"));
 
 // Initialize a technical object to manage hooks of page. Note that conf->hooks_modules contains an array of hook context
 /** @var HookManager $hookmanager */
-$hookmanager->initHooks(array('kanbansetup', 'globalsetup'));
+$hookmanager->initHooks(array('mondaysetup', 'globalsetup'));
 
 // Parameters
 $action = GETPOST('action', 'aZ09');
@@ -111,34 +111,34 @@ if (!$user->admin) {
 // Enter here all parameters in your setup page
 
 // Setup conf for selection of an URL
-$item = $formSetup->newItem('KANBAN_MYPARAM1');
+$item = $formSetup->newItem('MONDAY_MYPARAM1');
 $item->fieldAttr['placeholder'] = (empty($_SERVER['HTTPS']) ? 'http://' : 'https://') . $_SERVER['HTTP_HOST'];
 $item->cssClass = 'minwidth500';
 
 // Setup conf for selection of a simple string input
-$item = $formSetup->newItem('KANBAN_MYPARAM2');
+$item = $formSetup->newItem('MONDAY_MYPARAM2');
 $item->defaultFieldValue = 'default value';
 $item->fieldAttr['placeholder'] = 'A placeholder here';
 
 // Setup conf for selection of a simple textarea input but we replace the text of field title
-$item = $formSetup->newItem('KANBAN_MYPARAM3');
+$item = $formSetup->newItem('MONDAY_MYPARAM3');
 $item->nameText = $item->getNameText().' more html text ';
 
 // Setup conf for a selection of a Thirdparty
-$item = $formSetup->newItem('KANBAN_MYPARAM4');
+$item = $formSetup->newItem('MONDAY_MYPARAM4');
 $item->setAsThirdpartyType();
 
 // Setup conf for a selection of a boolean
-$formSetup->newItem('KANBAN_MYPARAM5')->setAsYesNo();
+$formSetup->newItem('MONDAY_MYPARAM5')->setAsYesNo();
 
 // Setup conf for a selection of an Email template of type thirdparty
-$formSetup->newItem('KANBAN_MYPARAM6')->setAsEmailTemplate('thirdparty');
+$formSetup->newItem('MONDAY_MYPARAM6')->setAsEmailTemplate('thirdparty');
 
 // Setup conf for a selection of a secured key
-//$formSetup->newItem('KANBAN_MYPARAM7')->setAsSecureKey();
+//$formSetup->newItem('MONDAY_MYPARAM7')->setAsSecureKey();
 
 // Setup conf for a selection of a Product
-$formSetup->newItem('KANBAN_MYPARAM8')->setAsProduct();
+$formSetup->newItem('MONDAY_MYPARAM8')->setAsProduct();
 
 // Add a title for a new section
 $formSetup->newItem('NewSection')->setAsTitle();
@@ -153,18 +153,18 @@ $TField = array(
 );
 
 // Setup conf for a simple combo list
-$formSetup->newItem('KANBAN_MYPARAM9')->setAsSelect($TField);
+$formSetup->newItem('MONDAY_MYPARAM9')->setAsSelect($TField);
 
 // Setup conf for a multiselect combo list
-$item = $formSetup->newItem('KANBAN_MYPARAM10');
+$item = $formSetup->newItem('MONDAY_MYPARAM10');
 $item->setAsMultiSelect($TField);
-$item->helpText = $langs->transnoentities('KANBAN_MYPARAM10');
+$item->helpText = $langs->transnoentities('MONDAY_MYPARAM10');
 
 // Setup conf for a category selection
-$formSetup->newItem('KANBAN_CATEGORY_ID_XXX')->setAsCategory('product');
+$formSetup->newItem('MONDAY_CATEGORY_ID_XXX')->setAsCategory('product');
 
-// Setup conf KANBAN_MYPARAM10
-$item = $formSetup->newItem('KANBAN_MYPARAM10');
+// Setup conf MONDAY_MYPARAM10
+$item = $formSetup->newItem('MONDAY_MYPARAM10');
 $item->setAsColor();
 $item->defaultFieldValue = '#FF0000';
 //$item->fieldValue = '';
@@ -173,17 +173,17 @@ $item->defaultFieldValue = '#FF0000';
 //$item->fieldInputOverride = false; // set this var to override field input
 //$item->fieldOutputOverride = false; // set this var to override field output
 
-$item = $formSetup->newItem('KANBAN_MYPARAM11')->setAsHtml();
+$item = $formSetup->newItem('MONDAY_MYPARAM11')->setAsHtml();
 $item->nameText = $item->getNameText().' more html text ';
 $item->fieldInputOverride = '';
 $item->helpText = $langs->transnoentities('HelpMessage');
 $item->cssClass = 'minwidth500';
 
-$item = $formSetup->newItem('KANBAN_MYPARAM12');
+$item = $formSetup->newItem('MONDAY_MYPARAM12');
 $item->fieldOverride = "Value forced, can't be modified";
 $item->cssClass = 'minwidth500';
 
-//$item = $formSetup->newItem('KANBAN_MYPARAM13')->setAsDate();	// Not yet implemented
+//$item = $formSetup->newItem('MONDAY_MYPARAM13')->setAsDate();	// Not yet implemented
 
 // End of definition of parameters
 
@@ -193,7 +193,7 @@ $setupnotempty += count($formSetup->items);
 
 $dirmodels = array_merge(array('/'), (array) $conf->modules_parts['models']);
 
-$moduledir = 'kanban';
+$moduledir = 'monday';
 $myTmpObjects = array();
 // TODO Scan list of objects to fill this array
 $myTmpObjects['myobject'] = array('label' => 'MyObject', 'includerefgeneration' => 0, 'includedocgeneration' => 0, 'class' => 'MyObject');
@@ -244,7 +244,7 @@ if ($action == 'updateMask') {
 	$className = '';
 	$dirmodels = array_merge(array('/'), (array) $conf->modules_parts['models']);
 	foreach ($dirmodels as $reldir) {
-		$file = dol_buildpath($reldir."core/modules/kanban/doc/pdf_".$modele."_".strtolower($tmpobjectkey).".modules.php", 0);
+		$file = dol_buildpath($reldir."core/modules/monday/doc/pdf_".$modele."_".strtolower($tmpobjectkey).".modules.php", 0);
 		if (file_exists($file)) {
 			$className = "pdf_".$modele."_".strtolower($tmpobjectkey);
 			break;
@@ -260,7 +260,7 @@ if ($action == 'updateMask') {
 		'@phan-var-force ModelePDFMyObject $module';
 
 		if ($module->write_file($tmpobject, $langs) > 0) {
-			header("Location: ".DOL_URL_ROOT."/document.php?modulepart=kanban-".strtolower($tmpobjectkey)."&file=SPECIMEN.pdf");
+			header("Location: ".DOL_URL_ROOT."/document.php?modulepart=monday-".strtolower($tmpobjectkey)."&file=SPECIMEN.pdf");
 			return;
 		} else {
 			setEventMessages($module->error, null, 'errors');
@@ -273,7 +273,7 @@ if ($action == 'updateMask') {
 } elseif ($action == 'setmod') {
 	// TODO Check if numbering module chosen can be activated by calling method canBeActivated
 	if (!empty($tmpobjectkey)) {
-		$constforval = 'KANBAN_'.strtoupper($tmpobjectkey)."_ADDON";
+		$constforval = 'MONDAY_'.strtoupper($tmpobjectkey)."_ADDON";
 		dolibarr_set_const($db, $constforval, $value, 'chaine', 0, '', $conf->entity);
 	}
 } elseif ($action == 'set') {
@@ -283,7 +283,7 @@ if ($action == 'updateMask') {
 	$ret = delDocumentModel($value, $type);
 	if ($ret > 0) {
 		if (!empty($tmpobjectkey)) {
-			$constforval = 'KANBAN_'.strtoupper($tmpobjectkey).'_ADDON_PDF';
+			$constforval = 'MONDAY_'.strtoupper($tmpobjectkey).'_ADDON_PDF';
 			if (getDolGlobalString($constforval) == "$value") {
 				dolibarr_del_const($db, $constforval, $conf->entity);
 			}
@@ -292,7 +292,7 @@ if ($action == 'updateMask') {
 } elseif ($action == 'setdoc') {
 	// Set or unset default model
 	if (!empty($tmpobjectkey)) {
-		$constforval = 'KANBAN_'.strtoupper($tmpobjectkey).'_ADDON_PDF';
+		$constforval = 'MONDAY_'.strtoupper($tmpobjectkey).'_ADDON_PDF';
 		if (dolibarr_set_const($db, $constforval, $value, 'chaine', 0, '', $conf->entity)) {
 			// The constant that was read before the new set
 			// We therefore requires a variable to have a coherent view
@@ -307,7 +307,7 @@ if ($action == 'updateMask') {
 	}
 } elseif ($action == 'unsetdoc') {
 	if (!empty($tmpobjectkey)) {
-		$constforval = 'KANBAN_'.strtoupper($tmpobjectkey).'_ADDON_PDF';
+		$constforval = 'MONDAY_'.strtoupper($tmpobjectkey).'_ADDON_PDF';
 		dolibarr_del_const($db, $constforval, $conf->entity);
 	}
 }
@@ -322,9 +322,9 @@ $action = 'edit';
 $form = new Form($db);
 
 $help_url = '';
-$title = "KanbanSetup";
+$title = "MondaySetup";
 
-llxHeader('', $langs->trans($title), $help_url, '', 0, 0, '', '', '', 'mod-kanban page-admin');
+llxHeader('', $langs->trans($title), $help_url, '', 0, 0, '', '', '', 'mod-monday page-admin');
 
 // Subheader
 $linkback = '<a href="'.($backtopage ? $backtopage : DOL_URL_ROOT.'/admin/modules.php?restore_lastsearch_values=1').'">'.$langs->trans("BackToModuleList").'</a>';
@@ -332,11 +332,11 @@ $linkback = '<a href="'.($backtopage ? $backtopage : DOL_URL_ROOT.'/admin/module
 print load_fiche_titre($langs->trans($title), $linkback, 'title_setup');
 
 // Configuration header
-$head = kanbanAdminPrepareHead();
-print dol_get_fiche_head($head, 'settings', $langs->trans($title), -1, "kanban@kanban");
+$head = mondayAdminPrepareHead();
+print dol_get_fiche_head($head, 'settings', $langs->trans($title), -1, "monday@monday");
 
 // Setup page goes here
-echo '<span class="opacitymedium">'.$langs->trans("KanbanSetupPage").'</span><br><br>';
+echo '<span class="opacitymedium">'.$langs->trans("MondaySetupPage").'</span><br><br>';
 
 
 /*if ($action == 'edit') {
@@ -419,7 +419,7 @@ foreach ($myTmpObjects as $myTmpObjectKey => $myTmpObjectArray) {
 								print '</td>'."\n";
 
 								print '<td class="center">';
-								$constforvar = 'KANBAN_'.strtoupper($myTmpObjectKey).'_ADDON';
+								$constforvar = 'MONDAY_'.strtoupper($myTmpObjectKey).'_ADDON';
 								if (getDolGlobalString($constforvar) == $file) {
 									print img_picto($langs->trans("Activated"), 'switch_on');
 								} else {
@@ -565,7 +565,7 @@ foreach ($myTmpObjects as $myTmpObjectKey => $myTmpObjectArray) {
 
 										// Default
 										print '<td class="center">';
-										$constforvar = 'KANBAN_'.strtoupper($myTmpObjectKey).'_ADDON_PDF';
+										$constforvar = 'MONDAY_'.strtoupper($myTmpObjectKey).'_ADDON_PDF';
 										if (getDolGlobalString($constforvar) == $name) {
 											//print img_picto($langs->trans("Default"), 'on');
 											// Even if choice is the default value, we allow to disable it. Replace this with previous line if you need to disable unset
