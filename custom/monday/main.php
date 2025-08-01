@@ -113,30 +113,17 @@ document.addEventListener("DOMContentLoaded", function() {
                 <div id="group-list"></div>
             `;
 
-            let renameMode = false;
-            function triggerRenameSubmit() {
-                const newLabel = document.getElementById('rename-input').value.trim();
-                if (!newLabel) return alert("Le nom ne peut pas être vide.");
+            document.getElementById('rename-btn').addEventListener('click', function() {
+                const newName = prompt("Nouveau nom de l'espace :", label);
+                if (!newName) return;
                 var formData = new FormData();
                 formData.append('rename_workspace_id', id);
-                formData.append('rename_workspace_label', newLabel);
+                formData.append('rename_workspace_label', newName);
                 formData.append('token', csrfToken);
-                fetch('', { method: 'POST', body: formData }).then(() => location.reload());
-            }
-
-            document.getElementById('rename-btn').addEventListener('click', function() {
-                if (!renameMode) {
-                    const currentLabel = document.getElementById('workspace-label').textContent;
-                    document.getElementById('workspace-label').outerHTML = `<input type="text" id="rename-input" value="${currentLabel}" style="font-size: 20px; font-weight: bold;">`;
-                    document.getElementById('rename-input').focus();
-                    document.getElementById('rename-input').addEventListener('keydown', function(e) {
-                        if (e.key === 'Enter') {
-                            e.preventDefault();
-                            triggerRenameSubmit();
-                        }
-                    });
-                    renameMode = true;
-                } else triggerRenameSubmit();
+                fetch('', {
+                    method: 'POST',
+                    body: formData
+                }).then(() => location.reload());
             });
 
             document.getElementById('delete-btn').addEventListener('click', function() {
@@ -144,7 +131,10 @@ document.addEventListener("DOMContentLoaded", function() {
                 var formData = new FormData();
                 formData.append('delete_workspace_id', id);
                 formData.append('token', csrfToken);
-                fetch('', { method: 'POST', body: formData }).then(() => location.reload());
+                fetch('', {
+                    method: 'POST',
+                    body: formData
+                }).then(() => location.reload());
             });
 
             function loadGroups(workspaceId) {
