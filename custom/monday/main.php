@@ -20,6 +20,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['new_workspace'])) {
     exit;
 }
 
+// Renommage d’un espace
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['rename_workspace_id'], $_POST['rename_workspace_label'])) {
+    if (empty($_POST['token']) || $_POST['token'] !== $_SESSION['newtoken']) {
+        accessforbidden('CSRF token invalid');
+    }
+    $id = (int) $_POST['rename_workspace_id'];
+    $label = $db->escape($_POST['rename_workspace_label']);
+    $db->query("UPDATE llx_myworkspace SET label = '".$label."' WHERE rowid = ".$id);
+    exit;
+}
+
+// Suppression d’un espace
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_workspace_id'])) {
+    if (empty($_POST['token']) || $_POST['token'] !== $_SESSION['newtoken']) {
+        accessforbidden('CSRF token invalid');
+    }
+    $id = (int) $_POST['delete_workspace_id'];
+    $db->query("DELETE FROM llx_myworkspace WHERE rowid = ".$id);
+    exit;
+}
+
+
 // Récupération des espaces
 $res = $db->query("SELECT rowid, label FROM llx_myworkspace ORDER BY label ASC");
 $workspaces = [];
@@ -46,24 +68,52 @@ foreach ($workspaces as $w) {
 $leftmenu .= '</ul>';
 
 
-print <<<EOT
+ob_start();
+?>
 <script>
 document.addEventListener("DOMContentLoaded", function() {
     var sidenav = document.querySelector(".side-nav .vmenu");
     if (!sidenav) return;
+
     var mondayMenuDiv = document.createElement("div");
-    mondayMenuDiv.innerHTML = `$leftmenu`;
+    mondayMenuDiv.innerHTML = REPLACEMENU;
     sidenav.insertBefore(mondayMenuDiv, sidenav.firstChild);
 
-    // Gestion du clic sur les espaces (exemple)
+    var csrfToken = REPLACETOKEN;
+
     mondayMenuDiv.querySelectorAll('.workspace-item').forEach(function(item) {
         item.addEventListener('click', function() {
-            document.getElementById('main-content').innerHTML = '<b>Espace sélectionné :</b> ' + item.textContent;
+            var id = item.dataset.id;
+            var label = item.textContent;
+
+            document.getElementById('main-content').innerHTML = `
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <h2 style="margin:0;">${label}</h2>
+                    <button id="delete-btn" style="padding:2px 6px; color:red;">🗑️</button>
+                </div>
+            `;
+
+            document.getElementById('delete-btn').addEventListener('click', function() {
+                if (!confirm("Supprimer cet espace ?")) return;
+                var formData = new FormData();
+                formData.append('delete_workspace_id', id);
+                formData.append('token', csrfToken);
+                fetch('', {
+                    method: 'POST',
+                    body: formData
+                }).then(() => location.reload());
+            });
         });
     });
 });
 </script>
-EOT;
+<?php
+$script = ob_get_clean();
+$script = str_replace('REPLACEMENU', json_encode($leftmenu), $script);
+$script = str_replace('REPLACETOKEN', json_encode($formtoken), $script);
+print $script;
+
+
 
 print <<<EOT
 <link rel="stylesheet" href="custom/monday/styles.css">
