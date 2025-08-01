@@ -103,24 +103,6 @@ ob_start();
 <script src="https://code.jquery.com/ui/1.13.2/jquery-ui.min.js"></script>
 <script>
 $(function() {
-    // Enable drag & drop for workspaces
-    $('#workspace-list').sortable({
-        update: function() {
-            const order = $('#workspace-list .workspace-item').map((_,el) => el.dataset.id).get();
-            fetch('', { method: 'POST', body: new URLSearchParams({ reorder_workspaces: JSON.stringify(order), token: REPLACETOKEN }) });
-        }
-    }).disableSelection();
-
-    // Drag & drop for groups initializer
-    const initGroupSortable = () => {
-        $('#group-list').sortable({
-            update: function() {
-                const order = $('#group-list .group').map((_,el) => el.dataset.id).get();
-                fetch('', { method: 'POST', body: new URLSearchParams({ reorder_groups: JSON.stringify(order), token: REPLACETOKEN }) });
-            }
-        }).disableSelection();
-    };
-
     // Insert sidebar
     const nav = document.querySelector('.side-nav .vmenu');
     if (!nav) return;
@@ -129,14 +111,53 @@ $(function() {
     nav.prepend(menuDiv);
     const token = REPLACETOKEN;
 
-    // Apply pointer cursor
-    menuDiv.querySelectorAll('.workspace-item, button, .group, .rename-group, .delete-group, .group-toggle, .group-label').forEach(e => e.style.cursor = 'pointer');
+    // Enable drag & drop for workspaces
+    $('#workspace-list').sortable({
+        cursor: 'pointer',
+        update: function() {
+            const order = $('#workspace-list .workspace-item')
+                .map((_, el) => el.dataset.id)
+                .get();
+            fetch('', {
+                method: 'POST',
+                body: new URLSearchParams({
+                    reorder_workspaces: JSON.stringify(order),
+                    token: token
+                })
+            });
+        }
+    }).disableSelection();
+
+    // Drag & drop for groups initializer
+    const initGroupSortable = () => {
+        $('#group-list').sortable({
+            cursor: 'pointer',
+            update: function() {
+                const order = $('#group-list .group')
+                    .map((_, el) => el.dataset.id)
+                    .get();
+                fetch('', {
+                    method: 'POST',
+                    body: new URLSearchParams({
+                        reorder_groups: JSON.stringify(order),
+                        token: token
+                    })
+                });
+            }
+        }).disableSelection();
+    };
+
+    // Apply pointer cursor to interactive elements
+    menuDiv.querySelectorAll(
+        '.workspace-item, button, .group, .rename-group, .delete-group, .group-toggle, .group-label'
+    ).forEach(e => e.style.cursor = 'pointer');
 
     // Workspace click handler
     menuDiv.querySelectorAll('.workspace-item').forEach(item => {
         item.addEventListener('click', () => {
-            const id = item.dataset.id;
+            const id    = item.dataset.id;
             const label = item.textContent;
+
             $('#main-content').html(`
                 <div style="display:flex; align-items:center; gap:10px;">
                     <h2 id="workspace-label" style="margin:0;cursor:pointer;">${label}</h2>
@@ -155,17 +176,22 @@ $(function() {
                 fd.append('rename_workspace_id', id);
                 fd.append('rename_workspace_label', newName);
                 fd.append('token', token);
-                fetch('', { method:'POST', body: fd }).then(() => location.reload());
+                fetch('', { method:'POST', body: fd })
+                  .then(() => location.reload());
             });
+
             // Delete workspace
             $('#delete-btn').click(() => {
                 if (!confirm('Supprimer cet espace ?')) return;
-                const fd = new FormData(); fd.append('delete_workspace_id', id); fd.append('token', token);
-                fetch('', { method:'POST', body: fd }).then(() => location.reload());
+                const fd = new FormData();
+                fd.append('delete_workspace_id', id);
+                fd.append('token', token);
+                fetch('', { method:'POST', body: fd })
+                  .then(() => location.reload());
             });
 
-            // Load groups
-            const loadGroups = (wid) => {
+            // Load groups and setup their handlers
+            const loadGroups = wid => {
                 fetch(`get_groups.php?wid=${wid}`)
                     .then(r => r.json())
                     .then(data => {
@@ -174,7 +200,12 @@ $(function() {
                             const div = $('<div>')
                                 .addClass('group')
                                 .attr('data-id', g.id)
-                                .css({ border:'1px solid #ccc', 'border-radius':'5px', margin:'10px 0', cursor:'pointer' })
+                                .css({
+                                    border: '1px solid #ccc',
+                                    'border-radius': '5px',
+                                    margin: '10px 0',
+                                    cursor: 'pointer'
+                                })
                                 .html(`
                                     <div class="group-header" style="display:flex; justify-content:space-between; padding:8px; background:#f3f3f3;">
                                         <div style="display:flex; align-items:center; gap:8px;">
@@ -191,38 +222,56 @@ $(function() {
                             $('#group-list').append(div);
                         });
                         initGroupSortable();
+
                         // Collapse/expand functionality
                         $('.group-toggle').click(function() {
-                            const body = $(this).closest('.group').find('.group-body');
+                            const body = $(this)
+                                .closest('.group')
+                                .find('.group-body');
                             body.toggle();
                             $(this).text(body.is(':visible') ? '▼' : '►');
                         });
+
                         // Rename group
                         $('.rename-group').click(function() {
-                            const parent = $(this).closest('.group');
-                            const gid = parent.data('id');
+                            const parent   = $(this).closest('.group');
+                            const gid      = parent.data('id');
                             const oldLabel = parent.find('.group-label').text();
-                            const newLbl = prompt('Nouveau nom du groupe :', oldLabel);
+                            const newLbl   = prompt('Nouveau nom du groupe :', oldLabel);
                             if (!newLbl) return;
-                            const fd = new FormData(); fd.append('rename_group_id', gid); fd.append('group_label', newLbl); fd.append('token', token);
-                            fetch('', { method:'POST', body: fd }).then(() => loadGroups(id));
+                            const fd = new FormData();
+                            fd.append('rename_group_id', gid);
+                            fd.append('group_label', newLbl);
+                            fd.append('token', token);
+                            fetch('', { method:'POST', body: fd })
+                              .then(() => loadGroups(wid));
                         });
+
                         // Delete group
                         $('.delete-group').click(function() {
                             if (!confirm('Supprimer ce groupe ?')) return;
                             const gid = $(this).closest('.group').data('id');
-                            const fd = new FormData(); fd.append('delete_group_id', gid); fd.append('token', token);
-                            fetch('', { method:'POST', body: fd }).then(() => loadGroups(id));
+                            const fd  = new FormData();
+                            fd.append('delete_group_id', gid);
+                            fd.append('token', token);
+                            fetch('', { method:'POST', body: fd })
+                              .then(() => loadGroups(wid));
                         });
                     });
             };
 
             // Add group
             $('#add-group-btn').click(() => {
-                const lbl = prompt('Nom du groupe :'); if (!lbl) return;
-                const fd = new FormData(); fd.append('add_group_workspace_id', id); fd.append('group_label', lbl); fd.append('token', token);
-                fetch('', { method:'POST', body: fd }).then(() => loadGroups(id));
+                const lbl = prompt('Nom du groupe :');
+                if (!lbl) return;
+                const fd = new FormData();
+                fd.append('add_group_workspace_id', id);
+                fd.append('group_label', lbl);
+                fd.append('token', token);
+                fetch('', { method:'POST', body: fd })
+                  .then(() => loadGroups(id));
             });
+
             loadGroups(id);
         });
     });
