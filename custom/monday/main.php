@@ -8,21 +8,36 @@ error_reporting(E_ALL);
 
 $langs->load("mymodule@mymodule");
 
-// Gestion du formulaire
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['new_workspace'])) {
-    if (empty($_POST['token']) || $_POST['token'] !== $_SESSION['newtoken']) {
-        accessforbidden('CSRF token invalid');
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reorder_workspaces'])) {
+    if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
+    $order = json_decode($_POST['reorder_workspaces'], true);
+    foreach ($order as $index => $id) {
+        $db->query("UPDATE llx_myworkspace SET position = " . ((int)$index) . " WHERE rowid = " . ((int)$id));
     }
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reorder_groups'])) {
+    if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
+    $order = json_decode($_POST['reorder_groups'], true);
+    foreach ($order as $index => $id) {
+        $db->query("UPDATE llx_myworkspace_group SET position = " . ((int)$index) . " WHERE rowid = " . ((int)$id));
+    }
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['new_workspace'])) {
+    if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
     $new_workspace = dol_htmlentities($_POST['new_workspace'], ENT_QUOTES, 'UTF-8');
-    $db->query("INSERT INTO llx_myworkspace (label) VALUES ('" . $db->escape($new_workspace) . "')");
+    $res = $db->query("SELECT MAX(position) as maxpos FROM llx_myworkspace");
+    $pos = ($res && $obj = $db->fetch_object($res)) ? $obj->maxpos + 1 : 0;
+    $db->query("INSERT INTO llx_myworkspace (label, position) VALUES ('" . $db->escape($new_workspace) . "', $pos)");
     header("Location: " . $_SERVER['PHP_SELF']);
     exit;
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['rename_workspace_id'], $_POST['rename_workspace_label'])) {
-    if (empty($_POST['token']) || $_POST['token'] !== $_SESSION['newtoken']) {
-        accessforbidden('CSRF token invalid');
-    }
+    if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
     $id = (int) $_POST['rename_workspace_id'];
     $label = $db->escape($_POST['rename_workspace_label']);
     $db->query("UPDATE llx_myworkspace SET label = '".$label."' WHERE rowid = ".$id);
@@ -30,26 +45,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['rename_workspace_id']
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_workspace_id'])) {
-    if (empty($_POST['token']) || $_POST['token'] !== $_SESSION['newtoken']) {
-        accessforbidden('CSRF token invalid');
-    }
+    if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
     $id = (int) $_POST['delete_workspace_id'];
     $db->query("DELETE FROM llx_myworkspace WHERE rowid = ".$id);
     exit;
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_group_workspace_id'], $_POST['group_label'])) {
-    if (empty($_POST['token']) || $_POST['token'] !== $_SESSION['newtoken']) {
-        accessforbidden('CSRF token invalid');
-    }
+    if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
     $fk_workspace = (int) $_POST['add_group_workspace_id'];
     $label = $db->escape($_POST['group_label']);
-    $db->query("INSERT INTO llx_myworkspace_group (fk_workspace, label) VALUES ($fk_workspace, '".$label."')");
+    $res = $db->query("SELECT MAX(position) as maxpos FROM llx_myworkspace_group WHERE fk_workspace = $fk_workspace");
+    $pos = ($res && $obj = $db->fetch_object($res)) ? $obj->maxpos + 1 : 0;
+    $db->query("INSERT INTO llx_myworkspace_group (fk_workspace, label, position) VALUES ($fk_workspace, '".$label."', $pos)");
     exit;
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['rename_group_id'], $_POST['group_label'])) {
-    if (empty($_POST['token']) || $_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
+    if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
     $id = (int) $_POST['rename_group_id'];
     $label = $db->escape($_POST['group_label']);
     $db->query("UPDATE llx_myworkspace_group SET label = '".$label."' WHERE rowid = ".$id);
@@ -57,13 +70,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['rename_group_id'], $_
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_group_id'])) {
-    if (empty($_POST['token']) || $_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
+    if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
     $id = (int) $_POST['delete_group_id'];
     $db->query("DELETE FROM llx_myworkspace_group WHERE rowid = ".$id);
     exit;
 }
 
-$res = $db->query("SELECT rowid, label FROM llx_myworkspace ORDER BY label ASC");
+$res = $db->query("SELECT rowid, label FROM llx_myworkspace ORDER BY position ASC, label ASC");
 $workspaces = [];
 if ($res) {
     while ($obj = $db->fetch_object($res)) {
@@ -89,8 +102,39 @@ $leftmenu .= '</ul>';
 
 ob_start();
 ?>
+<script src="https://code.jquery.com/ui/1.13.2/jquery-ui.min.js"></script>
 <script>
 document.addEventListener("DOMContentLoaded", function() {
+    $("#workspace-list").sortable({
+        update: function() {
+            let order = [];
+            document.querySelectorAll('#workspace-list .workspace-item').forEach(li => order.push(li.dataset.id));
+            fetch('', {
+                method: 'POST',
+                body: new URLSearchParams({
+                    reorder_workspaces: JSON.stringify(order),
+                    token: REPLACETOKEN
+                })
+            });
+        }
+    });
+
+    const loadGroupSortable = () => {
+        $("#group-list").sortable({
+            update: function() {
+                let order = [];
+                document.querySelectorAll('#group-list .group').forEach(div => order.push(div.dataset.id));
+                fetch('', {
+                    method: 'POST',
+                    body: new URLSearchParams({
+                        reorder_groups: JSON.stringify(order),
+                        token: REPLACETOKEN
+                    })
+                });
+            }
+        });
+    };
+
     var sidenav = document.querySelector(".side-nav .vmenu");
     if (!sidenav) return;
     var mondayMenuDiv = document.createElement("div");
@@ -146,6 +190,7 @@ document.addEventListener("DOMContentLoaded", function() {
                         data.forEach(group => {
                             const g = document.createElement('div');
                             g.classList.add('group');
+                            g.dataset.id = group.id;
                             g.style.border = '1px solid #ccc';
                             g.style.borderRadius = '5px';
                             g.style.margin = '10px 0';
@@ -186,6 +231,7 @@ document.addEventListener("DOMContentLoaded", function() {
                             });
                             groupList.appendChild(g);
                         });
+                        loadGroupSortable();
                     });
             }
 
