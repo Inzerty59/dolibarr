@@ -88,10 +88,48 @@ document.addEventListener("DOMContentLoaded", function() {
 
             document.getElementById('main-content').innerHTML = `
                 <div style="display: flex; align-items: center; gap: 10px;">
-                    <h2 style="margin:0;">${label}</h2>
-                    <button id="delete-btn" style="padding:2px 6px; color:red;">🗑️</button>
+                    <h2 id="workspace-label" style="margin:0;">${label}</h2>
+                    <button id="rename-btn" title="Renommer" style="padding:2px 6px;">✎</button>
+                    <button id="delete-btn" title="Supprimer" style="padding:2px 6px;">✖</button>
                 </div>
             `;
+
+            let renameMode = false;
+
+            function triggerRenameSubmit() {
+                const newLabel = document.getElementById('rename-input').value.trim();
+                if (!newLabel) {
+                    alert("Le nom ne peut pas être vide.");
+                    return;
+                }
+                var formData = new FormData();
+                formData.append('rename_workspace_id', id);
+                formData.append('rename_workspace_label', newLabel);
+                formData.append('token', csrfToken);
+                fetch('', {
+                    method: 'POST',
+                    body: formData
+                }).then(() => location.reload());
+            }
+
+            document.getElementById('rename-btn').addEventListener('click', function() {
+                if (!renameMode) {
+                    const currentLabel = document.getElementById('workspace-label').textContent;
+                    document.getElementById('workspace-label').outerHTML = `<input type="text" id="rename-input" value="${currentLabel}" style="font-size: 20px; font-weight: bold;">`;
+                    document.getElementById('rename-input').focus();
+
+                    document.getElementById('rename-input').addEventListener('keydown', function(e) {
+                        if (e.key === 'Enter') {
+                            e.preventDefault();
+                            triggerRenameSubmit();
+                        }
+                    });
+
+                    renameMode = true;
+                } else {
+                    triggerRenameSubmit();
+                }
+            });
 
             document.getElementById('delete-btn').addEventListener('click', function() {
                 if (!confirm("Supprimer cet espace ?")) return;
@@ -107,6 +145,10 @@ document.addEventListener("DOMContentLoaded", function() {
     });
 });
 </script>
+
+
+
+
 <?php
 $script = ob_get_clean();
 $script = str_replace('REPLACEMENU', json_encode($leftmenu), $script);
