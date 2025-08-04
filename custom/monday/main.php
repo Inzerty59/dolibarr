@@ -8,243 +8,359 @@ error_reporting(E_ALL);
 
 $langs->load("mymodule@mymodule");
 
-// Reorder workspaces
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reorder_workspaces'])) {
-    if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
-    $order = json_decode($_POST['reorder_workspaces'], true);
-    foreach ($order as $index => $id) {
-        $db->query("UPDATE llx_myworkspace SET position = " . ((int)$index) . " WHERE rowid = " . ((int)$id));
+if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['tasks_group_id'])) {
+    $gid = (int)$_GET['tasks_group_id'];
+    $res = $db->query("SELECT rowid, label FROM llx_myworkspace_task WHERE fk_group = $gid ORDER BY position ASC");
+    $out = [];
+    while ($o = $db->fetch_object($res)) {
+        $out[] = ['id'=>$o->rowid,'label'=>$o->label];
     }
-    exit;
-}
-// Reorder groups
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reorder_groups'])) {
-    if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
-    $order = json_decode($_POST['reorder_groups'], true);
-    foreach ($order as $index => $id) {
-        $db->query("UPDATE llx_myworkspace_group SET position = " . ((int)$index) . " WHERE rowid = " . ((int)$id));
-    }
-    exit;
-}
-// Add workspace
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['new_workspace'])) {
-    if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
-    $new_workspace = dol_htmlentities($_POST['new_workspace'], ENT_QUOTES, 'UTF-8');
-    $res = $db->query("SELECT MAX(position) as maxpos FROM llx_myworkspace");
-    $pos = ($res && $obj = $db->fetch_object($res)) ? $obj->maxpos + 1 : 0;
-    $db->query("INSERT INTO llx_myworkspace (label, position) VALUES ('" . $db->escape($new_workspace) . "', $pos)");
-    header("Location: " . $_SERVER['PHP_SELF']);
-    exit;
-}
-// Rename workspace
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['rename_workspace_id'], $_POST['rename_workspace_label'])) {
-    if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
-    $id = (int)$_POST['rename_workspace_id'];
-    $label = $db->escape($_POST['rename_workspace_label']);
-    $db->query("UPDATE llx_myworkspace SET label = '".$label."' WHERE rowid = ".$id);
-    exit;
-}
-// Delete workspace
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_workspace_id'])) {
-    if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
-    $id = (int)$_POST['delete_workspace_id'];
-    $db->query("DELETE FROM llx_myworkspace WHERE rowid = ".$id);
-    exit;
-}
-// Add group
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_group_workspace_id'], $_POST['group_label'])) {
-    if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
-    $fk_workspace = (int)$_POST['add_group_workspace_id'];
-    $label = $db->escape($_POST['group_label']);
-    $res = $db->query("SELECT MAX(position) as maxpos FROM llx_myworkspace_group WHERE fk_workspace = $fk_workspace");
-    $pos = ($res && $obj = $db->fetch_object($res)) ? $obj->maxpos + 1 : 0;
-    $db->query("INSERT INTO llx_myworkspace_group (fk_workspace, label, position) VALUES ($fk_workspace, '".$label."', $pos)");
-    exit;
-}
-// Rename group
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['rename_group_id'], $_POST['group_label'])) {
-    if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
-    $id = (int)$_POST['rename_group_id'];
-    $label = $db->escape($_POST['group_label']);
-    $db->query("UPDATE llx_myworkspace_group SET label = '".$label."' WHERE rowid = ".$id);
-    exit;
-}
-// Delete group
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_group_id'])) {
-    if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
-    $id = (int)$_POST['delete_group_id'];
-    $db->query("DELETE FROM llx_myworkspace_group WHERE rowid = ".$id);
+    header('Content-Type: application/json');
+    echo json_encode($out);
     exit;
 }
 
-// Fetch workspaces
-$res = $db->query("SELECT rowid, label FROM llx_myworkspace ORDER BY position ASC, label ASC");
+if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['add_task_group_id'], $_POST['task_label'])) {
+    if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
+    $gid   = (int)$_POST['add_task_group_id'];
+    $label = $db->escape($_POST['task_label']);
+    $r     = $db->query("SELECT MAX(position) as m FROM llx_myworkspace_task WHERE fk_group=$gid");
+    $p     = ($r && $o=$db->fetch_object($r)) ? $o->m+1 : 0;
+    $db->query("INSERT INTO llx_myworkspace_task (fk_group,label,position) VALUES ($gid,'$label',$p)");
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['rename_task_id'], $_POST['rename_task_label'])) {
+    if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
+    $tid   = (int)$_POST['rename_task_id'];
+    $label = $db->escape($_POST['rename_task_label']);
+    $db->query("UPDATE llx_myworkspace_task SET label='$label' WHERE rowid=$tid");
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['delete_task_id'])) {
+    if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
+    $tid = (int)$_POST['delete_task_id'];
+    $db->query("DELETE FROM llx_myworkspace_task WHERE rowid=$tid");
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['reorder_tasks'])) {
+    if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
+    $order = json_decode($_POST['reorder_tasks'], true);
+    foreach ($order as $i=>$tid) {
+        $db->query("UPDATE llx_myworkspace_task SET position=$i WHERE rowid=".(int)$tid);
+    }
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['reorder_workspaces'])) {
+    if ($_POST['token']!==$_SESSION['newtoken']) accessforbidden('CSRF token invalid');
+    $order = json_decode($_POST['reorder_workspaces'], true);
+    foreach ($order as $i=>$id) {
+        $db->query("UPDATE llx_myworkspace SET position=$i WHERE rowid=".(int)$id);
+    }
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['reorder_groups'])) {
+    if ($_POST['token']!==$_SESSION['newtoken']) accessforbidden('CSRF token invalid');
+    $order = json_decode($_POST['reorder_groups'], true);
+    foreach ($order as $i=>$id) {
+        $db->query("UPDATE llx_myworkspace_group SET position=$i WHERE rowid=".(int)$id);
+    }
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD']==='POST' && !empty($_POST['new_workspace'])) {
+    if ($_POST['token']!==$_SESSION['newtoken']) accessforbidden('CSRF token invalid');
+    $nw = dol_htmlentities($_POST['new_workspace'],ENT_QUOTES,'UTF-8');
+    $r  = $db->query("SELECT MAX(position) as m FROM llx_myworkspace");
+    $p  = ($r && $o=$db->fetch_object($r))?$o->m+1:0;
+    $db->query("INSERT INTO llx_myworkspace(label,position) VALUES('".$db->escape($nw)."',$p)");
+    header("Location: ".$_SERVER['PHP_SELF']);
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['rename_workspace_id'],$_POST['rename_workspace_label'])) {
+    if ($_POST['token']!==$_SESSION['newtoken']) accessforbidden('CSRF token invalid');
+    $id=(int)$_POST['rename_workspace_id'];
+    $lab=$db->escape($_POST['rename_workspace_label']);
+    $db->query("UPDATE llx_myworkspace SET label='$lab' WHERE rowid=$id");
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['delete_workspace_id'])) {
+    if ($_POST['token']!==$_SESSION['newtoken']) accessforbidden('CSRF token invalid');
+    $db->query("DELETE FROM llx_myworkspace WHERE rowid=".(int)$_POST['delete_workspace_id']);
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['add_group_workspace_id'],$_POST['group_label'])) {
+    if ($_POST['token']!==$_SESSION['newtoken']) accessforbidden('CSRF token invalid');
+    $fw=(int)$_POST['add_group_workspace_id'];
+    $lb=$db->escape($_POST['group_label']);
+    $r=$db->query("SELECT MAX(position) as m FROM llx_myworkspace_group WHERE fk_workspace=$fw");
+    $p=($r&&$o=$db->fetch_object($r))?$o->m+1:0;
+    $db->query("INSERT INTO llx_myworkspace_group(fk_workspace,label,position) VALUES($fw,'$lb',$p)");
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['rename_group_id'],$_POST['group_label'])) {
+    if ($_POST['token']!==$_SESSION['newtoken']) accessforbidden('CSRF token invalid');
+    $id=(int)$_POST['rename_group_id'];
+    $lb=$db->escape($_POST['group_label']);
+    $db->query("UPDATE llx_myworkspace_group SET label='$lb' WHERE rowid=$id");
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['delete_group_id'])) {
+    if ($_POST['token']!==$_SESSION['newtoken']) accessforbidden('CSRF token invalid');
+    $db->query("DELETE FROM llx_myworkspace_group WHERE rowid=".(int)$_POST['delete_group_id']);
+    exit;
+}
+
+$res = $db->query("SELECT rowid,label FROM llx_myworkspace ORDER BY position ASC");
 $workspaces = [];
-if ($res) while ($obj = $db->fetch_object($res)) $workspaces[] = $obj;
+while ($o=$db->fetch_object($res)) $workspaces[] = $o;
 
 llxHeader("", "Mes espaces", "");
 $formtoken = newToken();
 
-// Sidebar menu HTML
-$leftmenu = '<h3>Espaces de travail</h3>' .
-    '<form method="POST" id="add-workspace-form" style="margin:10px 0;">' .
-    '<input type="text" name="new_workspace" placeholder="Nouvel espace" required style="width:70%; cursor:pointer;">' .
-    '<input type="hidden" name="token" value="'.$formtoken.'">' .
-    '<button type="submit" style="padding:2px 8px; cursor:pointer;">+</button>' .
-    '</form>' .
-    '<ul id="workspace-list" style="list-style:none;padding:0;">';
+$leftmenu = '<h3>Espaces de travail</h3>'
+    . '<form method="POST" style="margin:10px 0;">'
+    . '<input name="new_workspace" placeholder="Nouvel espace" required style="width:70%;cursor:pointer;">'
+    . "<input type=\"hidden\" name=\"token\" value=\"$formtoken\">"
+    . '<button style="padding:2px 8px;cursor:pointer;">+</button>'
+    . '</form>'
+    . '<ul id="workspace-list" style="list-style:none;padding:0;">';
 foreach ($workspaces as $w) {
-    $leftmenu .= '<li class="workspace-item" data-id="'.$w->rowid.'" style="padding:8px; cursor:pointer;">'.dol_escape_htmltag($w->label).'</li>';
+    $leftmenu .= '<li class="workspace-item" data-id="'.$w->rowid.'" '
+               . 'style="padding:8px;cursor:pointer;">'
+               . dol_escape_htmltag($w->label)
+               . '</li>';
 }
 $leftmenu .= '</ul>';
 
 ob_start();
 ?>
+<link rel="stylesheet" href="<?php echo DOL_URL_ROOT ?>/custom/monday/styles.css">
+
+<div class="workspace-container">
+  <div class="main-content" id="main-content"></div>
+</div>
+
 <script src="https://code.jquery.com/ui/1.13.2/jquery-ui.min.js"></script>
 <script>
-$(function() {
-    // Insert sidebar
-    const nav = document.querySelector('.side-nav .vmenu');
-    if (!nav) return;
-    const menuDiv = document.createElement('div');
-    menuDiv.innerHTML = REPLACEMENU;
-    nav.prepend(menuDiv);
-    const token = REPLACETOKEN;
+$(function(){
+  $('.side-nav .vmenu').prepend(<?php echo json_encode($leftmenu) ?>);
+  const token = <?php echo json_encode($formtoken) ?>;
 
-    // Enable drag & drop for workspaces
-    $('#workspace-list').sortable({
-        cursor: 'pointer', update: function() {
-            const order = $('#workspace-list .workspace-item').map((_, el) => el.dataset.id).get();
-            fetch('', { method: 'POST', body: new URLSearchParams({ reorder_workspaces: JSON.stringify(order), token: token }) });
-        }
+  $('#workspace-list').sortable({
+    cursor:'pointer',
+    update(){
+      const order = $('#workspace-list .workspace-item')
+        .map((_,el)=>el.dataset.id).get();
+      fetch('',{method:'POST',body:new URLSearchParams({
+        reorder_workspaces: JSON.stringify(order),
+        token: token
+      })});
+    }
+  }).disableSelection();
+
+  function initGroupSortable(){
+    $('#group-list').sortable({
+      cursor:'pointer',
+      update(){
+        const order = $('#group-list .group').map((_,el)=>el.dataset.id).get();
+        fetch('',{method:'POST',body:new URLSearchParams({
+          reorder_groups: JSON.stringify(order),
+          token: token
+        })});
+      }
     }).disableSelection();
+  }
+  function initTaskSortable(){
+    $('.group-body tbody').sortable({
+      cursor:'pointer',
+      update(){
+        const order = $(this).children().map((_,tr)=>tr.dataset.id).get();
+        fetch('',{method:'POST',body:new URLSearchParams({
+          reorder_tasks: JSON.stringify(order),
+          token: token
+        })});
+      }
+    }).disableSelection();
+  }
 
-    // Drag & drop for groups initializer
-    const initGroupSortable = () => {
-        $('#group-list').sortable({
-            cursor: 'pointer', update: function() {
-                const order = $('#group-list .group').map((_, el) => el.dataset.id).get();
-                fetch('', { method: 'POST', body: new URLSearchParams({ reorder_groups: JSON.stringify(order), token: token }) });
-            }
-        }).disableSelection();
-    };
+  $(document).on('mouseenter','button, .workspace-item, .group-toggle, .group-label, .rename-group, .delete-group, .add-row-btn', function(){
+    $(this).css('cursor','pointer');
+  });
 
-    // Apply pointer cursor
-    menuDiv.querySelectorAll('.workspace-item, button, .group, .group-toggle, .group-label, .rename-group, .delete-group').forEach(e => e.style.cursor = 'pointer');
+  $(document).on('click','.workspace-item', function(){
+    const wsId    = this.dataset.id;
+    const wsLabel = this.textContent;
+    $('#main-content').html(`
+      <div style="display:flex;align-items:center;gap:10px;">
+        <h2 style="margin:0;cursor:pointer;">${wsLabel}</h2>
+        <button id="rename-btn" style="padding:2px 6px;">✎</button>
+        <button id="delete-btn" style="padding:2px 6px;">✖</button>
+      </div>
+      <button id="add-group-btn" style="margin:1rem 0;">+ Ajouter un groupe</button>
+      <div id="group-list"></div>
+    `);
 
-    // Workspace click handler
-    menuDiv.querySelectorAll('.workspace-item').forEach(item => item.addEventListener('click', () => {
-        const id = item.dataset.id, label = item.textContent;
-        $('#main-content').html(`
-            <div style="display:flex; align-items:center; gap:10px;">
-                <h2 id="workspace-label" style="margin:0;cursor:pointer;">${label}</h2>
-                <button id="rename-btn" style="padding:2px 6px;cursor:pointer;">✎</button>
-                <button id="delete-btn" style="padding:2px 6px;cursor:pointer;">✖</button>
-            </div>
-            <button id="add-group-btn" style="margin:1rem 0;cursor:pointer;">+ Ajouter un groupe</button>
-            <div id="group-list"></div>
-        `);
-        $('#rename-btn').click(() => {
-            const newName = prompt('Nouveau nom de l\'espace :', label);
-            if (!newName) return;
-            const fd = new FormData(); fd.append('rename_workspace_id', id); fd.append('rename_workspace_label', newName); fd.append('token', token);
-            fetch('', { method:'POST', body: fd }).then(() => location.reload());
+    $('#rename-btn').click(()=>{
+      const n=prompt("Nouveau nom de l'espace :",wsLabel);
+      if(!n) return;
+      const fd=new FormData(); fd.append('rename_workspace_id',wsId);
+      fd.append('rename_workspace_label',n); fd.append('token',token);
+      fetch('',{method:'POST',body:fd}).then(()=>location.reload());
+    });
+
+    $('#delete-btn').click(()=>{
+      if(!confirm('Supprimer cet espace ?')) return;
+      const fd=new FormData(); fd.append('delete_workspace_id',wsId);
+      fd.append('token',token);
+      fetch('',{method:'POST',body:fd}).then(()=>location.reload());
+    });
+
+    $('#add-group-btn').click(()=>{
+      const n=prompt('Nom du groupe :');
+      if(!n) return;
+      const fd=new FormData(); fd.append('add_group_workspace_id',wsId);
+      fd.append('group_label',n); fd.append('token',token);
+      fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wsId));
+    });
+
+    function loadGroups(wid){
+      fetch(`get_groups.php?wid=${wid}`)
+        .then(r=>r.json()).then(groups=>{
+          $('#group-list').empty();
+          groups.forEach(g=>{
+            const $grp = $(`
+              <div class="group" data-id="${g.id}">
+                <div class="group-header" style="display:flex;justify-content:space-between;padding:8px;background:#f3f3f3;">
+                  <div style="display:flex;align-items:center;gap:8px;">
+                    <span class="group-toggle">▼</span>
+                    <span class="group-label">${g.label}</span>
+                  </div>
+                  <div>
+                    <button class="rename-group">✎</button>
+                    <button class="delete-group">✖</button>
+                  </div>
+                </div>
+                <div class="group-body" style="padding:10px;">
+                  <table style="width:100%;border-collapse:collapse;margin-bottom:8px;">
+                    <thead>
+                      <tr style="background:#fafafa;">
+                        <th style="border:1px solid #ddd;padding:4px;">Tâche</th>
+                        <th style="border:1px solid #ddd;padding:4px;">Statut</th>
+                        <th style="border:1px solid #ddd;padding:4px;">Deadline</th>
+                        <th style="border:1px solid #ddd;padding:4px;">Priorité</th>
+                        <th style="border:1px solid #ddd;padding:4px;">Temps estimé</th>
+                        <th style="border:1px solid #ddd;padding:4px;">Temps réel</th>
+                      </tr>
+                    </thead>
+                    <tbody></tbody>
+                  </table>
+                  <button class="add-row-btn" style="padding:4px 8px;">+ Ajouter tâche</button>
+                </div>
+              </div>
+            `);
+            $('#group-list').append($grp);
+
+            fetch(`?tasks_group_id=${g.id}`)
+              .then(r=>r.json())
+              .then(tasks=>{
+                tasks.forEach(t=>{
+                  $grp.find('tbody').append(`
+                    <tr data-id="${t.id}">
+                      <td style="border:1px solid #ddd;padding:4px;">${t.label}</td>
+                      <td style="border:1px solid #ddd;padding:4px;"></td>
+                      <td style="border:1px solid #ddd;padding:4px;"></td>
+                      <td style="border:1px solid #ddd;padding:4px;"></td>
+                      <td style="border:1px solid #ddd;padding:4px;"></td>
+                      <td style="border:1px solid #ddd;padding:4px;"></td>
+                    </tr>
+                  `);
+                });
+                initTaskSortable();
+              });
+          });
+          initGroupSortable();
+
+          $('.group-toggle').off('click').on('click',function(){
+            const $b=$(this).closest('.group').find('.group-body');
+            $b.toggle();
+            $(this).text($b.is(':visible')?'▼':'►');
+          });
+
+          $('#group-list').off('click','.rename-group').on('click','.rename-group',function(){
+            const $g=$(this).closest('.group');
+            const gid=$g.data('id');
+            const old=$g.find('.group-label').text();
+            const nw=prompt('Nouveau nom du groupe :',old);
+            if(!nw) return;
+            const fd=new FormData();
+            fd.append('rename_group_id',gid);
+            fd.append('group_label',nw);
+            fd.append('token',token);
+            fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
+          });
+
+          $('#group-list').off('click','.delete-group').on('click','.delete-group',function(){
+            const $g=$(this).closest('.group');
+            const gid=$g.data('id');
+            if(!confirm('Supprimer ce groupe ?')) return;
+            const fd=new FormData();
+            fd.append('delete_group_id',gid);
+            fd.append('token',token);
+            fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
+          });
+
+          $('#group-list').off('click','.add-row-btn').on('click','.add-row-btn',function(){
+            const gid=$(this).closest('.group').data('id');
+            const lbl=prompt('Nom de la tâche :');
+            if(!lbl) return;
+            const fd=new FormData();
+            fd.append('add_task_group_id',gid);
+            fd.append('task_label',lbl);
+            fd.append('token',token);
+            fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
+          });
+
+          $('#group-list').off('click','tbody tr').on('click','tbody tr',function(){
+            const rid=$(this).data('id');
+            const old=$(this).find('td').first().text();
+            const nw=prompt('Modifier le nom de la tâche :',old);
+            if(!nw) return;
+            const fd=new FormData();
+            fd.append('rename_task_id',rid);
+            fd.append('rename_task_label',nw);
+            fd.append('token',token);
+            fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
+          });
+
+          $('#group-list').off('dblclick','tbody tr').on('dblclick','tbody tr',function(){
+            const rid=$(this).data('id');
+            if(!confirm('Supprimer cette tâche ?')) return;
+            const fd=new FormData();
+            fd.append('delete_task_id',rid);
+            fd.append('token',token);
+            fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
+          });
         });
-        $('#delete-btn').click(() => {
-            if (!confirm('Supprimer cet espace ?')) return;
-            const fd = new FormData(); fd.append('delete_workspace_id', id); fd.append('token', token);
-            fetch('', { method:'POST', body: fd }).then(() => location.reload());
-        });
+    }
 
-        // Load groups
-        const loadGroups = wid => {
-            fetch(`get_groups.php?wid=${wid}`).then(r => r.json()).then(data => {
-                $('#group-list').empty();
-                data.forEach(g => {
-                    const div = $('<div>').addClass('group').attr('data-id', g.id).css({ border:'1px solid #ccc', 'border-radius':'5px', margin:'10px 0', cursor:'pointer' }).html(`
-                        <div class="group-header" style="display:flex; justify-content:space-between; padding:8px; background:#f3f3f3;">
-                            <div style="display:flex; align-items:center; gap:8px;">
-                                <span class="group-toggle" style="cursor:pointer;">▼</span>
-                                <span class="group-label" data-id="${g.id}" style="font-weight:bold;cursor:pointer;">${g.label}</span>
-                            </div>
-                            <div>
-                                <button class="rename-group" style="cursor:pointer;">✎</button>
-                                <button class="delete-group" style="cursor:pointer;">✖</button>
-                            </div>
-                        </div>
-                        <div class="group-body" style="padding:10px;">
-                            <!-- Dynamic table -->
-                            <table style="width:100%;border-collapse:collapse;margin-bottom:8px;">
-                                <thead><tr style="background:#fafafa;">
-                                    <th style="border:1px solid #ddd;padding:4px;">Statut</th>
-                                    <th style="border:1px solid #ddd;padding:4px;">Priorité</th>
-                                    <th style="border:1px solid #ddd;padding:4px;">Label</th>
-                                    <th style="border:1px solid #ddd;padding:4px;">Personne</th>
-                                    <th style="border:1px solid #ddd;padding:4px;">Téléphone</th>
-                                    <th style="border:1px solid #ddd;padding:4px;">Email</th>
-                                    <th style="border:1px solid #ddd;padding:4px;">Chiffres</th>
-                                    <th style="border:1px solid #ddd;padding:4px;">Date</th>
-                                    <th style="border:1px solid #ddd;padding:4px;">Échéance</th>
-                                    <th style="border:1px solid #ddd;padding:4px;">Court</th>
-                                    <th style="border:1px solid #ddd;padding:4px;">Long</th>
-                                    <th style="border:1px solid #ddd;padding:4px;">Lieu</th>
-                                    <th style="border:1px solid #ddd;padding:4px;">Fichier</th>
-                                    <th style="border:1px solid #ddd;padding:4px;">✔</th>
-                                    <th style="border:1px solid #ddd;padding:4px;">★</th>
-                                    <th style="border:1px solid #ddd;padding:4px;">%</th>
-                                    <th style="border:1px solid #ddd;padding:4px;">Menu</th>
-                                </tr></thead>
-                                <tbody></tbody>
-                            </table>
-                            <button class="add-row-btn" style="cursor:pointer;padding:4px 8px;">+ Ajouter tâche</button>
-                        </div>
-                    `);
-                    $('#group-list').append(div);
-                });
-                initGroupSortable();
-                $('.group-toggle').click(function() {
-                    const body = $(this).closest('.group').find('.group-body');
-                    body.toggle();
-                    $(this).text(body.is(':visible') ? '▼' : '►');
-                });
-                $('.add-row-btn').click(function() {
-                    const tbody = $(this).closest('.group-body').find('tbody');
-                    const tr = $('<tr>').html(Array(17).fill('<td style="border:1px solid #ddd;padding:4px;">&nbsp;</td>').join(''));
-                    tbody.append(tr);
-                });
-                $('.rename-group').click(function() {
-                    const parent = $(this).closest('.group');
-                    const gid = parent.data('id');
-                    const oldLabel = parent.find('.group-label').text();
-                    const newLbl   = prompt('Nouveau nom du groupe :', oldLabel);
-                    if (!newLbl) return;
-                    const fd = new FormData(); fd.append('rename_group_id', gid); fd.append('group_label', newLbl); fd.append('token', token);
-                    fetch('', { method:'POST', body: fd }).then(() => loadGroups(wid));
-                });
-                $('.delete-group').click(function() {
-                    if (!confirm('Supprimer ce groupe ?')) return;
-                    const gid = $(this).closest('.group').data('id');
-                    const fd  = new FormData(); fd.append('delete_group_id', gid); fd.append('token', token);
-                    fetch('', { method:'POST', body: fd }).then(() => loadGroups(wid));
-                });
-            });
-        };
-        $('#add-group-btn').click(() => {
-            const lbl = prompt('Nom du groupe :'); if (!lbl) return;
-            const fd = new FormData(); fd.append('add_group_workspace_id', id); fd.append('group_label', lbl); fd.append('token', token);
-            fetch('', { method:'POST', body: fd }).then(() => loadGroups(id));
-        });
-        loadGroups(id);
-    }));
+    loadGroups(wsId);
+  });
 });
 </script>
+
 <?php
-$script = ob_get_clean();
-$script = str_replace('REPLACEMENU', json_encode($leftmenu), $script);
-$script = str_replace('REPLACETOKEN', json_encode($formtoken), $script);
-print $script;
-print "<link rel='stylesheet' href='custom/monday/styles.css'>";
-print "<div class='workspace-container'><div class='main-content' id='main-content'></div></div>";
 print "<style>#blockvmenusearch{display:none!important;}</style>";
-llxFooter(); $db->close();
+
+llxFooter();
+$db->close();
 ?>
