@@ -249,6 +249,9 @@ $(function(){
                   <table style="width:100%;border-collapse:collapse;margin-bottom:8px;">
                     <thead>
                       <tr style="background:#fafafa;">
+                        <!-- 2 COLONNES POUR RENAME & DELETE -->
+                        <th style="border:1px solid #ddd;padding:4px;"></th>
+                        <th style="border:1px solid #ddd;padding:4px;"></th>
                         <th style="border:1px solid #ddd;padding:4px;">Tâche</th>
                         <th style="border:1px solid #ddd;padding:4px;">Statut</th>
                         <th style="border:1px solid #ddd;padding:4px;">Deadline</th>
@@ -268,7 +271,6 @@ $(function(){
               $grp.find('.group-body').hide();
               $grp.find('.group-toggle').text('►');
             }
-            // ─────────────────────────────────────────────────
 
             $('#group-list').append($grp);
 
@@ -278,6 +280,12 @@ $(function(){
                 tasks.forEach(t=>{
                   $grp.find('tbody').append(`
                     <tr data-id="${t.id}">
+                      <td style="border:1px solid #ddd;padding:4px;text-align:center;">
+                        <button class="rename-task-row" style="border:none;background:transparent;cursor:pointer;">✎</button>
+                      </td>
+                      <td style="border:1px solid #ddd;padding:4px;text-align:center;">
+                        <button class="delete-task-row" style="border:none;background:transparent;cursor:pointer;">✖</button>
+                      </td>
                       <td style="border:1px solid #ddd;padding:4px;">${t.label}</td>
                       <td style="border:1px solid #ddd;padding:4px;"></td>
                       <td style="border:1px solid #ddd;padding:4px;"></td>
@@ -298,7 +306,6 @@ $(function(){
             const $body = $g.find('.group-body');
             $body.toggle();
             $(this).text($body.is(':visible') ? '▼' : '►');
-
             const newState = $body.is(':visible') ? 0 : 1;
             const fd = new FormData();
             fd.append('toggle_group_id', $g.data('id'));
@@ -306,7 +313,6 @@ $(function(){
             fd.append('token', token);
             fetch('',{method:'POST',body:fd});
           });
-          // ───────────────────────────────────────────────────
 
           $('#group-list')
             .off('click','.rename-group').on('click','.rename-group',function(){
@@ -319,7 +325,7 @@ $(function(){
               fd.append('rename_group_id',gid);
               fd.append('group_label',nw);
               fd.append('token',token);
-              fetch('',{method:'POST',body:fd}).then(()=>(loadGroups(wid)));
+              fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
             })
             .off('click','.delete-group').on('click','.delete-group',function(){
               const $g=$(this).closest('.group');
@@ -328,7 +334,7 @@ $(function(){
               const fd=new FormData();
               fd.append('delete_group_id',gid);
               fd.append('token',token);
-              fetch('',{method:'POST',body:fd}).then(()=>(loadGroups(wid)));
+              fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
             })
             .off('click','.add-row-btn').on('click','.add-row-btn',function(){
               const gid=$(this).closest('.group').data('id');
@@ -338,27 +344,32 @@ $(function(){
               fd.append('add_task_group_id',gid);
               fd.append('task_label',lbl);
               fd.append('token',token);
-              fetch('',{method:'POST',body:fd}).then(()=>(loadGroups(wid)));
+              fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
             })
-            .off('click','tbody tr').on('click','tbody tr',function(){
-              const rid=$(this).data('id');
-              const old=$(this).find('td').first().text();
-              const nw=prompt('Modifier le nom de la tâche :',old);
-              if(!nw) return;
-              const fd=new FormData();
-              fd.append('rename_task_id',rid);
-              fd.append('rename_task_label',nw);
-              fd.append('token',token);
-              fetch('',{method:'POST',body:fd}).then(()=>(loadGroups(wid)));
-            })
-            .off('dblclick','tbody tr').on('dblclick','tbody tr',function(){
-              const rid=$(this).data('id');
+            .off('click','.delete-task-row').on('click','.delete-task-row',function(e){
+              e.stopPropagation();
+              const $tr = $(this).closest('tr');
+              const tid = $tr.data('id');
               if(!confirm('Supprimer cette tâche ?')) return;
               const fd=new FormData();
-              fd.append('delete_task_id',rid);
+              fd.append('delete_task_id',tid);
               fd.append('token',token);
-              fetch('',{method:'POST',body:fd}).then(()=>(loadGroups(wid)));
+              fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
+            })
+            .off('click','.rename-task-row').on('click','.rename-task-row',function(e){
+              e.stopPropagation();
+              const $tr = $(this).closest('tr');
+              const tid = $tr.data('id');
+              const old = $tr.find('td:nth-child(3)').text();
+              const nw = prompt('Modifier le nom de la tâche :', old);
+              if(!nw) return;
+              const fd=new FormData();
+              fd.append('rename_task_id',tid);
+              fd.append('rename_task_label',nw);
+              fd.append('token',token);
+              fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
             });
+
         });
     }
 
