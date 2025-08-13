@@ -302,8 +302,11 @@ $(function(){
                 cols.forEach(c=>{
                   ths += `<th style="border:1px solid #ddd;padding:4px;position:relative;">
                             <span class="column-label" data-cid="${c.id}" style="cursor:pointer;">${c.label}</span>
-                            <button class="rename-column-btn" data-cid="${c.id}" title="Renommer" style="border:none;background:transparent;cursor:pointer;padding:0 2px;">✎</button>
-                            <button class="delete-column-btn" data-cid="${c.id}" title="Supprimer" style="border:none;background:transparent;cursor:pointer;padding:0 2px;">✖</button>
+                            <button class="column-menu-btn" data-cid="${c.id}" style="border:none;background:transparent;cursor:pointer;padding:0 2px;">⋮</button>
+                            <div class="column-menu" style="display:none;position:absolute;right:0;top:22px;background:#fff;border:1px solid #ccc;z-index:10;">
+                              <button class="rename-column-btn" data-cid="${c.id}" style="display:block;width:100%;border:none;background:transparent;cursor:pointer;padding:4px;">Renommer</button>
+                              <button class="delete-column-btn" data-cid="${c.id}" style="display:block;width:100%;border:none;background:transparent;cursor:pointer;padding:4px;">Supprimer</button>
+                            </div>
                          </th>`;
                 });
                 ths += `<th style="border:1px solid #ddd;padding:4px;">
@@ -469,6 +472,21 @@ $(function(){
               fd.append('delete_column_id', cid);
               fd.append('token', token);
               fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
+            })
+            .off('click','.column-menu-btn').on('click','.column-menu-btn',function(e){
+              e.stopPropagation();
+              // Ferme tous les autres menus
+              $('.column-menu').hide();
+              // Ouvre le menu de cette colonne
+              $(this).siblings('.column-menu').toggle();
+            })
+            // Ferme le menu si on clique ailleurs
+            $(document).off('click.columnmenu').on('click.columnmenu',function(){
+              $('.column-menu').hide();
+            })
+            // Empêche la fermeture si on clique dans le menu
+            $('#group-list').off('click','.column-menu').on('click','.column-menu',function(e){
+              e.stopPropagation();
             });
 
         });
