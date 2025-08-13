@@ -300,7 +300,11 @@ $(function(){
                   <th style="border:1px solid #ddd;padding:4px;">Tâche</th>
                 `;
                 cols.forEach(c=>{
-                  ths += `<th style="border:1px solid #ddd;padding:4px;">${c.label}</th>`;
+                  ths += `<th style="border:1px solid #ddd;padding:4px;position:relative;">
+                            <span class="column-label" data-cid="${c.id}" style="cursor:pointer;">${c.label}</span>
+                            <button class="rename-column-btn" data-cid="${c.id}" title="Renommer" style="border:none;background:transparent;cursor:pointer;padding:0 2px;">✎</button>
+                            <button class="delete-column-btn" data-cid="${c.id}" title="Supprimer" style="border:none;background:transparent;cursor:pointer;padding:0 2px;">✖</button>
+                         </th>`;
                 });
                 ths += `<th style="border:1px solid #ddd;padding:4px;">
                           <button class="add-column-btn" data-gid="${g.id}" style="padding:2px 6px;">+</button>
@@ -443,6 +447,27 @@ $(function(){
               fd.append('rename_task_id',tid);
               fd.append('rename_task_label',nw);
               fd.append('token',token);
+              fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
+            })
+            .off('click','.rename-column-btn').on('click','.rename-column-btn',function(e){
+              e.stopPropagation();
+              const cid = $(this).data('cid');
+              const old = $(this).siblings('.column-label').text();
+              const nw = prompt('Nouveau nom de la colonne :', old);
+              if(!nw) return;
+              const fd = new FormData();
+              fd.append('rename_column_id', cid);
+              fd.append('rename_column_label', nw);
+              fd.append('token', token);
+              fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
+            })
+            .off('click','.delete-column-btn').on('click','.delete-column-btn',function(e){
+              e.stopPropagation();
+              const cid = $(this).data('cid');
+              if(!confirm('Supprimer cette colonne ?')) return;
+              const fd = new FormData();
+              fd.append('delete_column_id', cid);
+              fd.append('token', token);
               fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
             });
 
