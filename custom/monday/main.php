@@ -122,6 +122,62 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['delete_group_id'])) {
     exit;
 }
 
+if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['columns_group_id'])) {
+    $gid = (int)$_GET['columns_group_id'];
+    $res = $db->query("SELECT rowid, label FROM llx_myworkspace_column WHERE fk_group = $gid ORDER BY position ASC");
+    $out = [];
+    while ($o = $db->fetch_object($res)) {
+        $out[] = ['id'=>$o->rowid,'label'=>$o->label];
+    }
+    header('Content-Type: application/json');
+    echo json_encode($out);
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['add_column_group_id'], $_POST['column_label'])) {
+    if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
+    $gid   = (int)$_POST['add_column_group_id'];
+    $label = $db->escape($_POST['column_label']);
+    // Récupérer le workspace du groupe
+    $res = $db->query("SELECT fk_workspace FROM llx_myworkspace_group WHERE rowid = $gid");
+    $ws = $db->fetch_object($res);
+    $fk_workspace = $ws ? (int)$ws->fk_workspace : 0;
+    $r     = $db->query("SELECT MAX(position) as m FROM llx_myworkspace_column WHERE fk_group=$gid");
+    $p     = ($r && $o=$db->fetch_object($r)) ? $o->m+1 : 0;
+    $db->query("INSERT INTO llx_myworkspace_column (fk_workspace, fk_group, label, position) VALUES ($fk_workspace, $gid, '$label', $p)");
+    error_log("INSERT INTO llx_myworkspace_column (fk_workspace, fk_group, label, position) VALUES ($fk_workspace, $gid, '$label', $p)");
+    exit;
+}
+if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['rename_column_id'], $_POST['rename_column_label'])) {
+    if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
+    $tid   = (int)$_POST['rename_column_id'];
+    $label = $db->escape($_POST['rename_column_label']);
+    $db->query("UPDATE llx_myworkspace_column SET label='$label' WHERE rowid=$tid");
+    exit;
+}
+if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['delete_column_id'])) {
+    if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
+    $tid = (int)$_POST['delete_column_id'];
+    $db->query("DELETE FROM llx_myworkspace_column WHERE rowid=$tid");
+    exit;
+}
+if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['reorder_columns'])) {
+    if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
+    $order = json_decode($_POST['reorder_columns'], true);
+    foreach ($order as $i=>$tid) {
+        $db->query("UPDATE llx_myworkspace_column SET position=$i WHERE rowid=".(int)$tid);
+    }
+    exit;
+}
+if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['reorder_tasks_columns'])) {
+    if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
+    $order = json_decode($_POST['reorder_tasks_columns'], true);
+    foreach ($order as $i=>$id) {
+        $db->query("UPDATE llx_myworkspace_task SET fk_column=".(int)$id." WHERE rowid=".(int)$id);
+    }
+    exit;
+}
+
 $res = $db->query("SELECT rowid,label FROM llx_myworkspace ORDER BY position ASC");
 $workspaces = [];
 while ($o=$db->fetch_object($res)) $workspaces[] = $o;
@@ -233,73 +289,93 @@ $(function(){
         .then(r=>r.json()).then(groups=>{
           $('#group-list').empty();
           groups.forEach(g=>{
-            const $grp = $(`
-              <div class="group" data-id="${g.id}">
-                <div class="group-header" style="display:flex;justify-content:space-between;padding:8px;background:#f3f3f3;">
-                  <div style="display:flex;align-items:center;gap:8px;">
-                    <span class="group-toggle">▼</span>
-                    <span class="group-label">${g.label}</span>
-                  </div>
-                  <div>
-                    <button class="rename-group">✎</button>
-                    <button class="delete-group">✖</button>
-                  </div>
-                </div>
-                <div class="group-body" style="padding:10px;">
-                  <table style="width:100%;border-collapse:collapse;margin-bottom:8px;">
-                    <thead>
-                      <tr style="background:#fafafa;">
-                        <!-- 2 COLONNES POUR RENAME & DELETE -->
-                        <th style="border:1px solid #ddd;padding:4px;"></th>
-                        <th style="border:1px solid #ddd;padding:4px;"></th>
-                        <th style="border:1px solid #ddd;padding:4px;">Tâche</th>
-                        <th style="border:1px solid #ddd;padding:4px;">Statut</th>
-                        <th style="border:1px solid #ddd;padding:4px;">Deadline</th>
-                        <th style="border:1px solid #ddd;padding:4px;">Priorité</th>
-                        <th style="border:1px solid #ddd;padding:4px;">Temps estimé</th>
-                        <th style="border:1px solid #ddd;padding:4px;">Temps réel</th>
-                      </tr>
-                    </thead>
-                    <tbody></tbody>
-                  </table>
-                  <button class="add-row-btn" style="padding:4px 8px;">+ Ajouter tâche</button>
-                </div>
-              </div>
-            `);
-
-            if (g.collapsed === 1) {
-              $grp.find('.group-body').hide();
-              $grp.find('.group-toggle').text('►');
-            }
-
-            $('#group-list').append($grp);
-
-            fetch(`?tasks_group_id=${g.id}`)
+            // Charger les colonnes du groupe
+            fetch(`?columns_group_id=${g.id}`)
               .then(r=>r.json())
-              .then(tasks=>{
-                tasks.forEach(t=>{
-                  $grp.find('tbody').append(`
-                    <tr data-id="${t.id}">
-                      <td style="border:1px solid #ddd;padding:4px;text-align:center;">
-                        <button class="rename-task-row" style="border:none;background:transparent;cursor:pointer;">✎</button>
-                      </td>
-                      <td style="border:1px solid #ddd;padding:4px;text-align:center;">
-                        <button class="delete-task-row" style="border:none;background:transparent;cursor:pointer;">✖</button>
-                      </td>
-                      <td style="border:1px solid #ddd;padding:4px;">${t.label}</td>
-                      <td style="border:1px solid #ddd;padding:4px;"></td>
-                      <td style="border:1px solid #ddd;padding:4px;"></td>
-                      <td style="border:1px solid #ddd;padding:4px;"></td>
-                      <td style="border:1px solid #ddd;padding:4px;"></td>
-                      <td style="border:1px solid #ddd;padding:4px;"></td>
-                    </tr>
-                  `);
+              .then(cols=>{
+                // Construction dynamique des colonnes
+                let ths = `
+                  <th style="border:1px solid #ddd;padding:4px;"></th>
+                  <th style="border:1px solid #ddd;padding:4px;"></th>
+                  <th style="border:1px solid #ddd;padding:4px;">Tâche</th>
+                `;
+                cols.forEach(c=>{
+                  ths += `<th style="border:1px solid #ddd;padding:4px;">${c.label}</th>`;
                 });
-                initTaskSortable();
+                ths += `<th style="border:1px solid #ddd;padding:4px;">
+                          <button class="add-column-btn" data-gid="${g.id}" style="padding:2px 6px;">+</button>
+                        </th>`;
+
+                const $grp = $(`
+                  <div class="group" data-id="${g.id}">
+                    <div class="group-header" style="display:flex;justify-content:space-between;padding:8px;background:#f3f3f3;">
+                      <div style="display:flex;align-items:center;gap:8px;">
+                        <span class="group-toggle">▼</span>
+                        <span class="group-label">${g.label}</span>
+                      </div>
+                      <div>
+                        <button class="rename-group">✎</button>
+                        <button class="delete-group">✖</button>
+                      </div>
+                    </div>
+                    <div class="group-body" style="padding:10px;">
+                      <table style="width:100%;border-collapse:collapse;margin-bottom:8px;">
+                        <thead>
+                          <tr style="background:#fafafa;">
+                            ${ths}
+                          </tr>
+                        </thead>
+                        <tbody></tbody>
+                      </table>
+                      <button class="add-row-btn" style="padding:4px 8px;">+ Ajouter tâche</button>
+                    </div>
+                  </div>
+                `);
+
+                if (g.collapsed === 1) {
+                  $grp.find('.group-body').hide();
+                  $grp.find('.group-toggle').text('►');
+                }
+
+                $('#group-list').append($grp);
+
+                // Charger les tâches
+                fetch(`?tasks_group_id=${g.id}`)
+                  .then(r=>r.json())
+                  .then(tasks=>{
+                    tasks.forEach(t=>{
+                      let tds = `
+                        <td style="border:1px solid #ddd;padding:4px;text-align:center;">
+                          <button class="rename-task-row" style="border:none;background:transparent;cursor:pointer;">✎</button>
+                        </td>
+                        <td style="border:1px solid #ddd;padding:4px;text-align:center;">
+                          <button class="delete-task-row" style="border:none;background:transparent;cursor:pointer;">✖</button>
+                        </td>
+                        <td style="border:1px solid #ddd;padding:4px;">${t.label}</td>
+                      `;
+                      cols.forEach(()=>{ tds += `<td style="border:1px solid #ddd;padding:4px;"></td>`; });
+                      tds += `<td style="border:1px solid #ddd;padding:4px;"></td>`;
+                      $grp.find('tbody').append(`<tr data-id="${t.id}">${tds}</tr>`);
+                    });
+                    initTaskSortable();
+                  });
               });
           });
 
           initGroupSortable();
+
+          // Handler pour ajouter une colonne
+          $('#group-list').off('click','.add-column-btn').on('click','.add-column-btn',function(e){
+            e.stopPropagation();
+            const gid = $(this).data('gid');
+            const lbl = prompt('Nom de la colonne :');
+            if(!lbl) return;
+            const fd = new FormData();
+            fd.append('add_column_group_id',gid);
+            fd.append('column_label',lbl);
+            fd.append('token',token);
+            fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
+          });
 
           $('.group-toggle').off('click').on('click',function(){
             const $g    = $(this).closest('.group');
