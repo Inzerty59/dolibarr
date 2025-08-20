@@ -236,6 +236,20 @@ $(function(){
   $('.side-nav .vmenu').prepend(<?php echo json_encode($leftmenu) ?>);
   const token = <?php echo json_encode($formtoken) ?>;
 
+  window.saveCellValue = function(input) {
+  const taskId = $(input).data('task');
+  const columnId = $(input).data('column');
+  const value = $(input).val();
+  
+  const fd = new FormData();
+  fd.append('save_cell_task', taskId);
+  fd.append('save_cell_column', columnId);
+  fd.append('save_cell_value', value);
+  fd.append('token', token);
+  
+  fetch('', {method: 'POST', body: fd});
+};
+
   $('#workspace-list').sortable({
     cursor:'pointer',
     update(){
