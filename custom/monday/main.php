@@ -165,9 +165,44 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['add_option_column_id'],
     $cid   = (int)$_POST['add_option_column_id'];
     $label = $db->escape($_POST['option_label']);
     $color = isset($_POST['option_color']) ? $db->escape($_POST['option_color']) : '#cccccc';
-    $r     = $db->query("SELECT MAX(position) as m FROM llx_myworkspace_column_option WHERE fk_column=$cid");
-    $p     = ($r && $o=$db->fetch_object($r)) ? $o->m+1 : 0;
+    
+    $existing = $db->query("SELECT rowid FROM llx_myworkspace_column_option WHERE fk_column = $cid AND label = '$label'");
+    if ($db->num_rows($existing) > 0) {
+        header('Content-Type: application/json');
+        echo json_encode(['error' => 'Une option avec ce nom existe déjà']);
+        exit;
+    }
+    
+    $r = $db->query("SELECT MAX(position) as m FROM llx_myworkspace_column_option WHERE fk_column=$cid");
+    $p = ($r && $o=$db->fetch_object($r)) ? $o->m+1 : 0;
     $db->query("INSERT INTO llx_myworkspace_column_option (fk_column,label,color,position) VALUES ($cid,'$label','$color',$p)");
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['rename_option_id'], $_POST['rename_option_label'])) {
+    if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
+    $oid   = (int)$_POST['rename_option_id'];
+    $label = $db->escape($_POST['rename_option_label']);
+    
+    $res = $db->query("SELECT fk_column FROM llx_myworkspace_column_option WHERE rowid = $oid");
+    $opt = $db->fetch_object($res);
+    if ($opt) {
+        $existing = $db->query("SELECT rowid FROM llx_myworkspace_column_option WHERE fk_column = {$opt->fk_column} AND label = '$label' AND rowid != $oid");
+        if ($db->num_rows($existing) > 0) {
+            header('Content-Type: application/json');
+            echo json_encode(['error' => 'Une option avec ce nom existe déjà']);
+            exit;
+        }
+    }
+    
+    $db->query("UPDATE llx_myworkspace_column_option SET label='$label' WHERE rowid=$oid");
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['delete_option_id'])) {
+    if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
+    $oid = (int)$_POST['delete_option_id'];
+    $db->query("DELETE FROM llx_myworkspace_column_option WHERE rowid=$oid");
     exit;
 }
 
@@ -468,7 +503,8 @@ $(function(){
                                                         data-column="${c.id}" 
                                                         value="${cellValue}" 
                                                         style="border:none;background:transparent;width:100%;padding:2px;"
-                                                        onblur="saveCellValue(this)">`;
+                                                        onblur="saveCellValue(this)"
+                                                        onkeydown="if(event.key==='Enter') saveCellValue(this)">`;
                               cellPromises.push(Promise.resolve(inputHtml));
                             }
                           });
@@ -492,13 +528,6 @@ $(function(){
           });
 
           initGroupSortable();
-
-          $(document).off('keydown.cellsave').on('keydown.cellsave', 'input.cell-input', function(e){
-            if(e.key === 'Enter' || e.keyCode === 13) {
-              saveCellValue(this);
-              $(this).blur();
-            }
-          });
 
           $('#group-list').off('click','.add-column-btn').on('click','.add-column-btn',function(e){
             e.stopPropagation();
@@ -610,65 +639,237 @@ $(function(){
             .off('click','.manage-options-btn').on('click','.manage-options-btn',function(e){
               e.stopPropagation();
               const cid = $(this).data('cid');
-              const optLabel = prompt('Nom de l\'option :');
-              if(!optLabel) return;
               
-              const colors = [
-                '#ff0000', '#ff8000', '#ffff00', '#80ff00', '#00ff00', '#00ff80',
-                '#00ffff', '#0080ff', '#0000ff', '#8000ff', '#ff00ff', '#ff0080'
-              ];
-              
-              const modal = $(`
-                <div id="color-modal" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1000;display:flex;align-items:center;justify-content:center;">
-                  <div style="background:white;padding:20px;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.3);min-width:300px;">
-                    <h3>Choisir une couleur</h3>
-                    
-                    <h4>Couleurs prédéfinies :</h4>
-                    <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:5px;margin:10px 0;">
-                      ${colors.map(color => `
-                        <div class="color-option" data-color="${color}" 
-                             style="width:30px;height:30px;background:${color};border:2px solid #ddd;cursor:pointer;border-radius:4px;"></div>
-                      `).join('')}
+              fetch(`?column_options=${cid}`)
+                .then(r=>r.json())
+                .then(options=>{
+                  const modal = $(`
+                    <div id="options-modal" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1000;display:flex;align-items:center;justify-content:center;">
+                      <div style="background:white;padding:20px;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.3);min-width:400px;max-height:80vh;overflow-y:auto;">
+                        <h3>Gérer les options</h3>
+                        
+                        <div id="options-list" style="margin:15px 0;">
+                          ${options.map(opt => `
+                            <div class="option-row" data-id="${opt.id}" style="display:flex;align-items:center;gap:10px;margin:8px 0;padding:8px;border:1px solid #ddd;border-radius:4px;">
+                              <div style="width:20px;height:20px;background:${opt.color};border-radius:3px;"></div>
+                              <span class="option-label" style="flex:1;">${opt.label}</span>
+                              <button class="rename-option" data-id="${opt.id}" style="padding:4px 8px;border:none;background:#f3f3f3;cursor:pointer;">✎</button>
+                              <button class="delete-option" data-id="${opt.id}" style="padding:4px 8px;border:none;background:#f3f3f3;cursor:pointer;">✖</button>
+                            </div>
+                          `).join('')}
+                        </div>
+                        
+                        <hr style="margin:15px 0;">
+                        <h4>Ajouter une nouvelle option</h4>
+                        <div style="display:flex;gap:10px;align-items:center;margin:10px 0;">
+                          <input type="text" id="new-option-name" placeholder="Nom de l'option" style="flex:1;padding:8px;border:1px solid #ddd;">
+                        </div>
+                        
+                        <h5>Couleurs prédéfinies :</h5>
+                        <div id="color-palette" style="display:grid;grid-template-columns:repeat(8,1fr);gap:5px;margin:10px 0;">
+                          <div class="color-option" data-color="#ff0000" style="width:30px;height:30px;background:#ff0000;border:2px solid #ddd;cursor:pointer;border-radius:4px;" title="Rouge"></div>
+                          <div class="color-option" data-color="#ff8000" style="width:30px;height:30px;background:#ff8000;border:2px solid #ddd;cursor:pointer;border-radius:4px;" title="Orange"></div>
+                          <div class="color-option" data-color="#ffff00" style="width:30px;height:30px;background:#ffff00;border:2px solid #ddd;cursor:pointer;border-radius:4px;" title="Jaune"></div>
+                          <div class="color-option" data-color="#80ff00" style="width:30px;height:30px;background:#80ff00;border:2px solid #ddd;cursor:pointer;border-radius:4px;" title="Vert clair"></div>
+                          <div class="color-option" data-color="#00ff00" style="width:30px;height:30px;background:#00ff00;border:2px solid #ddd;cursor:pointer;border-radius:4px;" title="Vert"></div>
+                          <div class="color-option" data-color="#00ff80" style="width:30px;height:30px;background:#00ff80;border:2px solid #ddd;cursor:pointer;border-radius:4px;" title="Vert menthe"></div>
+                          <div class="color-option" data-color="#00ffff" style="width:30px;height:30px;background:#00ffff;border:2px solid #ddd;cursor:pointer;border-radius:4px;" title="Cyan"></div>
+                          <div class="color-option" data-color="#0080ff" style="width:30px;height:30px;background:#0080ff;border:2px solid #ddd;cursor:pointer;border-radius:4px;" title="Bleu clair"></div>
+                          <div class="color-option" data-color="#0000ff" style="width:30px;height:30px;background:#0000ff;border:2px solid #ddd;cursor:pointer;border-radius:4px;" title="Bleu"></div>
+                          <div class="color-option" data-color="#8000ff" style="width:30px;height:30px;background:#8000ff;border:2px solid #ddd;cursor:pointer;border-radius:4px;" title="Violet"></div>
+                          <div class="color-option" data-color="#ff00ff" style="width:30px;height:30px;background:#ff00ff;border:2px solid #ddd;cursor:pointer;border-radius:4px;" title="Magenta"></div>
+                          <div class="color-option" data-color="#ff0080" style="width:30px;height:30px;background:#ff0080;border:2px solid #ddd;cursor:pointer;border-radius:4px;" title="Rose"></div>
+                          <div class="color-option" data-color="#333333" style="width:30px;height:30px;background:#333333;border:2px solid #ddd;cursor:pointer;border-radius:4px;" title="Gris foncé"></div>
+                          <div class="color-option" data-color="#666666" style="width:30px;height:30px;background:#666666;border:2px solid #ddd;cursor:pointer;border-radius:4px;" title="Gris moyen"></div>
+                          <div class="color-option" data-color="#999999" style="width:30px;height:30px;background:#999999;border:2px solid #ddd;cursor:pointer;border-radius:4px;" title="Gris clair"></div>
+                          <div class="color-option" data-color="#cccccc" style="width:30px;height:30px;background:#cccccc;border:2px solid #ddd;cursor:pointer;border-radius:4px;" title="Gris très clair"></div>
+                        </div>
+                        
+                        <h5>Ou couleur personnalisée :</h5>
+                        <div style="display:flex;gap:10px;align-items:center;margin:10px 0;">
+                          <input type="color" id="custom-color" value="#cccccc" style="width:50px;height:35px;border:none;cursor:pointer;">
+                          <button id="use-custom" style="padding:8px 12px;background:#007cba;color:white;border:none;cursor:pointer;">Utiliser cette couleur</button>
+                        </div>
+                        
+                        <div style="margin-top:20px;text-align:right;">
+                          <button id="close-options" style="padding:8px 16px;background:#ccc;border:none;cursor:pointer;">Fermer</button>
+                        </div>
+                      </div>
                     </div>
+                  `);
+                  
+                  $('body').append(modal);
+                  
+                  let selectedColor = '#cccccc';
+
+                  function addNewOption() {
+                    const optLabel = $('#new-option-name').val().trim();
                     
-                    <h4>Ou couleur personnalisée :</h4>
-                    <input type="color" id="custom-color" value="#cccccc" style="width:60px;height:40px;border:none;cursor:pointer;margin:10px 0;">
-                    <button id="use-custom" style="margin-left:10px;padding:6px 12px;background:#007cba;color:white;border:none;cursor:pointer;">Utiliser</button>
+                    if(!optLabel) {
+                      alert('Le nom de l\'option est obligatoire');
+                      return;
+                    }
                     
-                    <div style="margin-top:15px;">
-                      <button id="color-cancel" style="padding:8px 16px;background:#ccc;border:none;cursor:pointer;">Annuler</button>
-                    </div>
-                  </div>
-                </div>
-              `);
-              
-              $('body').append(modal);
-              
-              function addOption(color) {
-                const fd = new FormData();
-                fd.append('add_option_column_id', cid);
-                fd.append('option_label', optLabel);
-                fd.append('option_color', color);
-                fd.append('token', token);
-                fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
-                modal.remove();
-              }
-              
-              $('.color-option').click(function(){
-                addOption($(this).data('color'));
-              });
-              
-              $('#use-custom').click(function(){
-                addOption($('#custom-color').val());
-              });
-              
-              $('#color-cancel').click(function(){
-                modal.remove();
-              });
-              
-              modal.click(function(e){
-                if(e.target === modal[0]) modal.remove();
-              });
+                    const fd = new FormData();
+                    fd.append('add_option_column_id', cid);
+                    fd.append('option_label', optLabel);
+                    fd.append('option_color', selectedColor);
+                    fd.append('token', token);
+                    
+                    fetch('',{method:'POST',body:fd})
+                      .then(r=>r.text())
+                      .then(response=>{
+                        try {
+                          const json = JSON.parse(response);
+                          if(json.error) {
+                            alert(json.error);
+                            return;
+                          }
+                        } catch(e) {
+                          fetch(`?column_options=${cid}`)
+                            .then(r=>r.json())
+                            .then(opts=>{
+                              const newOpt = opts.find(o => o.label === optLabel);
+                              if(newOpt) {
+                                const newRow = $(`
+                                  <div class="option-row" data-id="${newOpt.id}" style="display:flex;align-items:center;gap:10px;margin:8px 0;padding:8px;border:1px solid #ddd;border-radius:4px;">
+                                    <div style="width:20px;height:20px;background:${selectedColor};border-radius:3px;"></div>
+                                    <span class="option-label" style="flex:1;">${optLabel}</span>
+                                    <button class="rename-option" data-id="${newOpt.id}" style="padding:4px 8px;border:none;background:#f3f3f3;cursor:pointer;">✎</button>
+                                    <button class="delete-option" data-id="${newOpt.id}" style="padding:4px 8px;border:none;background:#f3f3f3;cursor:pointer;">✖</button>
+                                  </div>
+                                `);
+                                $('#options-list').append(newRow);
+                                
+                                attachOptionHandlers(newRow);
+                              }
+                              
+                              $('#new-option-name').val('');
+                              $('#custom-color').val('#cccccc');
+                              $('.color-option').css('border', '2px solid #ddd');
+                              selectedColor = '#cccccc';
+                            });
+                        }
+                      });
+                  }
+
+                  $('.color-option').click(function(){
+                    selectedColor = $(this).data('color');
+                    $('.color-option').css('border', '2px solid #ddd');
+                    $(this).css('border', '3px solid #000'); 
+                    addNewOption();
+                  });
+
+                  $('#use-custom').click(function(){
+                    selectedColor = $('#custom-color').val();
+                    addNewOption();
+                  });
+
+                  $('#new-option-name').keydown(function(e){
+                    if(e.key === 'Enter') {
+                      selectedColor = '#cccccc';
+                      addNewOption();
+                    }
+                  });
+
+                  function attachOptionHandlers($row) {
+                    $row.find('.rename-option').click(function(){
+                      const optId = $(this).data('id');
+                      const $row = $(this).closest('.option-row');
+                      const oldLabel = $row.find('.option-label').text();
+                      const newLabel = prompt('Nouveau nom:', oldLabel);
+                      if(!newLabel || newLabel === oldLabel) return;
+                      
+                      const fd = new FormData();
+                      fd.append('rename_option_id', optId);
+                      fd.append('rename_option_label', newLabel);
+                      fd.append('token', token);
+                      
+                      fetch('',{method:'POST',body:fd})
+                        .then(r=>r.text())
+                        .then(response=>{
+                          try {
+                            const json = JSON.parse(response);
+                            if(json.error) {
+                              alert(json.error);
+                            }
+                          } catch(e) {
+                            $row.find('.option-label').text(newLabel);
+                          }
+                        });
+                    });
+                    
+                    $row.find('.delete-option').click(function(){
+                      const optId = $(this).data('id');
+                      const $row = $(this).closest('.option-row');
+                      const optLabel = $row.find('.option-label').text();
+                      
+                      if(!confirm(`Supprimer l'option "${optLabel}" ?`)) return;
+                      
+                      const fd = new FormData();
+                      fd.append('delete_option_id', optId);
+                      fd.append('token', token);
+                      
+                      fetch('',{method:'POST',body:fd}).then(()=>{
+                        $row.remove();
+                      });
+                    });
+                  }
+
+                  $('.rename-option').click(function(){
+                    const optId = $(this).data('id');
+                    const $row = $(this).closest('.option-row');
+                    const oldLabel = $row.find('.option-label').text();
+                    const newLabel = prompt('Nouveau nom:', oldLabel);
+                    if(!newLabel || newLabel === oldLabel) return;
+                    
+                    const fd = new FormData();
+                    fd.append('rename_option_id', optId);
+                    fd.append('rename_option_label', newLabel);
+                    fd.append('token', token);
+                    
+                    fetch('',{method:'POST',body:fd})
+                      .then(r=>r.text())
+                      .then(response=>{
+                        try {
+                          const json = JSON.parse(response);
+                          if(json.error) {
+                            alert(json.error);
+                          }
+                        } catch(e) {
+                          $row.find('.option-label').text(newLabel);
+                        }
+                      });
+                  });
+                  
+                  $('.delete-option').click(function(){
+                    const optId = $(this).data('id');
+                    const $row = $(this).closest('.option-row');
+                    const optLabel = $row.find('.option-label').text();
+                    
+                    if(!confirm(`Supprimer l'option "${optLabel}" ?`)) return;
+                    
+                    const fd = new FormData();
+                    fd.append('delete_option_id', optId);
+                    fd.append('token', token);
+                    
+                    fetch('',{method:'POST',body:fd}).then(()=>{
+                      $row.remove();
+                    });
+                  });
+                  
+                  $('#close-options').click(function(){
+                    modal.remove();
+                    loadGroups(wid);
+                  });
+                  
+                  modal.click(function(e){
+                    if(e.target === modal[0]) {
+                      modal.remove();
+                      loadGroups(wid);
+                    }
+                  });
+                });
             })
             .off('click','.column-menu-btn').on('click','.column-menu-btn',function(e){
               e.stopPropagation();
@@ -700,6 +901,10 @@ $(document).off('click.columnmenu').on('click.columnmenu', function(e) {
 }
 .column-menu button:hover {
   background: #f3f3f3;
+}
+.color-option:hover {
+  transform: scale(1.1);
+  transition: transform 0.1s;
 }
 #blockvmenusearch{display:none!important;}
 </style>
