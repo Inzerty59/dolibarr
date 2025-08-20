@@ -122,31 +122,59 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['delete_group_id'])) {
     exit;
 }
 
+// Récupérer les colonnes d'un groupe
 if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['columns_group_id'])) {
     $gid = (int)$_GET['columns_group_id'];
-    $res = $db->query("SELECT rowid, label FROM llx_myworkspace_column WHERE fk_group = $gid ORDER BY position ASC");
+    $res = $db->query("SELECT rowid, label, type FROM llx_myworkspace_column WHERE fk_group = $gid ORDER BY position ASC");
     $out = [];
     while ($o = $db->fetch_object($res)) {
-        $out[] = ['id'=>$o->rowid,'label'=>$o->label];
+        $out[] = ['id'=>$o->rowid,'label'=>$o->label,'type'=>$o->type];
     }
     header('Content-Type: application/json');
     echo json_encode($out);
     exit;
 }
 
+// Ajouter une colonne
 if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['add_column_group_id'], $_POST['column_label'])) {
     if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
     $gid   = (int)$_POST['add_column_group_id'];
     $label = $db->escape($_POST['column_label']);
+    $type  = isset($_POST['column_type']) ? $db->escape($_POST['column_type']) : 'text';
     $res = $db->query("SELECT fk_workspace FROM llx_myworkspace_group WHERE rowid = $gid");
     $ws = $db->fetch_object($res);
     $fk_workspace = $ws ? (int)$ws->fk_workspace : 0;
     $r     = $db->query("SELECT MAX(position) as m FROM llx_myworkspace_column WHERE fk_group=$gid");
     $p     = ($r && $o=$db->fetch_object($r)) ? $o->m+1 : 0;
-    $db->query("INSERT INTO llx_myworkspace_column (fk_workspace, fk_group, label, position) VALUES ($fk_workspace, $gid, '$label', $p)");
-    error_log("INSERT INTO llx_myworkspace_column (fk_workspace, fk_group, label, position) VALUES ($fk_workspace, $gid, '$label', $p)");
+    $db->query("INSERT INTO llx_myworkspace_column (fk_workspace, fk_group, label, position, type) VALUES ($fk_workspace, $gid, '$label', $p, '$type')");
     exit;
 }
+
+// Récupérer les options d'une colonne
+if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['column_options'])) {
+    $cid = (int)$_GET['column_options'];
+    $res = $db->query("SELECT rowid, label, color FROM llx_myworkspace_column_option WHERE fk_column = $cid ORDER BY position ASC");
+    $out = [];
+    while ($o = $db->fetch_object($res)) {
+        $out[] = ['id'=>$o->rowid,'label'=>$o->label,'color'=>$o->color];
+    }
+    header('Content-Type: application/json');
+    echo json_encode($out);
+    exit;
+}
+
+// Ajouter une option à une colonne
+if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['add_option_column_id'], $_POST['option_label'])) {
+    if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
+    $cid   = (int)$_POST['add_option_column_id'];
+    $label = $db->escape($_POST['option_label']);
+    $color = isset($_POST['option_color']) ? $db->escape($_POST['option_color']) : '#cccccc';
+    $r     = $db->query("SELECT MAX(position) as m FROM llx_myworkspace_column_option WHERE fk_column=$cid");
+    $p     = ($r && $o=$db->fetch_object($r)) ? $o->m+1 : 0;
+    $db->query("INSERT INTO llx_myworkspace_column_option (fk_column,label,color,position) VALUES ($cid,'$label','$color',$p)");
+    exit;
+}
+
 if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['rename_column_id'], $_POST['rename_column_label'])) {
     if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
     $tid   = (int)$_POST['rename_column_id'];
@@ -237,18 +265,18 @@ $(function(){
   const token = <?php echo json_encode($formtoken) ?>;
 
   window.saveCellValue = function(input) {
-  const taskId = $(input).data('task');
-  const columnId = $(input).data('column');
-  const value = $(input).val();
-  
-  const fd = new FormData();
-  fd.append('save_cell_task', taskId);
-  fd.append('save_cell_column', columnId);
-  fd.append('save_cell_value', value);
-  fd.append('token', token);
-  
-  fetch('', {method: 'POST', body: fd});
-};
+    const taskId = $(input).data('task');
+    const columnId = $(input).data('column');
+    const value = $(input).is('select') ? $(input).val() : $(input).val();
+    
+    const fd = new FormData();
+    fd.append('save_cell_task', taskId);
+    fd.append('save_cell_column', columnId);
+    fd.append('save_cell_value', value);
+    fd.append('token', token);
+    
+    fetch('', {method: 'POST', body: fd});
+  };
 
   $('#workspace-list').sortable({
     cursor:'pointer',
@@ -340,6 +368,7 @@ $(function(){
                             <div class="column-menu" style="display:none;position:absolute;right:0;top:22px;background:#fff;border:1px solid #ccc;z-index:10;">
                               <button class="rename-column-btn" data-cid="${c.id}" style="display:block;width:100%;border:none;background:transparent;cursor:pointer;padding:4px;">Renommer</button>
                               <button class="delete-column-btn" data-cid="${c.id}" style="display:block;width:100%;border:none;background:transparent;cursor:pointer;padding:4px;">Supprimer</button>
+                              ${c.type === 'select' ? `<button class="manage-options-btn" data-cid="${c.id}" style="display:block;width:100%;border:none;background:transparent;cursor:pointer;padding:4px;">Gérer options</button>` : ''}
                             </div>
                          </th>`;
                 });
@@ -397,19 +426,46 @@ $(function(){
                       fetch(`?task_cells=${t.id}`)
                         .then(r=>r.json())
                         .then(cells=>{
+                          let cellPromises = [];
                           cols.forEach(c=>{
                             const cellValue = cells[c.id] || '';
-                            tds += `<td style="border:1px solid #ddd;padding:4px;">
-                                      <input type="text" class="cell-input" 
-                                             data-task="${t.id}" 
-                                             data-column="${c.id}" 
-                                             value="${cellValue}" 
-                                             style="border:none;background:transparent;width:100%;padding:2px;"
-                                             onblur="saveCellValue(this)">
-                                    </td>`;
+                            
+                            if(c.type === 'select') {
+                              // Colonne avec sélecteur
+                              const promise = fetch(`?column_options=${c.id}`)
+                                .then(r=>r.json())
+                                .then(options=>{
+                                  let selectHtml = `<select class="cell-select" data-task="${t.id}" data-column="${c.id}" 
+                                                           style="border:none;background:transparent;width:100%;padding:2px;"
+                                                           onchange="saveCellValue(this)">
+                                                     <option value="">-- Choisir --</option>`;
+                                  options.forEach(opt=>{
+                                    const selected = cellValue == opt.id ? 'selected' : '';
+                                    selectHtml += `<option value="${opt.id}" ${selected} style="background:${opt.color};">${opt.label}</option>`;
+                                  });
+                                  selectHtml += '</select>';
+                                  return selectHtml;
+                                });
+                              cellPromises.push(promise);
+                            } else {
+                              // Colonne texte normale
+                              const inputHtml = `<input type="text" class="cell-input" 
+                                                        data-task="${t.id}" 
+                                                        data-column="${c.id}" 
+                                                        value="${cellValue}" 
+                                                        style="border:none;background:transparent;width:100%;padding:2px;"
+                                                        onblur="saveCellValue(this)">`;
+                              cellPromises.push(Promise.resolve(inputHtml));
+                            }
                           });
-                          tds += `<td style="border:1px solid #ddd;padding:4px;"></td>`;
-                          $grp.find('tbody').append(`<tr data-id="${t.id}">${tds}</tr>`);
+                          
+                          Promise.all(cellPromises).then(cellsHtml=>{
+                            cellsHtml.forEach(cellHtml=>{
+                              tds += `<td style="border:1px solid #ddd;padding:4px;">${cellHtml}</td>`;
+                            });
+                            tds += `<td style="border:1px solid #ddd;padding:4px;"></td>`;
+                            $grp.find('tbody').append(`<tr data-id="${t.id}">${tds}</tr>`);
+                          });
                         });
                     });
                     initTaskSortable();
@@ -424,14 +480,20 @@ $(function(){
             const gid = $(this).data('gid');
             const lbl = prompt('Nom de la colonne :');
             if(!lbl) return;
+            
+            const type = prompt('Type de colonne (text/select):', 'text');
+            if(!type) return;
+            
             const fd = new FormData();
             fd.append('add_column_group_id',gid);
             fd.append('column_label',lbl);
+            fd.append('column_type',type);
             fd.append('token',token);
             fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
           });
 
-          $('.group-toggle').off('click').on('click',function(){
+          $('.group-toggle').off('click').on('click',function(e){
+            e.stopPropagation();
             const $g    = $(this).closest('.group');
             const $body = $g.find('.group-body');
             $body.toggle();
@@ -520,13 +582,29 @@ $(function(){
               fd.append('token', token);
               fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
             })
+            .off('click','.manage-options-btn').on('click','.manage-options-btn',function(e){
+              e.stopPropagation();
+              const cid = $(this).data('cid');
+              const optLabel = prompt('Nom de l\'option :');
+              if(!optLabel) return;
+              const optColor = prompt('Couleur (ex: #ff0000):', '#cccccc');
+              if(!optColor) return;
+              const fd = new FormData();
+              fd.append('add_option_column_id', cid);
+              fd.append('option_label', optLabel);
+              fd.append('option_color', optColor);
+              fd.append('token', token);
+              fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
+            })
             .off('click','.column-menu-btn').on('click','.column-menu-btn',function(e){
               e.stopPropagation();
               $('.column-menu').hide();
               $(this).siblings('.column-menu').toggle();
             })
-            $(document).off('click.columnmenu').on('click.columnmenu',function(){
-              $('.column-menu').hide();
+            $(document).off('mousedown.columnmenu').on('mousedown.columnmenu',function(e){
+              if (!$(e.target).closest('.group-toggle').length) {
+                $('.column-menu').hide();
+              }
             })
             $('#group-list').off('click','.column-menu').on('click','.column-menu',function(e){
               e.stopPropagation();
@@ -540,8 +618,18 @@ $(function(){
 });
 </script>
 
+<style>
+.column-menu {
+  min-width: 120px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+.column-menu button:hover {
+  background: #f3f3f3;
+}
+#blockvmenusearch{display:none!important;}
+</style>
+
 <?php
-print "<style>#blockvmenusearch{display:none!important;}</style>";
 llxFooter();
 $db->close();
 ?>
