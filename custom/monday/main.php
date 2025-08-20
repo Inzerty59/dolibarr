@@ -138,7 +138,6 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['add_column_group_id'], 
     if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
     $gid   = (int)$_POST['add_column_group_id'];
     $label = $db->escape($_POST['column_label']);
-    // Récupérer le workspace du groupe
     $res = $db->query("SELECT fk_workspace FROM llx_myworkspace_group WHERE rowid = $gid");
     $ws = $db->fetch_object($res);
     $fk_workspace = $ws ? (int)$ws->fk_workspace : 0;
@@ -175,6 +174,29 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['reorder_tasks_columns']
     foreach ($order as $i=>$id) {
         $db->query("UPDATE llx_myworkspace_task SET fk_column=".(int)$id." WHERE rowid=".(int)$id);
     }
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['task_cells'])) {
+    $tid = (int)$_GET['task_cells'];
+    $res = $db->query("SELECT fk_column, value FROM llx_myworkspace_cell WHERE fk_task = $tid");
+    $out = [];
+    while ($o = $db->fetch_object($res)) {
+        $out[$o->fk_column] = $o->value;
+    }
+    header('Content-Type: application/json');
+    echo json_encode($out);
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['save_cell_task'], $_POST['save_cell_column'], $_POST['save_cell_value'])) {
+    if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
+    $tid = (int)$_POST['save_cell_task'];
+    $cid = (int)$_POST['save_cell_column'];
+    $val = $db->escape($_POST['save_cell_value']);
+    
+    $db->query("INSERT INTO llx_myworkspace_cell (fk_task, fk_column, value) VALUES ($tid, $cid, '$val')
+                ON DUPLICATE KEY UPDATE value = '$val'");
     exit;
 }
 
@@ -289,11 +311,9 @@ $(function(){
         .then(r=>r.json()).then(groups=>{
           $('#group-list').empty();
           groups.forEach(g=>{
-            // Charger les colonnes du groupe
             fetch(`?columns_group_id=${g.id}`)
               .then(r=>r.json())
               .then(cols=>{
-                // Construction dynamique des colonnes
                 let ths = `
                   <th style="border:1px solid #ddd;padding:4px;"></th>
                   <th style="border:1px solid #ddd;padding:4px;"></th>
@@ -346,7 +366,6 @@ $(function(){
 
                 $('#group-list').append($grp);
 
-                // Charger les tâches
                 fetch(`?tasks_group_id=${g.id}`)
                   .then(r=>r.json())
                   .then(tasks=>{
@@ -360,9 +379,24 @@ $(function(){
                         </td>
                         <td style="border:1px solid #ddd;padding:4px;">${t.label}</td>
                       `;
-                      cols.forEach(()=>{ tds += `<td style="border:1px solid #ddd;padding:4px;"></td>`; });
-                      tds += `<td style="border:1px solid #ddd;padding:4px;"></td>`;
-                      $grp.find('tbody').append(`<tr data-id="${t.id}">${tds}</tr>`);
+                      
+                      fetch(`?task_cells=${t.id}`)
+                        .then(r=>r.json())
+                        .then(cells=>{
+                          cols.forEach(c=>{
+                            const cellValue = cells[c.id] || '';
+                            tds += `<td style="border:1px solid #ddd;padding:4px;">
+                                      <input type="text" class="cell-input" 
+                                             data-task="${t.id}" 
+                                             data-column="${c.id}" 
+                                             value="${cellValue}" 
+                                             style="border:none;background:transparent;width:100%;padding:2px;"
+                                             onblur="saveCellValue(this)">
+                                    </td>`;
+                          });
+                          tds += `<td style="border:1px solid #ddd;padding:4px;"></td>`;
+                          $grp.find('tbody').append(`<tr data-id="${t.id}">${tds}</tr>`);
+                        });
                     });
                     initTaskSortable();
                   });
@@ -371,7 +405,6 @@ $(function(){
 
           initGroupSortable();
 
-          // Handler pour ajouter une colonne
           $('#group-list').off('click','.add-column-btn').on('click','.add-column-btn',function(e){
             e.stopPropagation();
             const gid = $(this).data('gid');
@@ -475,16 +508,12 @@ $(function(){
             })
             .off('click','.column-menu-btn').on('click','.column-menu-btn',function(e){
               e.stopPropagation();
-              // Ferme tous les autres menus
               $('.column-menu').hide();
-              // Ouvre le menu de cette colonne
               $(this).siblings('.column-menu').toggle();
             })
-            // Ferme le menu si on clique ailleurs
             $(document).off('click.columnmenu').on('click.columnmenu',function(){
               $('.column-menu').hide();
             })
-            // Empêche la fermeture si on clique dans le menu
             $('#group-list').off('click','.column-menu').on('click','.column-menu',function(e){
               e.stopPropagation();
             });
