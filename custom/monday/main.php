@@ -263,7 +263,11 @@ $(function(){
   window.saveCellValue = function(input) {
     const taskId = $(input).data('task');
     const columnId = $(input).data('column');
-    const value = $(input).is('select') ? $(input).val() : $(input).val();
+    const value = $(input).val();
+    
+    if($(input).is('select')) {
+      applySelectColor($(input));
+    }
     
     const fd = new FormData();
     fd.append('save_cell_task', taskId);
@@ -273,6 +277,22 @@ $(function(){
     
     fetch('', {method: 'POST', body: fd});
   };
+
+  function applySelectColor($select) {
+    const selectedValue = $select.val();
+    if(selectedValue) {
+      const selectedOption = $select.find(`option[value="${selectedValue}"]`);
+      const style = selectedOption.attr('style');
+      if(style) {
+        const color = style.match(/background:([^;]+)/)?.[1];
+        if(color) {
+          $select.css('background-color', color);
+          return;
+        }
+      }
+    }
+    $select.css('background-color', 'transparent');
+  }
 
   $('#workspace-list').sortable({
     cursor:'pointer',
@@ -459,6 +479,10 @@ $(function(){
                             });
                             tds += `<td style="border:1px solid #ddd;padding:4px;"></td>`;
                             $grp.find('tbody').append(`<tr data-id="${t.id}">${tds}</tr>`);
+                            
+                            $grp.find('select.cell-select').each(function(){
+                              applySelectColor($(this));
+                            });
                           });
                         });
                     });
