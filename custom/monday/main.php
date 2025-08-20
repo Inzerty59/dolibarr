@@ -122,7 +122,6 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['delete_group_id'])) {
     exit;
 }
 
-// Récupérer les colonnes d'un groupe
 if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['columns_group_id'])) {
     $gid = (int)$_GET['columns_group_id'];
     $res = $db->query("SELECT rowid, label, type FROM llx_myworkspace_column WHERE fk_group = $gid ORDER BY position ASC");
@@ -135,7 +134,6 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['columns_group_id'])) {
     exit;
 }
 
-// Ajouter une colonne
 if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['add_column_group_id'], $_POST['column_label'])) {
     if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
     $gid   = (int)$_POST['add_column_group_id'];
@@ -150,7 +148,6 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['add_column_group_id'], 
     exit;
 }
 
-// Récupérer les options d'une colonne
 if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['column_options'])) {
     $cid = (int)$_GET['column_options'];
     $res = $db->query("SELECT rowid, label, color FROM llx_myworkspace_column_option WHERE fk_column = $cid ORDER BY position ASC");
@@ -163,7 +160,6 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['column_options'])) {
     exit;
 }
 
-// Ajouter une option à une colonne
 if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['add_option_column_id'], $_POST['option_label'])) {
     if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
     $cid   = (int)$_POST['add_option_column_id'];
@@ -431,7 +427,6 @@ $(function(){
                             const cellValue = cells[c.id] || '';
                             
                             if(c.type === 'select') {
-                              // Colonne avec sélecteur
                               const promise = fetch(`?column_options=${c.id}`)
                                 .then(r=>r.json())
                                 .then(options=>{
@@ -448,7 +443,6 @@ $(function(){
                                 });
                               cellPromises.push(promise);
                             } else {
-                              // Colonne texte normale
                               const inputHtml = `<input type="text" class="cell-input" 
                                                         data-task="${t.id}" 
                                                         data-column="${c.id}" 
@@ -564,7 +558,7 @@ $(function(){
             .off('click','.rename-column-btn').on('click','.rename-column-btn',function(e){
               e.stopPropagation();
               const cid = $(this).data('cid');
-              const old = $(this).siblings('.column-label').text();
+              const old = $(this).closest('.column-menu').siblings('.column-label').text();
               const nw = prompt('Nouveau nom de la colonne :', old);
               if(!nw) return;
               const fd = new FormData();
@@ -587,26 +581,70 @@ $(function(){
               const cid = $(this).data('cid');
               const optLabel = prompt('Nom de l\'option :');
               if(!optLabel) return;
-              const optColor = prompt('Couleur (ex: #ff0000):', '#cccccc');
-              if(!optColor) return;
-              const fd = new FormData();
-              fd.append('add_option_column_id', cid);
-              fd.append('option_label', optLabel);
-              fd.append('option_color', optColor);
-              fd.append('token', token);
-              fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
+              
+              const colors = [
+                '#ff0000', '#ff8000', '#ffff00', '#80ff00', '#00ff00', '#00ff80',
+                '#00ffff', '#0080ff', '#0000ff', '#8000ff', '#ff00ff', '#ff0080'
+              ];
+              
+              const modal = $(`
+                <div id="color-modal" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1000;display:flex;align-items:center;justify-content:center;">
+                  <div style="background:white;padding:20px;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.3);min-width:300px;">
+                    <h3>Choisir une couleur</h3>
+                    
+                    <h4>Couleurs prédéfinies :</h4>
+                    <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:5px;margin:10px 0;">
+                      ${colors.map(color => `
+                        <div class="color-option" data-color="${color}" 
+                             style="width:30px;height:30px;background:${color};border:2px solid #ddd;cursor:pointer;border-radius:4px;"></div>
+                      `).join('')}
+                    </div>
+                    
+                    <h4>Ou couleur personnalisée :</h4>
+                    <input type="color" id="custom-color" value="#cccccc" style="width:60px;height:40px;border:none;cursor:pointer;margin:10px 0;">
+                    <button id="use-custom" style="margin-left:10px;padding:6px 12px;background:#007cba;color:white;border:none;cursor:pointer;">Utiliser</button>
+                    
+                    <div style="margin-top:15px;">
+                      <button id="color-cancel" style="padding:8px 16px;background:#ccc;border:none;cursor:pointer;">Annuler</button>
+                    </div>
+                  </div>
+                </div>
+              `);
+              
+              $('body').append(modal);
+              
+              function addOption(color) {
+                const fd = new FormData();
+                fd.append('add_option_column_id', cid);
+                fd.append('option_label', optLabel);
+                fd.append('option_color', color);
+                fd.append('token', token);
+                fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
+                modal.remove();
+              }
+              
+              $('.color-option').click(function(){
+                addOption($(this).data('color'));
+              });
+              
+              $('#use-custom').click(function(){
+                addOption($('#custom-color').val());
+              });
+              
+              $('#color-cancel').click(function(){
+                modal.remove();
+              });
+              
+              modal.click(function(e){
+                if(e.target === modal[0]) modal.remove();
+              });
             })
             .off('click','.column-menu-btn').on('click','.column-menu-btn',function(e){
               e.stopPropagation();
               $('.column-menu').hide();
               $(this).siblings('.column-menu').toggle();
             })
-            $(document).off('mousedown.columnmenu').on('mousedown.columnmenu',function(e){
-              if (!$(e.target).closest('.group-toggle').length) {
-                $('.column-menu').hide();
-              }
-            })
-            $('#group-list').off('click','.column-menu').on('click','.column-menu',function(e){
+            .off('click','.column-menu').on('click','.column-menu',function(e){
               e.stopPropagation();
             });
 
