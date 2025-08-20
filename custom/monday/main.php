@@ -538,6 +538,16 @@ $(function(){
                                   return selectHtml;
                                 });
                               cellPromises.push(promise);
+                            } else if(c.type === 'number') {
+                              const inputHtml = `<input type="number" class="cell-input cell-number" 
+                            data-task="${t.id}" 
+                            data-column="${c.id}" 
+                            value="${cellValue}" 
+                            style="border:none;background:transparent;width:100%;padding:2px;text-align:right;"
+                            step="any"
+                            onblur="saveCellValue(this)"
+                            onkeydown="if(event.key==='Enter') saveCellValue(this)">`;
+                              cellPromises.push(Promise.resolve(inputHtml));
                             } else if(c.type === 'deadline') {
                               const dates = cellValue ? cellValue.split('|') : ['', ''];
                               const startDate = dates[0] || '';
@@ -636,6 +646,13 @@ $(function(){
                       <div style="text-align:left;">
                         <div style="font-weight:bold;">Texte</div>
                         <div style="font-size:12px;color:#666;">Saisie libre de texte</div>
+                      </div>
+                    </button>
+                    <button class="type-choice" data-type="number" style="padding:15px;border:2px solid #e0e0e0;background:#f9f9f9;cursor:pointer;border-radius:8px;display:flex;align-items:center;gap:15px;font-size:14px;transition:all 0.2s;">
+                      <span style="font-size:20px;">🔢</span>
+                      <div style="text-align:left;">
+                        <div style="font-weight:bold;">Nombre</div>
+                        <div style="font-size:12px;color:#666;">Saisie numérique uniquement</div>
                       </div>
                     </button>
                     <button class="type-choice" data-type="select" style="padding:15px;border:2px solid #e0e0e0;background:#f9f9f9;cursor:pointer;border-radius:8px;display:flex;align-items:center;gap:15px;font-size:14px;transition:all 0.2s;">
@@ -1082,6 +1099,25 @@ $(document).off('click.columnmenu').on('click.columnmenu', function(e) {
 .cell-date::-webkit-calendar-picker-indicator:hover {
   opacity: 1;
 }
+
+.cell-number {
+  cursor: pointer;
+  font-family: 'Courier New', monospace;
+}
+.cell-number:focus {
+  background: #f8f9fa !important;
+  border: 1px solid #007cba !important;
+  border-radius: 3px;
+}
+.cell-number::-webkit-outer-spin-button,
+.cell-number::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.cell-number[type=number] {
+  -moz-appearance: textfield;
+}
+
 .type-choice {
   transition: all 0.2s ease;
 }
