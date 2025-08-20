@@ -493,6 +493,13 @@ $(function(){
 
           initGroupSortable();
 
+          $(document).off('keydown.cellsave').on('keydown.cellsave', 'input.cell-input', function(e){
+            if(e.key === 'Enter' || e.keyCode === 13) {
+              saveCellValue(this);
+              $(this).blur();
+            }
+          });
+
           $('#group-list').off('click','.add-column-btn').on('click','.add-column-btn',function(e){
             e.stopPropagation();
             const gid = $(this).data('gid');
@@ -677,6 +684,12 @@ $(function(){
 
     loadGroups(wsId);
   });
+});
+
+$(document).off('click.columnmenu').on('click.columnmenu', function(e) {
+  if (!$(e.target).closest('.column-menu-btn, .column-menu, .group-toggle').length) {
+    $('.column-menu').hide();
+  }
 });
 </script>
 
