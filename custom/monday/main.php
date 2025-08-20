@@ -497,6 +497,15 @@ $(function(){
                                   return selectHtml;
                                 });
                               cellPromises.push(promise);
+                            } else if(c.type === 'date') {
+                              const inputHtml = `<input type="date" class="cell-input cell-date" 
+                                                        data-task="${t.id}" 
+                                                        data-column="${c.id}" 
+                                                        value="${cellValue}" 
+                                                        style="border:none;background:transparent;width:100%;padding:2px;cursor:pointer;"
+                                                        onblur="saveCellValue(this)"
+                                                        onchange="saveCellValue(this)">`;
+                              cellPromises.push(Promise.resolve(inputHtml));
                             } else {
                               const inputHtml = `<input type="text" class="cell-input" 
                                                         data-task="${t.id}" 
@@ -535,15 +544,84 @@ $(function(){
             const lbl = prompt('Nom de la colonne :');
             if(!lbl) return;
             
-            const type = prompt('Type de colonne (text/select):', 'text');
-            if(!type) return;
+            const typeModal = $(`
+              <div id="type-modal" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1001;display:flex;align-items:center;justify-content:center;">
+                <div style="background:white;padding:25px;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.3);min-width:350px;">
+                  <h3 style="margin:0 0 20px 0;text-align:center;color:#333;">Choisir le type de colonne</h3>
+                  <div style="display:flex;flex-direction:column;gap:12px;margin:20px 0;">
+                    <button class="type-choice" data-type="text" style="padding:15px;border:2px solid #e0e0e0;background:#f9f9f9;cursor:pointer;border-radius:8px;display:flex;align-items:center;gap:15px;font-size:14px;transition:all 0.2s;">
+                      <span style="font-size:20px;">📝</span>
+                      <div style="text-align:left;">
+                        <div style="font-weight:bold;">Texte</div>
+                        <div style="font-size:12px;color:#666;">Saisie libre de texte</div>
+                      </div>
+                    </button>
+                    <button class="type-choice" data-type="select" style="padding:15px;border:2px solid #e0e0e0;background:#f9f9f9;cursor:pointer;border-radius:8px;display:flex;align-items:center;gap:15px;font-size:14px;transition:all 0.2s;">
+                      <span style="font-size:20px;">📋</span>
+                      <div style="text-align:left;">
+                        <div style="font-weight:bold;">Liste déroulante</div>
+                        <div style="font-size:12px;color:#666;">Options prédéfinies avec couleurs</div>
+                      </div>
+                    </button>
+                    <button class="type-choice" data-type="date" style="padding:15px;border:2px solid #e0e0e0;background:#f9f9f9;cursor:pointer;border-radius:8px;display:flex;align-items:center;gap:15px;font-size:14px;transition:all 0.2s;">
+                      <span style="font-size:20px;">📅</span>
+                      <div style="text-align:left;">
+                        <div style="font-weight:bold;">Date</div>
+                        <div style="font-size:12px;color:#666;">Sélecteur de calendrier</div>
+                      </div>
+                    </button>
+                  </div>
+                  <div style="text-align:center;margin-top:20px;">
+                    <button id="cancel-type" style="padding:10px 20px;background:#ccc;border:none;cursor:pointer;border-radius:6px;color:#666;">Annuler</button>
+                  </div>
+                </div>
+              </div>
+            `);
             
-            const fd = new FormData();
-            fd.append('add_column_group_id',gid);
-            fd.append('column_label',lbl);
-            fd.append('column_type',type);
-            fd.append('token',token);
-            fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
+            $('body').append(typeModal);
+            
+            // Effet hover sur les boutons de type
+            $('.type-choice').hover(
+              function() {
+                $(this).css({
+                  'border-color': '#007cba',
+                  'background': '#f0f8ff',
+                  'transform': 'translateY(-2px)',
+                  'box-shadow': '0 4px 12px rgba(0,124,186,0.15)'
+                });
+              },
+              function() {
+                $(this).css({
+                  'border-color': '#e0e0e0',
+                  'background': '#f9f9f9',
+                  'transform': 'translateY(0)',
+                  'box-shadow': 'none'
+                });
+              }
+            );
+            
+            $('.type-choice').click(function(){
+              const type = $(this).data('type');
+              const fd = new FormData();
+              fd.append('add_column_group_id',gid);
+              fd.append('column_label',lbl);
+              fd.append('column_type',type);
+              fd.append('token',token);
+              fetch('',{method:'POST',body:fd}).then(()=>{
+                typeModal.remove();
+                loadGroups(wid);
+              });
+            });
+            
+            $('#cancel-type').click(function(){
+              typeModal.remove();
+            });
+            
+            typeModal.click(function(e){
+              if(e.target === typeModal[0]) {
+                typeModal.remove();
+              }
+            });
           });
 
           $('.group-toggle').off('click').on('click',function(e){
@@ -905,6 +983,19 @@ $(document).off('click.columnmenu').on('click.columnmenu', function(e) {
 .color-option:hover {
   transform: scale(1.1);
   transition: transform 0.1s;
+}
+.cell-date {
+  cursor: pointer;
+}
+.cell-date::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: 0.7;
+}
+.cell-date::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
+}
+.type-choice {
+  transition: all 0.2s ease;
 }
 #blockvmenusearch{display:none!important;}
 </style>
