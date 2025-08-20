@@ -313,6 +313,47 @@ $(function(){
     fetch('', {method: 'POST', body: fd});
   };
 
+  window.updateDeadline = function(input) {
+    const $cell = $(input).closest('.deadline-cell');
+    const taskId = $cell.data('task');
+    const columnId = $cell.data('column');
+    
+    const startDate = $cell.find('.deadline-start').val();
+    const endDate = $cell.find('.deadline-end').val();
+    const value = `${startDate}|${endDate}`;
+    
+    let daysText = '';
+    let daysClass = '';
+    if(endDate) {
+      const today = new Date();
+      const end = new Date(endDate);
+      const diffTime = end - today;
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      
+      if(diffDays > 0) {
+        daysText = `${diffDays} jour${diffDays > 1 ? 's' : ''} restant${diffDays > 1 ? 's' : ''}`;
+        daysClass = diffDays <= 3 ? 'deadline-urgent' : (diffDays <= 7 ? 'deadline-warning' : 'deadline-ok');
+      } else if(diffDays === 0) {
+        daysText = "Aujourd'hui";
+        daysClass = 'deadline-urgent';
+      } else {
+        daysText = `En retard de ${Math.abs(diffDays)} jour${Math.abs(diffDays) > 1 ? 's' : ''}`;
+        daysClass = 'deadline-overdue';
+      }
+    }
+    
+    const $daysDiv = $cell.find('.days-remaining');
+    $daysDiv.text(daysText).removeClass('deadline-urgent deadline-warning deadline-ok deadline-overdue').addClass(daysClass);
+    
+    const fd = new FormData();
+    fd.append('save_cell_task', taskId);
+    fd.append('save_cell_column', columnId);
+    fd.append('save_cell_value', value);
+    fd.append('token', token);
+    
+    fetch('', {method: 'POST', body: fd});
+  };
+
   function applySelectColor($select) {
     const selectedValue = $select.val();
     if(selectedValue) {
@@ -497,6 +538,47 @@ $(function(){
                                   return selectHtml;
                                 });
                               cellPromises.push(promise);
+                            } else if(c.type === 'deadline') {
+                              const dates = cellValue ? cellValue.split('|') : ['', ''];
+                              const startDate = dates[0] || '';
+                              const endDate = dates[1] || '';
+                              
+                              let daysText = '';
+                              let daysClass = '';
+                              if(endDate) {
+                                const today = new Date();
+                                const end = new Date(endDate);
+                                const diffTime = end - today;
+                                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                                
+                                if(diffDays > 0) {
+                                  daysText = `${diffDays} jour${diffDays > 1 ? 's' : ''} restant${diffDays > 1 ? 's' : ''}`;
+                                  daysClass = diffDays <= 3 ? 'deadline-urgent' : (diffDays <= 7 ? 'deadline-warning' : 'deadline-ok');
+                                } else if(diffDays === 0) {
+                                  daysText = "Aujourd'hui";
+                                  daysClass = 'deadline-urgent';
+                                } else {
+                                  daysText = `En retard de ${Math.abs(diffDays)} jour${Math.abs(diffDays) > 1 ? 's' : ''}`;
+                                  daysClass = 'deadline-overdue';
+                                }
+                              }
+                              
+                              const inputHtml = `
+                                <div class="deadline-cell" data-task="${t.id}" data-column="${c.id}">
+                                  <div style="display:flex;gap:5px;margin-bottom:3px;">
+                                    <input type="date" class="deadline-start" value="${startDate}" 
+                                           style="border:1px solid #ddd;padding:2px;font-size:10px;width:48%;"
+                                           placeholder="Début"
+                                           onchange="updateDeadline(this)">
+                                    <input type="date" class="deadline-end" value="${endDate}" 
+                                           style="border:1px solid #ddd;padding:2px;font-size:10px;width:48%;"
+                                           placeholder="Fin"
+                                           onchange="updateDeadline(this)">
+                                  </div>
+                                  <div class="days-remaining ${daysClass}" style="font-size:11px;text-align:center;font-weight:bold;">${daysText}</div>
+                                </div>
+                              `;
+                              cellPromises.push(Promise.resolve(inputHtml));
                             } else if(c.type === 'date') {
                               const inputHtml = `<input type="date" class="cell-input cell-date" 
                                                         data-task="${t.id}" 
@@ -570,6 +652,13 @@ $(function(){
                         <div style="font-size:12px;color:#666;">Sélecteur de calendrier</div>
                       </div>
                     </button>
+                    <button class="type-choice" data-type="deadline" style="padding:15px;border:2px solid #e0e0e0;background:#f9f9f9;cursor:pointer;border-radius:8px;display:flex;align-items:center;gap:15px;font-size:14px;transition:all 0.2s;">
+                      <span style="font-size:20px;">⏰</span>
+                      <div style="text-align:left;">
+                        <div style="font-weight:bold;">Échéance</div>
+                        <div style="font-size:12px;color:#666;">Période avec décompte des jours</div>
+                      </div>
+                    </button>
                   </div>
                   <div style="text-align:center;margin-top:20px;">
                     <button id="cancel-type" style="padding:10px 20px;background:#ccc;border:none;cursor:pointer;border-radius:6px;color:#666;">Annuler</button>
@@ -580,7 +669,6 @@ $(function(){
             
             $('body').append(typeModal);
             
-            // Effet hover sur les boutons de type
             $('.type-choice').hover(
               function() {
                 $(this).css({
@@ -997,6 +1085,64 @@ $(document).off('click.columnmenu').on('click.columnmenu', function(e) {
 .type-choice {
   transition: all 0.2s ease;
 }
+
+.deadline-cell {
+  min-height: 50px;
+  padding: 3px;
+}
+.deadline-ok {
+  color: #155724;
+  background: #d1e7dd;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.deadline-warning {
+  color: #664d03;
+  background: #fff3cd;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.deadline-urgent {
+  color: #842029;
+  background: #f8d7da;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.deadline-overdue {
+  color: #842029;
+  background: #f5c2c7;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: bold;
+}
+
+@media (max-width: 768px) {
+  .deadline-cell input[type="date"] {
+    font-size: 9px !important;
+    width: 45% !important;
+  }
+  .days-remaining {
+    font-size: 9px !important;
+  }
+}
+
+.deadline-start, .deadline-end {
+  border-radius: 3px !important;
+  transition: border-color 0.2s;
+}
+.deadline-start:focus, .deadline-end:focus {
+  border-color: #007cba !important;
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(0, 124, 186, 0.25);
+}
+
+.deadline-cell .days-remaining:empty::before {
+  content: "Définir les dates";
+  color: #6c757d;
+  font-style: italic;
+  font-size: 10px;
+}
+
 #blockvmenusearch{display:none!important;}
 </style>
 
