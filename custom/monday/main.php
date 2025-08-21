@@ -390,10 +390,38 @@ $(function(){
           fd.append('token', token);
           
           fetch('', {method: 'POST', body: fd}).then(()=>{
+            // Fermer le modal
             modal.remove();
-            // Recharger les groupes pour mettre à jour l'affichage
-            const wsId = $('.workspace-item[style*="font-weight: bold"], .workspace-item[style*="background"]').data('id') || $('.workspace-item').first().data('id');
-            if(wsId) loadGroups(wsId);
+            
+            // Mise à jour instantanée de la cellule
+            const selectedTags = [];
+            $('.tag-option.selected').each(function(){
+              const tagId = $(this).data('tag-id');
+              const tagLabel = $(this).text();
+              selectedTags.push({id: tagId, label: tagLabel, color: '#87CEEB'});
+            });
+            
+            // Reconstruire le contenu de la cellule
+            let tagsHtml = `
+              <div class="selected-tags" style="display:flex;flex-wrap:wrap;gap:3px;margin-bottom:5px;">
+            `;
+            
+            selectedTags.forEach(tag => {
+              tagsHtml += `
+                <span class="tag-item" data-tag-id="${tag.id}" style="background:${tag.color};color:white;padding:2px 6px;border-radius:12px;font-size:11px;display:flex;align-items:center;gap:4px;">
+                  ${tag.label}
+                  <span class="remove-tag" onclick="removeTag(event, this)" style="cursor:pointer;font-weight:bold;">×</span>
+                </span>
+              `;
+            });
+            
+            tagsHtml += `
+              </div>
+              <div class="add-tag-hint" style="color:#999;font-size:10px;font-style:italic;">+ Cliquer pour ajouter des étiquettes</div>
+            `;
+            
+            // Mettre à jour la cellule
+            $cell.html(tagsHtml);
           });
         });
         
@@ -431,7 +459,10 @@ $(function(){
     fd.append('save_cell_value', JSON.stringify(remainingTags));
     fd.append('token', token);
     
-    fetch('', {method: 'POST', body: fd});
+    fetch('', {method: 'POST', body: fd}).then(()=>{
+      // Pas besoin de recharger - la suppression visuelle a déjà été faite
+      console.log('Tag supprimé et sauvegardé');
+    });
   };
 
   window.updateDeadline = function(input) {
@@ -1007,7 +1038,7 @@ $(function(){
                         <h4>Ajouter une nouvelle option</h4>
                         <div style="display:flex;gap:10px;align-items:center;margin:10px 0;">
                           <input type="text" id="new-option-name" placeholder="Nom de l'option" style="flex:1;padding:8px;border:1px solid #ddd;">
-                          <button onclick="addNewOption()" style="padding:8px 12px;background:#007cba;color:white;border:none;cursor:pointer;border-radius:4px;">Ajouter</button>
+                          <button id="add-new-option-btn" style="padding:8px 12px;background:#007cba;color:white;border:none;cursor:pointer;border-radius:4px;">Ajouter</button>
                         </div>
                         
                         <div style="margin-top:20px;text-align:right;">
@@ -1046,43 +1077,28 @@ $(function(){
                             return;
                           }
                         } catch(e) {
-                          // Succès - recharger la liste
-                          fetch(`?column_options=${cid}`)
-                            .then(r=>r.json())
-                            .then(opts=>{
-                              const newOpt = opts.find(o => o.label === optLabel);
-                              if(newOpt) {
-                                const newRow = $(`
-                                  <div class="option-row" data-id="${newOpt.id}" style="display:flex;align-items:center;gap:10px;margin:8px 0;padding:8px;border:1px solid #ddd;border-radius:4px;">
-                                    <div style="width:20px;height:20px;background:#87CEEB;border-radius:3px;"></div>
-                                    <span class="option-label" style="flex:1;">${optLabel}</span>
-                                    <button class="rename-option" data-id="${newOpt.id}" style="padding:4px 8px;border:none;background:#f3f3f3;cursor:pointer;">✎</button>
-                                    <button class="delete-option" data-id="${newOpt.id}" style="padding:4px 8px;border:none;background:#f3f3f3;cursor:pointer;">✖</button>
-                                  </div>
-                                `);
-                                $('#options-list').append(newRow);
-                                
-                                attachOptionHandlers(newRow);
-                              }
-                              
-                              $('#new-option-name').val('');
-                            });
+                          // Succès - ajouter la nouvelle option à la liste
+                          const newRow = $(`
+                            <div class="option-row" data-id="new" style="display:flex;align-items:center;gap:10px;margin:8px 0;padding:8px;border:1px solid #ddd;border-radius:4px;">
+                              <div style="width:20px;height:20px;background:#87CEEB;border-radius:3px;"></div>
+                              <span class="option-label" style="flex:1;">${optLabel}</span>
+                              <button class="rename-option" data-id="new" style="padding:4px 8px;border:none;background:#f3f3f3;cursor:pointer;">✎</button>
+                              <button class="delete-option" data-id="new" style="padding:4px 8px;border:none;background:#f3f3f3;cursor:pointer;">✖</button>
+                            </div>
+                          `);
+                          $('#options-list').append(newRow);
+                          
+                          attachOptionHandlers(newRow);
+                          $('#new-option-name').val('');
                         }
                       });
                   }
-
-                  $('.color-option').click(function(){
-                    selectedColor = $(this).data('color');
-                    $('.color-option').css('border', '2px solid #ddd');
-                    $(this).css('border', '3px solid #000'); 
+                  
+                  // Attacher l'événement au bouton
+                  $('#add-new-option-btn').click(function(){
                     addNewOption();
                   });
-
-                  $('#use-custom').click(function(){
-                    selectedColor = $('#custom-color').val();
-                    addNewOption();
-                  });
-
+                  
                   $('#new-option-name').keydown(function(e){
                     if(e.key === 'Enter') {
                       addNewOption();
@@ -1177,13 +1193,11 @@ $(function(){
                   
                   $('#close-options').click(function(){
                     modal.remove();
-                    loadGroups(wid);
                   });
                   
                   modal.click(function(e){
                     if(e.target === modal[0]) {
                       modal.remove();
-                      loadGroups(wid);
                     }
                   });
                 });
