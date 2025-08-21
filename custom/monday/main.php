@@ -313,6 +313,18 @@ $(function(){
     fetch('', {method: 'POST', body: fd});
   };
 
+  // Nouvelle fonction de validation pour les champs numériques
+  window.validateNumberInput = function(input) {
+    const value = input.value;
+    // Autoriser: chiffres (0-9), point (.), virgule (,), espace, tiret (-), euro (€), dollar ($)
+    const allowedPattern = /^[0-9€$.,\s-]*$/;
+    
+    if (!allowedPattern.test(value)) {
+      // Supprimer les caractères non autorisés
+      input.value = value.replace(/[^0-9€$.,\s-]/g, '');
+    }
+  };
+
   window.updateDeadline = function(input) {
     const $cell = $(input).closest('.deadline-cell');
     const taskId = $cell.data('task');
@@ -539,14 +551,15 @@ $(function(){
                                 });
                               cellPromises.push(promise);
                             } else if(c.type === 'number') {
-                              const inputHtml = `<input type="number" class="cell-input cell-number" 
+                              const inputHtml = `<input type="text" class="cell-input cell-number" 
                             data-task="${t.id}" 
                             data-column="${c.id}" 
                             value="${cellValue}" 
                             style="border:none;background:transparent;width:100%;padding:2px;text-align:right;"
-                            step="any"
+                            pattern="[0-9€$.,\\s-]*"
                             onblur="saveCellValue(this)"
-                            onkeydown="if(event.key==='Enter') saveCellValue(this)">`;
+                            onkeydown="if(event.key==='Enter') saveCellValue(this)"
+                            oninput="validateNumberInput(this)">`;
                               cellPromises.push(Promise.resolve(inputHtml));
                             } else if(c.type === 'deadline') {
                               const dates = cellValue ? cellValue.split('|') : ['', ''];
