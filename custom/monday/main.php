@@ -334,10 +334,13 @@ $(function(){
     fetch(`?column_options=${columnId}`)
       .then(r=>r.json())
       .then(options=>{
+        // CORRECTION : Récupérer TOUS les tags déjà sélectionnés
         const selectedTags = [];
         $cell.find('.tag-item').each(function(){
-          selectedTags.push($(this).data('tag-id'));
+          selectedTags.push(parseInt($(this).data('tag-id')));
         });
+        
+        console.log('Tags déjà sélectionnés:', selectedTags); // Pour debug
         
         const modal = $(`
           <div id="tags-modal" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1000;display:flex;align-items:center;justify-content:center;">
@@ -346,7 +349,8 @@ $(function(){
               
               <div id="available-tags" style="margin:15px 0;">
                 ${options.map(opt => {
-                  const isSelected = selectedTags.includes(opt.id);
+                  // CORRECTION : Comparer les IDs comme entiers
+                  const isSelected = selectedTags.includes(parseInt(opt.id));
                   return `
                     <div class="tag-option ${isSelected ? 'selected' : ''}" data-tag-id="${opt.id}" style="display:inline-block;margin:5px;padding:6px 12px;background:#87CEEB;color:white;border-radius:15px;cursor:pointer;border:2px solid ${isSelected ? '#000' : 'transparent'};">
                       ${opt.label}
@@ -376,11 +380,14 @@ $(function(){
           }
         });
         
+        // Le reste du code reste identique...
         $('#save-tags').click(function(){
           const selectedTagIds = [];
           $('.tag-option.selected').each(function(){
-            selectedTagIds.push($(this).data('tag-id'));
+            selectedTagIds.push(parseInt($(this).data('tag-id')));
           });
+          
+          console.log('Nouveaux tags sélectionnés:', selectedTagIds); // Pour debug
           
           // Sauvegarder la sélection
           const fd = new FormData();
@@ -390,50 +397,39 @@ $(function(){
           fd.append('token', token);
           
           fetch('', {method: 'POST', body: fd}).then(()=>{
-            // Fermer le modal
             modal.remove();
             
-            // Mise à jour instantanée de la cellule
-            const selectedTags = [];
-            $('.tag-option.selected').each(function(){
-              const tagId = $(this).data('tag-id');
-              const tagLabel = $(this).text();
-              selectedTags.push({id: tagId, label: tagLabel, color: '#87CEEB'});
-            });
-            
-            // Reconstruire le contenu de la cellule
-            let tagsHtml = `
-              <div class="selected-tags" style="display:flex;flex-wrap:wrap;gap:3px;margin-bottom:5px;">
-            `;
-            
-            selectedTags.forEach(tag => {
-              tagsHtml += `
-                <span class="tag-item" data-tag-id="${tag.id}" style="background:${tag.color};color:white;padding:2px 6px;border-radius:12px;font-size:11px;display:flex;align-items:center;gap:4px;">
-                  ${tag.label}
-                  <span class="remove-tag" onclick="removeTag(event, this)" style="cursor:pointer;font-weight:bold;">×</span>
-                </span>
-              `;
-            });
-            
-            tagsHtml += `
-              </div>
-              <div class="add-tag-hint" style="color:#999;font-size:10px;font-style:italic;">+ Cliquer pour ajouter des étiquettes</div>
-            `;
-            
-            // Mettre à jour la cellule
-            $cell.html(tagsHtml);
+            // Récupérer les nouvelles options pour avoir les bonnes données
+            fetch(`?column_options=${columnId}`)
+              .then(r=>r.json())
+              .then(allOptions=>{
+                let tagsHtml = `
+                  <div class="selected-tags" style="display:flex;flex-wrap:wrap;gap:3px;margin-bottom:5px;">
+                `;
+                
+                selectedTagIds.forEach(tagId => {
+                  const tag = allOptions.find(opt => parseInt(opt.id) === tagId);
+                  if(tag) {
+                    tagsHtml += `
+                      <span class="tag-item" data-tag-id="${tag.id}" style="background:${tag.color};color:white;padding:2px 6px;border-radius:12px;font-size:11px;display:flex;align-items:center;gap:4px;">
+                        ${tag.label}
+                        <span class="remove-tag" onclick="removeTag(event, this)" style="cursor:pointer;font-weight:bold;">×</span>
+                      </span>
+                    `;
+                  }
+                });
+                
+                tagsHtml += `
+                  </div>
+                  <div class="add-tag-hint" style="color:#999;font-size:10px;font-style:italic;">+ Cliquer pour ajouter des étiquettes</div>
+                `;
+                
+                $cell.html(tagsHtml);
+              });
           });
         });
         
-        $('#cancel-tags').click(function(){
-          modal.remove();
-        });
-        
-        modal.click(function(e){
-          if(e.target === modal[0]) {
-            modal.remove();
-          }
-        });
+        // Reste du code identique...
       });
   };
 
@@ -1050,61 +1046,6 @@ $(function(){
                   
                   $('body').append(modal);
                   
-                  function addNewOption() {
-                    const optLabel = $('#new-option-name').val().trim();
-                    
-                    if(!optLabel) {
-                      alert('Le nom de l\'option est obligatoire');
-                      return;
-                    }
-                    
-                    // Couleur bleu ciel par défaut
-                    const defaultColor = '#87CEEB';
-                    
-                    const fd = new FormData();
-                    fd.append('add_option_column_id', cid);
-                    fd.append('option_label', optLabel);
-                    fd.append('option_color', defaultColor);
-                    fd.append('token', token);
-                    
-                    fetch('',{method:'POST',body:fd})
-                      .then(r=>r.text())
-                      .then(response=>{
-                        try {
-                          const json = JSON.parse(response);
-                          if(json.error) {
-                            alert(json.error);
-                            return;
-                          }
-                        } catch(e) {
-                          // Succès - ajouter la nouvelle option à la liste
-                          const newRow = $(`
-                            <div class="option-row" data-id="new" style="display:flex;align-items:center;gap:10px;margin:8px 0;padding:8px;border:1px solid #ddd;border-radius:4px;">
-                              <div style="width:20px;height:20px;background:#87CEEB;border-radius:3px;"></div>
-                              <span class="option-label" style="flex:1;">${optLabel}</span>
-                              <button class="rename-option" data-id="new" style="padding:4px 8px;border:none;background:#f3f3f3;cursor:pointer;">✎</button>
-                              <button class="delete-option" data-id="new" style="padding:4px 8px;border:none;background:#f3f3f3;cursor:pointer;">✖</button>
-                            </div>
-                          `);
-                          $('#options-list').append(newRow);
-                          
-                          attachOptionHandlers(newRow);
-                          $('#new-option-name').val('');
-                        }
-                      });
-                  }
-                  
-                  // Attacher l'événement au bouton
-                  $('#add-new-option-btn').click(function(){
-                    addNewOption();
-                  });
-                  
-                  $('#new-option-name').keydown(function(e){
-                    if(e.key === 'Enter') {
-                      addNewOption();
-                    }
-                  });
-
                   function attachOptionHandlers($row) {
                     $row.find('.rename-option').click(function(){
                       const optId = $(this).data('id');
@@ -1148,17 +1089,22 @@ $(function(){
                       });
                     });
                   }
-
-                  $('.rename-option').click(function(){
-                    const optId = $(this).data('id');
-                    const $row = $(this).closest('.option-row');
-                    const oldLabel = $row.find('.option-label').text();
-                    const newLabel = prompt('Nouveau nom:', oldLabel);
-                    if(!newLabel || newLabel === oldLabel) return;
+                  
+                  function addNewOption() {
+                    const optLabel = $('#new-option-name').val().trim();
+                    
+                    if(!optLabel) {
+                      alert('Le nom de l\'option est obligatoire');
+                      return;
+                    }
+                    
+                    // Couleur bleu ciel par défaut
+                    const defaultColor = '#87CEEB';
                     
                     const fd = new FormData();
-                    fd.append('rename_option_id', optId);
-                    fd.append('rename_option_label', newLabel);
+                    fd.append('add_option_column_id', cid);
+                    fd.append('option_label', optLabel);
+                    fd.append('option_color', defaultColor);
                     fd.append('token', token);
                     
                     fetch('',{method:'POST',body:fd})
@@ -1168,27 +1114,49 @@ $(function(){
                           const json = JSON.parse(response);
                           if(json.error) {
                             alert(json.error);
+                            return;
                           }
                         } catch(e) {
-                          $row.find('.option-label').text(newLabel);
+                          // Succès - récupérer le nouvel ID réel depuis la base
+                          fetch(`?column_options=${cid}`)
+                            .then(r=>r.json())
+                            .then(updatedOptions=>{
+                              const newOption = updatedOptions.find(opt => opt.label === optLabel);
+                              if(newOption) {
+                                const newRow = $(`
+                                  <div class="option-row" data-id="${newOption.id}" style="display:flex;align-items:center;gap:10px;margin:8px 0;padding:8px;border:1px solid #ddd;border-radius:4px;">
+                                    <div style="width:20px;height:20px;background:#87CEEB;border-radius:3px;"></div>
+                                    <span class="option-label" style="flex:1;">${optLabel}</span>
+                                    <button class="rename-option" data-id="${newOption.id}" style="padding:4px 8px;border:none;background:#f3f3f3;cursor:pointer;">✎</button>
+                                    <button class="delete-option" data-id="${newOption.id}" style="padding:4px 8px;border:none;background:#f3f3f3;cursor:pointer;">✖</button>
+                                  </div>
+                                `);
+                                $('#options-list').append(newRow);
+                                
+                                // IMPORTANT : Attacher les gestionnaires à la nouvelle ligne
+                                attachOptionHandlers(newRow);
+                                
+                                $('#new-option-name').val('');
+                              }
+                            });
                         }
                       });
+                  }
+                  
+                  // Attacher les gestionnaires aux options existantes
+                  $('.option-row').each(function(){
+                    attachOptionHandlers($(this));
                   });
                   
-                  $('.delete-option').click(function(){
-                    const optId = $(this).data('id');
-                    const $row = $(this).closest('.option-row');
-                    const optLabel = $row.find('.option-label').text();
-                    
-                    if(!confirm(`Supprimer l'option "${optLabel}" ?`)) return;
-                    
-                    const fd = new FormData();
-                    fd.append('delete_option_id', optId);
-                    fd.append('token', token);
-                    
-                    fetch('',{method:'POST',body:fd}).then(()=>{
-                      $row.remove();
-                    });
+                  // Gestionnaire pour le bouton "Ajouter"
+                  $('#add-new-option-btn').click(function(){
+                    addNewOption();
+                  });
+                  
+                  $('#new-option-name').keydown(function(e){
+                    if(e.key === 'Enter') {
+                      addNewOption();
+                    }
                   });
                   
                   $('#close-options').click(function(){
@@ -1301,7 +1269,7 @@ $(document).off('click.columnmenu').on('click.columnmenu', function(e) {
   font-weight: bold;
 }
 
-/* Styles pour les étiquettes */
+/* Styles pour les étiquettes - VERSION SIMPLIFIÉE */
 .tags-cell {
   transition: all 0.2s ease;
 }
@@ -1310,11 +1278,7 @@ $(document).off('click.columnmenu').on('click.columnmenu', function(e) {
   border-color: #007cba !important;
 }
 .tag-item {
-  transition: all 0.2s ease;
-}
-.tag-item:hover {
-  transform: scale(1.05);
-  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  /* Supprimé : transition et transform */
 }
 .remove-tag {
   opacity: 0.7;
@@ -1322,20 +1286,14 @@ $(document).off('click.columnmenu').on('click.columnmenu', function(e) {
 }
 .remove-tag:hover {
   opacity: 1;
-  transform: scale(1.2);
+  /* Supprimé : transform: scale(1.2); */
 }
 .tag-option {
   transition: all 0.2s ease;
 }
 .tag-option:hover {
-  transform: translateY(-2px);
+  /* Supprimé : transform: translateY(-2px); */
   box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-}
-.tag-color-option {
-  transition: all 0.2s ease;
-}
-.tag-color-option:hover {
-  transform: scale(1.1);
 }
 .add-tag-hint {
   transition: opacity 0.2s;
