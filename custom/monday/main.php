@@ -325,6 +325,115 @@ $(function(){
     }
   };
 
+  // Nouvelles fonctions pour gérer les étiquettes (VERSION SIMPLIFIÉE)
+  window.openTagsSelector = function(cell) {
+    const $cell = $(cell);
+    const taskId = $cell.data('task');
+    const columnId = $cell.data('column');
+    
+    fetch(`?column_options=${columnId}`)
+      .then(r=>r.json())
+      .then(options=>{
+        const selectedTags = [];
+        $cell.find('.tag-item').each(function(){
+          selectedTags.push($(this).data('tag-id'));
+        });
+        
+        const modal = $(`
+          <div id="tags-modal" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1000;display:flex;align-items:center;justify-content:center;">
+            <div style="background:white;padding:20px;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.3);min-width:400px;max-height:80vh;overflow-y:auto;">
+              <h3>Sélectionner des étiquettes</h3>
+              
+              <div id="available-tags" style="margin:15px 0;">
+                ${options.map(opt => {
+                  const isSelected = selectedTags.includes(opt.id);
+                  return `
+                    <div class="tag-option ${isSelected ? 'selected' : ''}" data-tag-id="${opt.id}" style="display:inline-block;margin:5px;padding:6px 12px;background:#87CEEB;color:white;border-radius:15px;cursor:pointer;border:2px solid ${isSelected ? '#000' : 'transparent'};">
+                      ${opt.label}
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+              
+              ${options.length === 0 ? '<p style="text-align:center;color:#666;font-style:italic;">Aucune étiquette disponible. Utilisez "Gérer options" dans le menu de la colonne pour en créer.</p>' : ''}
+              
+              <div style="margin-top:20px;text-align:right;display:flex;gap:10px;justify-content:flex-end;">
+                <button id="save-tags" style="padding:8px 16px;background:#007cba;color:white;border:none;cursor:pointer;border-radius:4px;">Sauvegarder</button>
+                <button id="cancel-tags" style="padding:8px 16px;background:#ccc;border:none;cursor:pointer;border-radius:4px;">Annuler</button>
+              </div>
+            </div>
+          </div>
+        `);
+        
+        $('body').append(modal);
+        
+        $('.tag-option').click(function(){
+          $(this).toggleClass('selected');
+          if($(this).hasClass('selected')) {
+            $(this).css('border', '2px solid #000');
+          } else {
+            $(this).css('border', '2px solid transparent');
+          }
+        });
+        
+        $('#save-tags').click(function(){
+          const selectedTagIds = [];
+          $('.tag-option.selected').each(function(){
+            selectedTagIds.push($(this).data('tag-id'));
+          });
+          
+          // Sauvegarder la sélection
+          const fd = new FormData();
+          fd.append('save_cell_task', taskId);
+          fd.append('save_cell_column', columnId);
+          fd.append('save_cell_value', JSON.stringify(selectedTagIds));
+          fd.append('token', token);
+          
+          fetch('', {method: 'POST', body: fd}).then(()=>{
+            modal.remove();
+            // Recharger les groupes pour mettre à jour l'affichage
+            const wsId = $('.workspace-item[style*="font-weight: bold"], .workspace-item[style*="background"]').data('id') || $('.workspace-item').first().data('id');
+            if(wsId) loadGroups(wsId);
+          });
+        });
+        
+        $('#cancel-tags').click(function(){
+          modal.remove();
+        });
+        
+        modal.click(function(e){
+          if(e.target === modal[0]) {
+            modal.remove();
+          }
+        });
+      });
+  };
+
+  window.removeTag = function(event, tagElement) {
+    event.stopPropagation();
+    const $cell = $(tagElement).closest('.tags-cell');
+    const taskId = $cell.data('task');
+    const columnId = $cell.data('column');
+    
+    // Supprimer le tag visuellement
+    $(tagElement).closest('.tag-item').remove();
+    
+    // Récupérer les tags restants
+    const remainingTags = [];
+    $cell.find('.tag-item').each(function(){
+      remainingTags.push($(this).data('tag-id'));
+    });
+    
+    // Sauvegarder
+    const fd = new FormData();
+    fd.append('save_cell_task', taskId);
+    fd.append('save_cell_column', columnId);
+    fd.append('save_cell_value', JSON.stringify(remainingTags));
+    fd.append('token', token);
+    
+    fetch('', {method: 'POST', body: fd});
+  };
+
   window.updateDeadline = function(input) {
     const $cell = $(input).closest('.deadline-cell');
     const taskId = $cell.data('task');
@@ -472,7 +581,7 @@ $(function(){
                             <div class="column-menu" style="display:none;position:absolute;right:0;top:22px;background:#fff;border:1px solid #ccc;z-index:10;">
                               <button class="rename-column-btn" data-cid="${c.id}" style="display:block;width:100%;border:none;background:transparent;cursor:pointer;padding:4px;">Renommer</button>
                               <button class="delete-column-btn" data-cid="${c.id}" style="display:block;width:100%;border:none;background:transparent;cursor:pointer;padding:4px;">Supprimer</button>
-                              ${c.type === 'select' ? `<button class="manage-options-btn" data-cid="${c.id}" style="display:block;width:100%;border:none;background:transparent;cursor:pointer;padding:4px;">Gérer options</button>` : ''}
+                              ${(c.type === 'select' || c.type === 'tags') ? `<button class="manage-options-btn" data-cid="${c.id}" style="display:block;width:100%;border:none;background:transparent;cursor:pointer;padding:4px;">Gérer options</button>` : ''}
                             </div>
                          </th>`;
                 });
@@ -552,15 +661,47 @@ $(function(){
                               cellPromises.push(promise);
                             } else if(c.type === 'number') {
                               const inputHtml = `<input type="text" class="cell-input cell-number" 
-                            data-task="${t.id}" 
-                            data-column="${c.id}" 
-                            value="${cellValue}" 
-                            style="border:none;background:transparent;width:100%;padding:2px;text-align:right;"
-                            pattern="[0-9€$.,\\s-]*"
-                            onblur="saveCellValue(this)"
-                            onkeydown="if(event.key==='Enter') saveCellValue(this)"
-                            oninput="validateNumberInput(this)">`;
+                                data-task="${t.id}" 
+                                data-column="${c.id}" 
+                                value="${cellValue}" 
+                                style="border:none;background:transparent;width:100%;padding:2px;text-align:right;"
+                                pattern="[0-9€$.,\\s-]*"
+                                onblur="saveCellValue(this)"
+                                onkeydown="if(event.key==='Enter') saveCellValue(this)"
+                                oninput="validateNumberInput(this)">`;
                               cellPromises.push(Promise.resolve(inputHtml));
+                            } else if(c.type === 'tags') {
+                              const promise = fetch(`?column_options=${c.id}`)
+                                .then(r=>r.json())
+                                .then(options=>{
+                                  const selectedTags = cellValue ? JSON.parse(cellValue) : [];
+                                  
+                                  let tagsHtml = `
+                                    <div class="tags-cell" data-task="${t.id}" data-column="${c.id}" style="min-height:30px;padding:3px;border:1px dashed #ddd;cursor:pointer;" onclick="openTagsSelector(this)">
+                                      <div class="selected-tags" style="display:flex;flex-wrap:wrap;gap:3px;margin-bottom:5px;">
+                                  `;
+                                  
+                                  selectedTags.forEach(tagId => {
+                                    const tag = options.find(opt => opt.id == tagId);
+                                    if(tag) {
+                                      tagsHtml += `
+                                        <span class="tag-item" data-tag-id="${tag.id}" style="background:${tag.color};color:white;padding:2px 6px;border-radius:12px;font-size:11px;display:flex;align-items:center;gap:4px;">
+                                          ${tag.label}
+                                          <span class="remove-tag" onclick="removeTag(event, this)" style="cursor:pointer;font-weight:bold;">×</span>
+                                        </span>
+                                      `;
+                                    }
+                                  });
+                                  
+                                  tagsHtml += `
+                                      </div>
+                                      <div class="add-tag-hint" style="color:#999;font-size:10px;font-style:italic;">+ Cliquer pour ajouter des étiquettes</div>
+                                    </div>
+                                  `;
+                                  
+                                  return tagsHtml;
+                                });
+                              cellPromises.push(promise);
                             } else if(c.type === 'deadline') {
                               const dates = cellValue ? cellValue.split('|') : ['', ''];
                               const startDate = dates[0] || '';
@@ -665,7 +806,7 @@ $(function(){
                       <span style="font-size:20px;">🔢</span>
                       <div style="text-align:left;">
                         <div style="font-weight:bold;">Nombre</div>
-                        <div style="font-size:12px;color:#666;">Saisie numérique uniquement</div>
+                        <div style="font-size:12px;color:#666;">Chiffres, €, $ et symboles numériques</div>
                       </div>
                     </button>
                     <button class="type-choice" data-type="select" style="padding:15px;border:2px solid #e0e0e0;background:#f9f9f9;cursor:pointer;border-radius:8px;display:flex;align-items:center;gap:15px;font-size:14px;transition:all 0.2s;">
@@ -673,6 +814,13 @@ $(function(){
                       <div style="text-align:left;">
                         <div style="font-weight:bold;">Liste déroulante</div>
                         <div style="font-size:12px;color:#666;">Options prédéfinies avec couleurs</div>
+                      </div>
+                    </button>
+                    <button class="type-choice" data-type="tags" style="padding:15px;border:2px solid #e0e0e0;background:#f9f9f9;cursor:pointer;border-radius:8px;display:flex;align-items:center;gap:15px;font-size:14px;transition:all 0.2s;">
+                      <span style="font-size:20px;">🏷️</span>
+                      <div style="text-align:left;">
+                        <div style="font-weight:bold;">Étiquettes</div>
+                        <div style="font-size:12px;color:#666;">Tags multiples avec couleurs personnalisées</div>
                       </div>
                     </button>
                     <button class="type-choice" data-type="date" style="padding:15px;border:2px solid #e0e0e0;background:#f9f9f9;cursor:pointer;border-radius:8px;display:flex;align-items:center;gap:15px;font-size:14px;transition:all 0.2s;">
@@ -859,32 +1007,7 @@ $(function(){
                         <h4>Ajouter une nouvelle option</h4>
                         <div style="display:flex;gap:10px;align-items:center;margin:10px 0;">
                           <input type="text" id="new-option-name" placeholder="Nom de l'option" style="flex:1;padding:8px;border:1px solid #ddd;">
-                        </div>
-                        
-                        <h5>Couleurs prédéfinies :</h5>
-                        <div id="color-palette" style="display:grid;grid-template-columns:repeat(8,1fr);gap:5px;margin:10px 0;">
-                          <div class="color-option" data-color="#ff0000" style="width:30px;height:30px;background:#ff0000;border:2px solid #ddd;cursor:pointer;border-radius:4px;" title="Rouge"></div>
-                          <div class="color-option" data-color="#ff8000" style="width:30px;height:30px;background:#ff8000;border:2px solid #ddd;cursor:pointer;border-radius:4px;" title="Orange"></div>
-                          <div class="color-option" data-color="#ffff00" style="width:30px;height:30px;background:#ffff00;border:2px solid #ddd;cursor:pointer;border-radius:4px;" title="Jaune"></div>
-                          <div class="color-option" data-color="#80ff00" style="width:30px;height:30px;background:#80ff00;border:2px solid #ddd;cursor:pointer;border-radius:4px;" title="Vert clair"></div>
-                          <div class="color-option" data-color="#00ff00" style="width:30px;height:30px;background:#00ff00;border:2px solid #ddd;cursor:pointer;border-radius:4px;" title="Vert"></div>
-                          <div class="color-option" data-color="#00ff80" style="width:30px;height:30px;background:#00ff80;border:2px solid #ddd;cursor:pointer;border-radius:4px;" title="Vert menthe"></div>
-                          <div class="color-option" data-color="#00ffff" style="width:30px;height:30px;background:#00ffff;border:2px solid #ddd;cursor:pointer;border-radius:4px;" title="Cyan"></div>
-                          <div class="color-option" data-color="#0080ff" style="width:30px;height:30px;background:#0080ff;border:2px solid #ddd;cursor:pointer;border-radius:4px;" title="Bleu clair"></div>
-                          <div class="color-option" data-color="#0000ff" style="width:30px;height:30px;background:#0000ff;border:2px solid #ddd;cursor:pointer;border-radius:4px;" title="Bleu"></div>
-                          <div class="color-option" data-color="#8000ff" style="width:30px;height:30px;background:#8000ff;border:2px solid #ddd;cursor:pointer;border-radius:4px;" title="Violet"></div>
-                          <div class="color-option" data-color="#ff00ff" style="width:30px;height:30px;background:#ff00ff;border:2px solid #ddd;cursor:pointer;border-radius:4px;" title="Magenta"></div>
-                          <div class="color-option" data-color="#ff0080" style="width:30px;height:30px;background:#ff0080;border:2px solid #ddd;cursor:pointer;border-radius:4px;" title="Rose"></div>
-                          <div class="color-option" data-color="#333333" style="width:30px;height:30px;background:#333333;border:2px solid #ddd;cursor:pointer;border-radius:4px;" title="Gris foncé"></div>
-                          <div class="color-option" data-color="#666666" style="width:30px;height:30px;background:#666666;border:2px solid #ddd;cursor:pointer;border-radius:4px;" title="Gris moyen"></div>
-                          <div class="color-option" data-color="#999999" style="width:30px;height:30px;background:#999999;border:2px solid #ddd;cursor:pointer;border-radius:4px;" title="Gris clair"></div>
-                          <div class="color-option" data-color="#cccccc" style="width:30px;height:30px;background:#cccccc;border:2px solid #ddd;cursor:pointer;border-radius:4px;" title="Gris très clair"></div>
-                        </div>
-                        
-                        <h5>Ou couleur personnalisée :</h5>
-                        <div style="display:flex;gap:10px;align-items:center;margin:10px 0;">
-                          <input type="color" id="custom-color" value="#cccccc" style="width:50px;height:35px;border:none;cursor:pointer;">
-                          <button id="use-custom" style="padding:8px 12px;background:#007cba;color:white;border:none;cursor:pointer;">Utiliser cette couleur</button>
+                          <button onclick="addNewOption()" style="padding:8px 12px;background:#007cba;color:white;border:none;cursor:pointer;border-radius:4px;">Ajouter</button>
                         </div>
                         
                         <div style="margin-top:20px;text-align:right;">
@@ -896,8 +1019,6 @@ $(function(){
                   
                   $('body').append(modal);
                   
-                  let selectedColor = '#cccccc';
-
                   function addNewOption() {
                     const optLabel = $('#new-option-name').val().trim();
                     
@@ -906,10 +1027,13 @@ $(function(){
                       return;
                     }
                     
+                    // Couleur bleu ciel par défaut
+                    const defaultColor = '#87CEEB';
+                    
                     const fd = new FormData();
                     fd.append('add_option_column_id', cid);
                     fd.append('option_label', optLabel);
-                    fd.append('option_color', selectedColor);
+                    fd.append('option_color', defaultColor);
                     fd.append('token', token);
                     
                     fetch('',{method:'POST',body:fd})
@@ -922,6 +1046,7 @@ $(function(){
                             return;
                           }
                         } catch(e) {
+                          // Succès - recharger la liste
                           fetch(`?column_options=${cid}`)
                             .then(r=>r.json())
                             .then(opts=>{
@@ -929,7 +1054,7 @@ $(function(){
                               if(newOpt) {
                                 const newRow = $(`
                                   <div class="option-row" data-id="${newOpt.id}" style="display:flex;align-items:center;gap:10px;margin:8px 0;padding:8px;border:1px solid #ddd;border-radius:4px;">
-                                    <div style="width:20px;height:20px;background:${selectedColor};border-radius:3px;"></div>
+                                    <div style="width:20px;height:20px;background:#87CEEB;border-radius:3px;"></div>
                                     <span class="option-label" style="flex:1;">${optLabel}</span>
                                     <button class="rename-option" data-id="${newOpt.id}" style="padding:4px 8px;border:none;background:#f3f3f3;cursor:pointer;">✎</button>
                                     <button class="delete-option" data-id="${newOpt.id}" style="padding:4px 8px;border:none;background:#f3f3f3;cursor:pointer;">✖</button>
@@ -941,9 +1066,6 @@ $(function(){
                               }
                               
                               $('#new-option-name').val('');
-                              $('#custom-color').val('#cccccc');
-                              $('.color-option').css('border', '2px solid #ddd');
-                              selectedColor = '#cccccc';
                             });
                         }
                       });
@@ -963,7 +1085,6 @@ $(function(){
 
                   $('#new-option-name').keydown(function(e){
                     if(e.key === 'Enter') {
-                      selectedColor = '#cccccc';
                       addNewOption();
                     }
                   });
@@ -1116,19 +1237,20 @@ $(document).off('click.columnmenu').on('click.columnmenu', function(e) {
 .cell-number {
   cursor: pointer;
   font-family: 'Courier New', monospace;
+  font-weight: 500;
 }
 .cell-number:focus {
   background: #f8f9fa !important;
   border: 1px solid #007cba !important;
   border-radius: 3px;
+  box-shadow: 0 0 0 2px rgba(0, 124, 186, 0.1);
 }
-.cell-number::-webkit-outer-spin-button,
-.cell-number::-webkit-inner-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
+.cell-number:invalid {
+  border: 1px solid #dc3545 !important;
+  background: #fff5f5 !important;
 }
-.cell-number[type=number] {
-  -moz-appearance: textfield;
+.cell-number:focus:valid {
+  color: #28a745;
 }
 
 .type-choice {
@@ -1163,6 +1285,49 @@ $(document).off('click.columnmenu').on('click.columnmenu', function(e) {
   padding: 2px 6px;
   border-radius: 4px;
   font-weight: bold;
+}
+
+/* Styles pour les étiquettes */
+.tags-cell {
+  transition: all 0.2s ease;
+}
+.tags-cell:hover {
+  background: #f8f9fa !important;
+  border-color: #007cba !important;
+}
+.tag-item {
+  transition: all 0.2s ease;
+}
+.tag-item:hover {
+  transform: scale(1.05);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+.remove-tag {
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+.remove-tag:hover {
+  opacity: 1;
+  transform: scale(1.2);
+}
+.tag-option {
+  transition: all 0.2s ease;
+}
+.tag-option:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+}
+.tag-color-option {
+  transition: all 0.2s ease;
+}
+.tag-color-option:hover {
+  transform: scale(1.1);
+}
+.add-tag-hint {
+  transition: opacity 0.2s;
+}
+.tags-cell:hover .add-tag-hint {
+  opacity: 0.7;
 }
 
 @media (max-width: 768px) {
