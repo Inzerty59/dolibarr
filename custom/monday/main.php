@@ -266,6 +266,103 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['save_cell_task'], $_POS
     exit;
 }
 
+// Récupérer les commentaires d'une tâche
+if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['task_comments'])) {
+    $tid = (int)$_GET['task_comments'];
+    $res = $db->query("
+        SELECT c.rowid, c.comment, c.datec, c.fk_user, u.firstname, u.lastname 
+        FROM llx_myworkspace_comment c
+        LEFT JOIN llx_user u ON u.rowid = c.fk_user
+        WHERE c.fk_task = $tid 
+        ORDER BY c.datec DESC
+    ");
+    $out = [];
+    while ($o = $db->fetch_object($res)) {
+        $out[] = [
+            'id' => $o->rowid,
+            'comment' => $o->comment,
+            'date' => $o->datec,
+            'user_id' => $o->fk_user,
+            'user_name' => trim($o->firstname . ' ' . $o->lastname) ?: 'Utilisateur'
+        ];
+    }
+    header('Content-Type: application/json');
+    echo json_encode($out);
+    exit;
+}
+
+// Ajouter un commentaire
+if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['add_comment_task'], $_POST['comment_text'])) {
+    if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
+    $tid = (int)$_POST['add_comment_task'];
+    $comment = $db->escape($_POST['comment_text']);
+    $uid = $user->id;
+    $date = date('Y-m-d H:i:s');
+    
+    $db->query("INSERT INTO llx_myworkspace_comment (fk_task, fk_user, comment, datec) VALUES ($tid, $uid, '$comment', '$date')");
+    
+    // Retourner le commentaire créé
+    $new_id = $db->last_insert_id();
+    $res = $db->query("
+        SELECT c.rowid, c.comment, c.datec, c.fk_user, u.firstname, u.lastname 
+        FROM llx_myworkspace_comment c
+        LEFT JOIN llx_user u ON u.rowid = c.fk_user
+        WHERE c.rowid = $new_id
+    ");
+    $comment_data = $db->fetch_object($res);
+    
+    header('Content-Type: application/json');
+    echo json_encode([
+        'id' => $comment_data->rowid,
+        'comment' => $comment_data->comment,
+        'date' => $comment_data->datec,
+        'user_id' => $comment_data->fk_user,
+        'user_name' => trim($comment_data->firstname . ' ' . $comment_data->lastname) ?: 'Utilisateur'
+    ]);
+    exit;
+}
+
+// Modifier un commentaire
+if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['edit_comment_id'], $_POST['edit_comment_text'])) {
+    if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
+    $cid = (int)$_POST['edit_comment_id'];
+    $comment = $db->escape($_POST['edit_comment_text']);
+    $uid = $user->id;
+    
+    // Vérifier que l'utilisateur est propriétaire du commentaire
+    $res = $db->query("SELECT fk_user FROM llx_myworkspace_comment WHERE rowid = $cid");
+    $owner = $db->fetch_object($res);
+    
+    if ($owner && $owner->fk_user == $uid) {
+        $db->query("UPDATE llx_myworkspace_comment SET comment = '$comment' WHERE rowid = $cid");
+        echo 'OK';
+    } else {
+        http_response_code(403);
+        echo 'Accès refusé';
+    }
+    exit;
+}
+
+// Supprimer un commentaire
+if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['delete_comment_id'])) {
+    if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
+    $cid = (int)$_POST['delete_comment_id'];
+    $uid = $user->id;
+    
+    // Vérifier que l'utilisateur est propriétaire du commentaire
+    $res = $db->query("SELECT fk_user FROM llx_myworkspace_comment WHERE rowid = $cid");
+    $owner = $db->fetch_object($res);
+    
+    if ($owner && $owner->fk_user == $uid) {
+        $db->query("DELETE FROM llx_myworkspace_comment WHERE rowid = $cid");
+        echo 'OK';
+    } else {
+        http_response_code(403);
+        echo 'Accès refusé';
+    }
+    exit;
+}
+
 $res = $db->query("SELECT rowid,label FROM llx_myworkspace ORDER BY position ASC");
 $workspaces = [];
 while ($o=$db->fetch_object($res)) $workspaces[] = $o;
@@ -294,6 +391,48 @@ ob_start();
 
 <div class="workspace-container">
   <div class="main-content" id="main-content"></div>
+  
+  <!-- NOUVEAU : Panneau latéral de détail des tâches -->
+  <div id="task-detail-panel" class="task-detail-panel">
+    <div class="panel-header">
+      <h3 id="task-detail-title">Détail de la tâche</h3>
+      <button id="close-panel" class="close-panel-btn">×</button>
+    </div>
+    
+    <div class="panel-content">
+      <div class="task-info-section">
+        <h4>Informations</h4>
+        <div class="task-meta">
+          <div class="task-meta-item">
+            <strong>Tâche :</strong>
+            <span id="task-name-display"></span>
+            <button id="edit-task-name" class="edit-btn">✎</button>
+          </div>
+          <div class="task-meta-item">
+            <strong>Groupe :</strong>
+            <span id="task-group-display"></span>
+          </div>
+          <div class="task-meta-item">
+            <strong>Créée :</strong>
+            <span id="task-created-display"></span>
+          </div>
+        </div>
+      </div>
+      
+      <div class="comments-section">
+        <h4>Commentaires</h4>
+        
+        <div class="add-comment-form">
+          <textarea id="new-comment-text" placeholder="Ajouter un commentaire..." rows="3"></textarea>
+          <button id="add-comment-btn">Publier</button>
+        </div>
+        
+        <div id="comments-list" class="comments-list">
+          <!-- Les commentaires seront ajoutés ici dynamiquement -->
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script src="https://code.jquery.com/ui/1.13.2/jquery-ui.min.js"></script>
@@ -802,7 +941,17 @@ $(function(){
                               tds += `<td style="border:1px solid #ddd;padding:4px;">${cellHtml}</td>`;
                             });
                             tds += `<td style="border:1px solid #ddd;padding:4px;"></td>`;
-                            $grp.find('tbody').append(`<tr data-id="${t.id}">${tds}</tr>`);
+                            const $taskRow = $(`<tr data-id="${t.id}" style="cursor:pointer;">${tds}</tr>`);
+                            $grp.find('tbody').append($taskRow);
+                            
+                            $taskRow.find('td:nth-child(3)').click(function(e) {
+                              // Éviter le clic si on clique sur un bouton
+                              if ($(e.target).is('button')) return;
+                              
+                              const taskName = $(this).text();
+                              const groupName = $grp.find('.group-label').text();
+                              openTaskDetail(t.id, taskName, groupName);
+                            });
                             
                             $grp.find('select.cell-select').each(function(){
                               applySelectColor($(this));
@@ -1032,7 +1181,7 @@ $(function(){
                           <div style="background:white;padding:20px;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.3);min-width:400px;max-height:80vh;overflow-y:auto;">
                             <h3>Gérer les options</h3>
                             
-                            <div id="options-list" style="margin:15px 0;">
+                            <div id="options-list" class="options-list" style="margin:15px 0;">
                               ${options.map(opt => `
                                 <div class="option-row" data-id="${opt.id}" style="display:flex;align-items:center;gap:10px;margin:8px 0;padding:8px;border:1px solid #ddd;border-radius:4px;">
                                   <div style="width:20px;height:20px;background:${opt.color};border-radius:3px;"></div>
@@ -1283,11 +1432,234 @@ $(function(){
   });
 });
 
-$(document).off('click.columnmenu').on('click.columnmenu', function(e) {
-  if (!$(e.target).closest('.column-menu-btn, .column-menu, .group-toggle').length) {
-    $('.column-menu').hide();
+// Variables globales pour le panneau
+let currentTaskId = null;
+
+// Fonction pour ouvrir le panneau de détail d'une tâche
+window.openTaskDetail = function(taskId, taskName, groupName) {
+  currentTaskId = taskId;
+  
+  // Mettre à jour les informations de la tâche
+  $('#task-detail-title').text('Détail de la tâche');
+  $('#task-name-display').text(taskName);
+  $('#task-group-display').text(groupName);
+  $('#task-created-display').text('Récemment'); // Vous pouvez améliorer ça avec la vraie date
+  
+  // Ouvrir le panneau
+  $('#task-detail-panel').addClass('open');
+  
+  // Charger les commentaires
+  loadComments(taskId);
+};
+
+// Fonction pour fermer le panneau
+window.closeTaskDetail = function() {
+  $('#task-detail-panel').removeClass('open');
+  currentTaskId = null;
+};
+
+// Fonction pour charger les commentaires
+function loadComments(taskId) {
+  fetch(`?task_comments=${taskId}`)
+    .then(r => r.json())
+    .then(comments => {
+      const $commentsList = $('#comments-list');
+      $commentsList.empty();
+      
+      if (comments.length === 0) {
+        $commentsList.append(`
+          <div class="no-comments" style="text-align:center;color:#666;font-style:italic;padding:20px;">
+            Aucun commentaire pour cette tâche
+          </div>
+        `);
+        return;
+      }
+      
+      comments.forEach(comment => {
+        const commentDate = new Date(comment.date);
+        const formattedDate = commentDate.toLocaleDateString('fr-FR', {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+        
+        const $comment = $(`
+          <div class="comment-item" data-comment-id="${comment.id}">
+            <div class="comment-header">
+              <span class="comment-author">${comment.user_name}</span>
+              <span class="comment-date">${formattedDate}</span>
+            </div>
+            <div class="comment-text">${comment.comment}</div>
+            <div class="comment-actions">
+              <button class="comment-action-btn edit-comment-btn" data-comment-id="${comment.id}">Modifier</button>
+              <button class="comment-action-btn delete-comment-btn" data-comment-id="${comment.id}">Supprimer</button>
+            </div>
+          </div>
+        `);
+        
+        $commentsList.append($comment);
+      });
+    })
+    .catch(err => {
+      console.error('Erreur lors du chargement des commentaires:', err);
+    });
+}
+
+// Fonction pour ajouter un commentaire
+function addComment() {
+  const commentText = $('#new-comment-text').val().trim();
+  
+  if (!commentText) {
+    alert('Veuillez saisir un commentaire');
+    return;
+  }
+  
+  if (!currentTaskId) {
+    alert('Erreur: aucune tâche sélectionnée');
+    return;
+  }
+  
+  const fd = new FormData();
+  fd.append('add_comment_task', currentTaskId);
+  fd.append('comment_text', commentText);
+  fd.append('token', token);
+  
+  fetch('', {method: 'POST', body: fd})
+    .then(r => r.json())
+    .then(comment => {
+      $('#new-comment-text').val('');
+      loadComments(currentTaskId); // Recharger tous les commentaires
+    })
+    .catch(err => {
+      console.error('Erreur lors de l\'ajout du commentaire:', err);
+      alert('Erreur lors de l\'ajout du commentaire');
+    });
+}
+
+// Gestionnaires d'événements pour le panneau
+$('#close-panel').click(closeTaskDetail);
+
+$('#add-comment-btn').click(addComment);
+
+$('#new-comment-text').keydown(function(e) {
+  if (e.ctrlKey && e.key === 'Enter') {
+    addComment();
   }
 });
+
+// Gestionnaire pour modifier le nom de la tâche
+$('#edit-task-name').click(function() {
+  const currentName = $('#task-name-display').text();
+  const newName = prompt('Nouveau nom de la tâche:', currentName);
+  
+  if (!newName || newName === currentName) return;
+  
+  const fd = new FormData();
+  fd.append('rename_task_id', currentTaskId);
+  fd.append('rename_task_label', newName);
+  fd.append('token', token);
+  
+  fetch('', {method: 'POST', body: fd})
+    .then(() => {
+      $('#task-name-display').text(newName);
+      // Recharger la vue principale pour refléter le changement
+      const wsId = $('.workspace-item[style*="font-weight: bold"], .workspace-item[style*="background"]').data('id') || $('.workspace-item').first().data('id');
+      if (wsId) loadGroups(wsId);
+    })
+    .catch(err => {
+      console.error('Erreur lors de la modification du nom:', err);
+      alert('Erreur lors de la modification du nom');
+    });
+});
+
+// Gestionnaires pour les actions sur les commentaires (délégués)
+$(document).on('click', '.edit-comment-btn', function() {
+  const commentId = $(this).data('comment-id');
+  const $commentItem = $(this).closest('.comment-item');
+  const $commentText = $commentItem.find('.comment-text');
+  const currentText = $commentText.text();
+  
+  // Créer le formulaire d'édition
+  const $editForm = $(`
+    <div class="edit-comment-form">
+      <textarea class="edit-comment-textarea">${currentText}</textarea>
+      <div class="edit-comment-actions">
+        <button class="save-edit-btn" data-comment-id="${commentId}">Sauver</button>
+        <button class="cancel-edit-btn">Annuler</button>
+      </div>
+    </div>
+  `);
+  
+  $commentText.hide();
+  $commentItem.find('.comment-actions').hide();
+  $commentItem.append($editForm);
+});
+
+$(document).on('click', '.save-edit-btn', function() {
+  const commentId = $(this).data('comment-id');
+  const $commentItem = $(this).closest('.comment-item');
+  const newText = $commentItem.find('.edit-comment-textarea').val().trim();
+  
+  if (!newText) {
+    alert('Le commentaire ne peut pas être vide');
+    return;
+  }
+  
+  const fd = new FormData();
+  fd.append('edit_comment_id', commentId);
+  fd.append('edit_comment_text', newText);
+  fd.append('token', token);
+  
+  fetch('', {method: 'POST', body: fd})
+    .then(r => r.text())
+    .then(response => {
+      if (response === 'OK') {
+        loadComments(currentTaskId); // Recharger les commentaires
+      } else {
+        alert('Erreur lors de la modification');
+      }
+    })
+    .catch(err => {
+      console.error('Erreur lors de la modification:', err);
+      alert('Erreur lors de la modification');
+    });
+});
+
+$(document).on('click', '.cancel-edit-btn', function() {
+  const $commentItem = $(this).closest('.comment-item');
+  $commentItem.find('.edit-comment-form').remove();
+  $commentItem.find('.comment-text, .comment-actions').show();
+});
+
+$(document).on('click', '.delete-comment-btn', function() {
+  const commentId = $(this).data('comment-id');
+  
+  if (!confirm('Êtes-vous sûr de vouloir supprimer ce commentaire ?')) {
+    return;
+  }
+  
+  const fd = new FormData();
+  fd.append('delete_comment_id', commentId);
+  fd.append('token', token);
+  
+  fetch('', {method: 'POST', body: fd})
+    .then(r => r.text())
+    .then(response => {
+      if (response === 'OK') {
+        loadComments(currentTaskId); // Recharger les commentaires
+      } else {
+        alert('Erreur lors de la suppression');
+      }
+    })
+    .catch(err => {
+      console.error('Erreur lors de la suppression:', err);
+      alert('Erreur lors de la suppression');
+    });
+});
+
+// ...existing code...
 </script>
 
 <style>
@@ -1394,34 +1766,293 @@ $(document).off('click.columnmenu').on('click.columnmenu', function(e) {
   opacity: 0.7;
 }
 
-@media (max-width: 768px) {
-  .deadline-cell input[type="date"] {
-    font-size: 9px !important;
-    width: 45% !important;
-  }
-  .days-remaining {
-    font-size: 9px !important;
-  }
+/* Panneau latéral de détail des tâches */
+.workspace-container {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
 }
 
-.deadline-start, .deadline-end {
-  border-radius: 3px !important;
-  transition: border-color 0.2s;
+.main-content {
+  flex: 1;
+  overflow-y: auto;
+  transition: width 0.3s ease;
 }
-.deadline-start:focus, .deadline-end:focus {
-  border-color: #007cba !important;
+
+.task-detail-panel {
+  width: 0;
+  min-width: 0;
+  background: #fff;
+  border-left: 1px solid #ddd;
+  overflow: hidden;
+  transition: width 0.3s ease;
+  display: flex;
+  flex-direction: column;
+}
+
+.task-detail-panel.open {
+  width: 400px;
+  min-width: 400px;
+}
+
+.panel-header {
+  padding: 20px;
+  border-bottom: 1px solid #eee;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #f8f9fa;
+}
+
+.panel-header h3 {
+  margin: 0;
+  font-size: 18px;
+  color: #333;
+}
+
+.close-panel-btn {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: #666;
+  padding: 0;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: background 0.2s;
+}
+
+.close-panel-btn:hover {
+  background: #e9ecef;
+}
+
+.panel-content {
+  flex: 1;
+  padding: 20px;
+  overflow-y: auto;
+}
+
+.task-info-section {
+  margin-bottom: 30px;
+}
+
+.task-info-section h4 {
+  margin: 0 0 15px 0;
+  color: #333;
+  font-size: 16px;
+  border-bottom: 2px solid #007cba;
+  padding-bottom: 5px;
+}
+
+.task-meta {
+  background: #f8f9fa;
+  padding: 15px;
+  border-radius: 6px;
+}
+
+.task-meta-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding: 8px 0;
+}
+
+.task-meta-item:last-child {
+  margin-bottom: 0;
+}
+
+.task-meta-item strong {
+  min-width: 80px;
+  color: #555;
+  font-size: 14px;
+}
+
+.edit-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #007cba;
+  font-size: 14px;
+  padding: 2px 4px;
+  border-radius: 3px;
+  transition: background 0.2s;
+}
+
+.edit-btn:hover {
+  background: #e9ecef;
+}
+
+.comments-section h4 {
+  margin: 0 0 20px 0;
+  color: #333;
+  font-size: 16px;
+  border-bottom: 2px solid #007cba;
+  padding-bottom: 5px;
+}
+
+.add-comment-form {
+  margin-bottom: 25px;
+  padding: 15px;
+  background: #f8f9fa;
+  border-radius: 6px;
+}
+
+.add-comment-form textarea {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 14px;
+  resize: vertical;
+  min-height: 80px;
+}
+
+.add-comment-form textarea:focus {
   outline: none;
-  box-shadow: 0 0 0 2px rgba(0, 124, 186, 0.25);
+  border-color: #007cba;
+  box-shadow: 0 0 0 2px rgba(0, 124, 186, 0.1);
 }
 
-.deadline-cell .days-remaining:empty::before {
-  content: "Définir les dates";
-  color: #6c757d;
-  font-style: italic;
-  font-size: 10px;
+#add-comment-btn {
+  margin-top: 10px;
+  padding: 8px 16px;
+  background: #007cba;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background 0.2s;
 }
 
-#blockvmenusearch{display:none!important;}
+#add-comment-btn:hover {
+  background: #0056a3;
+}
+
+.comments-list {
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.comment-item {
+  background: white;
+  border: 1px solid #e9ecef;
+  border-radius: 6px;
+  padding: 15px;
+  margin-bottom: 15px;
+  transition: box-shadow 0.2s;
+}
+
+.comment-item:hover {
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.comment-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.comment-author {
+  font-weight: bold;
+  color: #007cba;
+  font-size: 14px;
+}
+
+.comment-date {
+  font-size: 12px;
+  color: #666;
+}
+
+.comment-text {
+  color: #333;
+  line-height: 1.4;
+  margin-bottom: 10px;
+  font-size: 14px;
+  white-space: pre-wrap;
+}
+
+.comment-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.comment-action-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #666;
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 3px;
+  transition: all 0.2s;
+}
+
+.comment-action-btn:hover {
+  background: #f8f9fa;
+  color: #007cba;
+}
+
+.edit-comment-form {
+  margin-top: 10px;
+}
+
+.edit-comment-form textarea {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 14px;
+  min-height: 60px;
+}
+
+.edit-comment-actions {
+  margin-top: 8px;
+  display: flex;
+  gap: 8px;
+}
+
+.save-edit-btn, .cancel-edit-btn {
+  padding: 4px 12px;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.save-edit-btn {
+  background: #28a745;
+  color: white;
+}
+
+.cancel-edit-btn {
+  background: #6c757d;
+  color: white;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .task-detail-panel.open {
+    width: 100%;
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    z-index: 1000;
+  }
+  
+  .main-content {
+    width: 100%;
+  }
+}
 </style>
 
 <?php
