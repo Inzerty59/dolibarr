@@ -320,19 +320,15 @@ $(function(){
     fetch('', {method: 'POST', body: fd});
   };
 
-  // Nouvelle fonction de validation pour les champs numériques
   window.validateNumberInput = function(input) {
     const value = input.value;
-    // Autoriser: chiffres (0-9), point (.), virgule (,), espace, tiret (-), euro (€), dollar ($)
     const allowedPattern = /^[0-9€$.,\s-]*$/;
     
     if (!allowedPattern.test(value)) {
-      // Supprimer les caractères non autorisés
       input.value = value.replace(/[^0-9€$.,\s-]/g, '');
     }
   };
 
-  // Nouvelles fonctions pour gérer les étiquettes (VERSION SIMPLIFIÉE)
   window.openTagsSelector = function(cell) {
     const $cell = $(cell);
     const taskId = $cell.data('task');
@@ -341,7 +337,6 @@ $(function(){
     fetch(`?column_options=${columnId}`)
       .then(r=>r.json())
       .then(options=>{
-        // CORRECTION : Récupérer TOUS les tags déjà sélectionnés correctement
         const selectedTags = [];
         $cell.find('.tag-item').each(function(){
           const tagId = parseInt($(this).data('tag-id'));
@@ -350,7 +345,7 @@ $(function(){
           }
         });
         
-        console.log('Tags actuellement sélectionnés:', selectedTags); // Pour debug
+        console.log('Tags actuellement sélectionnés:', selectedTags);
         
         const modal = $(`
           <div id="tags-modal" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1000;display:flex;align-items:center;justify-content:center;">
@@ -359,7 +354,6 @@ $(function(){
               
               <div id="available-tags" style="margin:15px 0;">
                 ${options.map(opt => {
-                  // CORRECTION : Comparer les IDs comme entiers
                   const isSelected = selectedTags.includes(parseInt(opt.id));
                   console.log(`Option ${opt.label} (ID: ${opt.id}) - Sélectionnée: ${isSelected}`); // Debug
                   return `
@@ -397,9 +391,8 @@ $(function(){
             selectedTagIds.push(parseInt($(this).data('tag-id')));
           });
           
-          console.log('Tags à sauvegarder:', selectedTagIds); // Debug
+          console.log('Tags à sauvegarder:', selectedTagIds);
           
-          // Sauvegarder la sélection
           const fd = new FormData();
           fd.append('save_cell_task', taskId);
           fd.append('save_cell_column', columnId);
@@ -407,14 +400,11 @@ $(function(){
           fd.append('token', token);
           
           fetch('', {method: 'POST', body: fd}).then(()=>{
-            // Fermer le modal
             modal.remove();
             
-            // Récupérer les nouvelles options pour avoir les bonnes données
             fetch(`?column_options=${columnId}`)
               .then(r=>r.json())
               .then(allOptions=>{
-                // Reconstruire le contenu de la cellule avec les vraies données
                 let tagsHtml = `
                   <div class="selected-tags" style="display:flex;flex-wrap:wrap;gap:3px;margin-bottom:5px;">
                 `;
@@ -436,7 +426,6 @@ $(function(){
                   <div class="add-tag-hint" style="color:#999;font-size:10px;font-style:italic;">+ Cliquer pour ajouter des étiquettes</div>
                 `;
                 
-                // Mettre à jour la cellule
                 $cell.html(tagsHtml);
               });
           });
@@ -460,16 +449,13 @@ $(function(){
     const taskId = $cell.data('task');
     const columnId = $cell.data('column');
     
-    // Supprimer le tag visuellement
     $(tagElement).closest('.tag-item').remove();
     
-    // Récupérer les tags restants
     const remainingTags = [];
     $cell.find('.tag-item').each(function(){
       remainingTags.push($(this).data('tag-id'));
     });
     
-    // Sauvegarder
     const fd = new FormData();
     fd.append('save_cell_task', taskId);
     fd.append('save_cell_column', columnId);
@@ -477,7 +463,6 @@ $(function(){
     fd.append('token', token);
     
     fetch('', {method: 'POST', body: fd}).then(()=>{
-      // Pas besoin de recharger - la suppression visuelle a déjà été faite
       console.log('Tag supprimé et sauvegardé');
     });
   };
@@ -854,7 +839,8 @@ $(function(){
                       <span style="font-size:20px;">🔢</span>
                       <div style="text-align:left;">
                         <div style="font-weight:bold;">Nombre</div>
-                        <div style="font-size:12px;color:#666;">Chiffres, €, $ et symboles numériques</div>
+                        <div style="font-size:12px;color:#666;">Saisie numérique uniquement
+</div>
                       </div>
                     </button>
                     <button class="type-choice" data-type="select" style="padding:15px;border:2px solid #e0e0e0;background:#f9f9f9;cursor:pointer;border-radius:8px;display:flex;align-items:center;gap:15px;font-size:14px;transition:all 0.2s;">
@@ -868,7 +854,7 @@ $(function(){
                       <span style="font-size:20px;">🏷️</span>
                       <div style="text-align:left;">
                         <div style="font-weight:bold;">Étiquettes</div>
-                        <div style="font-size:12px;color:#666;">Tags multiples avec couleurs personnalisées</div>
+                        <div style="font-size:12px;color:#666;">Tags multiples</div>
                       </div>
                     </button>
                     <button class="type-choice" data-type="date" style="padding:15px;border:2px solid #e0e0e0;background:#f9f9f9;cursor:pointer;border-radius:8px;display:flex;align-items:center;gap:15px;font-size:14px;transition:all 0.2s;">
@@ -1032,7 +1018,6 @@ $(function(){
               e.stopPropagation();
               const cid = $(this).data('cid');
               
-              // Récupérer d'abord les infos de la colonne pour connaître le type
               fetch(`?columns_group_id=${$(this).closest('.group').data('id')}`)
                 .then(r=>r.json())
                 .then(columns=>{
@@ -1092,7 +1077,6 @@ $(function(){
                       
                       $('body').append(modal);
                       
-                      // Gestionnaires pour les couleurs prédéfinies (uniquement pour select)
                       if(isSelectType) {
                         $('.preset-color').click(function(){
                           const color = $(this).data('color');
@@ -1145,7 +1129,6 @@ $(function(){
                           });
                         });
                         
-                        // Gestionnaire pour changer la couleur (uniquement pour select)
                         if(isSelectType) {
                           $row.find('.change-color-option').click(function(){
                             const optId = $(this).data('id');
@@ -1241,16 +1224,13 @@ $(function(){
                                     $('#new-option-name').val('');
                                     if(isSelectType) $('#new-option-color').val('#007cba');
                                     
-                                    // NOUVEAU : Mettre à jour tous les select de cette colonne
                                     if(isSelectType) {
                                       $(`select[data-column="${cid}"]`).each(function(){
                                         const currentValue = $(this).val();
                                         const $select = $(this);
                                         
-                                        // Ajouter la nouvelle option
                                         $select.append(`<option value="${newOption.id}" style="background:${newOption.color};">${optLabel}</option>`);
                                         
-                                        // Restaurer la valeur sélectionnée
                                         $select.val(currentValue);
                                         applySelectColor($select);
                                       });
@@ -1386,7 +1366,6 @@ $(document).off('click.columnmenu').on('click.columnmenu', function(e) {
   font-weight: bold;
 }
 
-/* Styles pour les étiquettes - VERSION SIMPLIFIÉE */
 .tags-cell {
   transition: all 0.2s ease;
 }
@@ -1394,22 +1373,18 @@ $(document).off('click.columnmenu').on('click.columnmenu', function(e) {
   background: #f8f9fa !important;
   border-color: #007cba !important;
 }
-.tag-item {
-  /* Supprimé : transition et transform */
-}
+
 .remove-tag {
   opacity: 0.7;
   transition: opacity 0.2s;
 }
 .remove-tag:hover {
   opacity: 1;
-  /* Supprimé : transform: scale(1.2); */
 }
 .tag-option {
   transition: all 0.2s ease;
 }
 .tag-option:hover {
-  /* Supprimé : transform: translateY(-2px); */
   box-shadow: 0 4px 8px rgba(0,0,0,0.2);
 }
 .add-tag-hint {
