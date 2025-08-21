@@ -341,10 +341,16 @@ $(function(){
     fetch(`?column_options=${columnId}`)
       .then(r=>r.json())
       .then(options=>{
+        // CORRECTION : Récupérer TOUS les tags déjà sélectionnés correctement
         const selectedTags = [];
         $cell.find('.tag-item').each(function(){
-          selectedTags.push($(this).data('tag-id'));
+          const tagId = parseInt($(this).data('tag-id'));
+          if(tagId && !selectedTags.includes(tagId)) {
+            selectedTags.push(tagId);
+          }
         });
+        
+        console.log('Tags actuellement sélectionnés:', selectedTags); // Pour debug
         
         const modal = $(`
           <div id="tags-modal" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1000;display:flex;align-items:center;justify-content:center;">
@@ -353,7 +359,9 @@ $(function(){
               
               <div id="available-tags" style="margin:15px 0;">
                 ${options.map(opt => {
-                  const isSelected = selectedTags.includes(opt.id);
+                  // CORRECTION : Comparer les IDs comme entiers
+                  const isSelected = selectedTags.includes(parseInt(opt.id));
+                  console.log(`Option ${opt.label} (ID: ${opt.id}) - Sélectionnée: ${isSelected}`); // Debug
                   return `
                     <div class="tag-option ${isSelected ? 'selected' : ''}" data-tag-id="${opt.id}" style="display:inline-block;margin:5px;padding:6px 12px;background:#87CEEB;color:white;border-radius:15px;cursor:pointer;border:2px solid ${isSelected ? '#000' : 'transparent'};">
                       ${opt.label}
@@ -386,8 +394,10 @@ $(function(){
         $('#save-tags').click(function(){
           const selectedTagIds = [];
           $('.tag-option.selected').each(function(){
-            selectedTagIds.push($(this).data('tag-id'));
+            selectedTagIds.push(parseInt($(this).data('tag-id')));
           });
+          
+          console.log('Tags à sauvegarder:', selectedTagIds); // Debug
           
           // Sauvegarder la sélection
           const fd = new FormData();
@@ -410,7 +420,7 @@ $(function(){
                 `;
                 
                 selectedTagIds.forEach(tagId => {
-                  const tag = allOptions.find(opt => opt.id == tagId);
+                  const tag = allOptions.find(opt => parseInt(opt.id) === tagId);
                   if(tag) {
                     tagsHtml += `
                       <span class="tag-item" data-tag-id="${tag.id}" style="background:${tag.color};color:white;padding:2px 6px;border-radius:12px;font-size:11px;display:flex;align-items:center;gap:4px;">
@@ -1230,6 +1240,21 @@ $(function(){
                                     attachOptionHandlers(newRow);
                                     $('#new-option-name').val('');
                                     if(isSelectType) $('#new-option-color').val('#007cba');
+                                    
+                                    // NOUVEAU : Mettre à jour tous les select de cette colonne
+                                    if(isSelectType) {
+                                      $(`select[data-column="${cid}"]`).each(function(){
+                                        const currentValue = $(this).val();
+                                        const $select = $(this);
+                                        
+                                        // Ajouter la nouvelle option
+                                        $select.append(`<option value="${newOption.id}" style="background:${newOption.color};">${optLabel}</option>`);
+                                        
+                                        // Restaurer la valeur sélectionnée
+                                        $select.val(currentValue);
+                                        applySelectColor($select);
+                                      });
+                                    }
                                   }
                                 });
                             }
