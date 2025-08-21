@@ -37,9 +37,12 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['add_task_group_id'], $_
     if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
     $gid   = (int)$_POST['add_task_group_id'];
     $label = $db->escape($_POST['task_label']);
+    $datec = date('Y-m-d H:i:s'); // NOUVEAU : Date de création
     $r     = $db->query("SELECT MAX(position) as m FROM llx_myworkspace_task WHERE fk_group=$gid");
     $p     = ($r && $o=$db->fetch_object($r)) ? $o->m+1 : 0;
-    $db->query("INSERT INTO llx_myworkspace_task (fk_group,label,position) VALUES ($gid,'$label',$p)");
+    
+    // MODIFIER cette ligne pour inclure datec :
+    $db->query("INSERT INTO llx_myworkspace_task (fk_group,label,position,datec) VALUES ($gid,'$label',$p,'$datec')");
     exit;
 }
 if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['rename_task_id'], $_POST['rename_task_label'])) {
@@ -359,6 +362,31 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['delete_comment_id'])) {
     } else {
         http_response_code(403);
         echo 'Accès refusé';
+    }
+    exit;
+}
+
+// Récupérer les détails d'une tâche
+if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['task_details'])) {
+    $tid = (int)$_GET['task_details'];
+    $res = $db->query("
+        SELECT t.rowid, t.label, t.datec, g.label as group_label
+        FROM llx_myworkspace_task t
+        LEFT JOIN llx_myworkspace_group g ON g.rowid = t.fk_group
+        WHERE t.rowid = $tid
+    ");
+    
+    if ($task = $db->fetch_object($res)) {
+        header('Content-Type: application/json');
+        echo json_encode([
+            'id' => $task->rowid,
+            'label' => $task->label,
+            'datec' => $task->datec,
+            'group_label' => $task->group_label
+        ]);
+    } else {
+        http_response_code(404);
+        echo json_encode(['error' => 'Tâche non trouvée']);
     }
     exit;
 }
@@ -1439,14 +1467,43 @@ let currentTaskId = null;
 window.openTaskDetail = function(taskId, taskName, groupName) {
   currentTaskId = taskId;
   
-  // Mettre à jour les informations de la tâche
+  // Mettre à jour les informations de base
   $('#task-detail-title').text('Détail de la tâche');
   $('#task-name-display').text(taskName);
   $('#task-group-display').text(groupName);
-  $('#task-created-display').text('Récemment'); // Vous pouvez améliorer ça avec la vraie date
+  $('#task-created-display').text('Chargement...'); // Temporaire
   
   // Ouvrir le panneau
   $('#task-detail-panel').addClass('open');
+  
+  // Charger les détails complets de la tâche
+  fetch(`?task_details=${taskId}`)
+    .then(r => r.json())
+    .then(task => {
+      if (task.datec) {
+        // Formater la date de création
+        const createdDate = new Date(task.datec);
+        const formattedDate = createdDate.toLocaleDateString('fr-FR', {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit'
+        });
+        $('#task-created-display').text(formattedDate);
+      } else {
+        $('#task-created-display').text('Date non disponible');
+      }
+      
+      // Mettre à jour les autres informations si nécessaire
+      $('#task-name-display').text(task.label);
+      $('#task-group-display').text(task.group_label);
+    })
+    .catch(err => {
+      console.error('Erreur lors du chargement des détails:', err);
+      $('#task-created-display').text('Erreur de chargement');
+    });
   
   // Charger les commentaires
   loadComments(taskId);
@@ -1512,6 +1569,7 @@ function addComment() {
   const commentText = $('#new-comment-text').val().trim();
   
   if (!commentText) {
+
     alert('Veuillez saisir un commentaire');
     return;
   }
@@ -1658,8 +1716,6 @@ $(document).on('click', '.delete-comment-btn', function() {
       alert('Erreur lors de la suppression');
     });
 });
-
-// ...existing code...
 </script>
 
 <style>
