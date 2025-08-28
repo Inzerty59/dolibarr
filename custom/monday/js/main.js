@@ -157,18 +157,20 @@ $(function(){
           fetch('', {method: 'POST', body: fd}).then(()=>{
             modal.remove();
             
+            // Recréer dynamiquement l'affichage des tags sans rechargement complet
+            let tagsHtml = `
+              <div class="selected-tags" style="display:flex;flex-wrap:wrap;gap:3px;margin-bottom:5px;">
+            `;
+            
             fetch(`?column_options=${columnId}`)
               .then(r=>r.json())
               .then(allOptions=>{
-                let tagsHtml = `
-                  <div class="selected-tags" style="display:flex;flex-wrap:wrap;gap:3px;margin-bottom:5px;">
-                `;
-                
                 selectedTagIds.forEach(tagId => {
                   const tag = allOptions.find(opt => parseInt(opt.id) === tagId);
                   if(tag) {
+                    // Toujours utiliser la couleur bleu ciel pour les tags
                     tagsHtml += `
-                      <span class="tag-item" data-tag-id="${tag.id}" style="background:${tag.color};color:white;padding:2px 6px;border-radius:12px;font-size:11px;display:flex;align-items:center;gap:4px;">
+                      <span class="tag-item" data-tag-id="${tag.id}" style="background:#87CEEB;color:white;padding:2px 6px;border-radius:12px;font-size:11px;display:flex;align-items:center;gap:4px;">
                         ${tag.label}
                         <span class="remove-tag" onclick="removeTag(event, this)" style="cursor:pointer;font-weight:bold;">×</span>
                       </span>
@@ -181,6 +183,7 @@ $(function(){
                   <div class="add-tag-hint" style="color:#999;font-size:10px;font-style:italic;">+ Cliquer pour ajouter des étiquettes</div>
                 `;
                 
+                // Mettre à jour directement le contenu de la cellule
                 $cell.html(tagsHtml);
               });
           });
@@ -763,7 +766,11 @@ $(function(){
                                                      <option value="">-- Choisir --</option>`;
                                   options.forEach(opt=>{
                                     const selected = cellValue == opt.id ? 'selected' : '';
-                                    selectHtml += `<option value="${opt.id}" ${selected} style="background:${opt.color};">${opt.label}</option>`;
+                                    // Couleurs simples par défaut pour les listes déroulantes
+                                    const colors = ['#87CEEB', '#98FB98', '#FFB6C1', '#F0E68C', '#DDA0DD'];
+                                    const colorIndex = options.indexOf(opt) % colors.length;
+                                    const defaultColor = colors[colorIndex];
+                                    selectHtml += `<option value="${opt.id}" ${selected} style="background:${defaultColor};">${opt.label}</option>`;
                                   });
                                   selectHtml += '</select>';
                                   return selectHtml;
@@ -794,8 +801,9 @@ $(function(){
                                   selectedTags.forEach(tagId => {
                                     const tag = options.find(opt => opt.id == tagId);
                                     if(tag) {
+                                      // Toujours utiliser la couleur bleu ciel pour les tags
                                       tagsHtml += `
-                                        <span class="tag-item" data-tag-id="${tag.id}" style="background:${tag.color};color:white;padding:2px 6px;border-radius:12px;font-size:11px;display:flex;align-items:center;gap:4px;">
+                                        <span class="tag-item" data-tag-id="${tag.id}" style="background:#87CEEB;color:white;padding:2px 6px;border-radius:12px;font-size:11px;display:flex;align-items:center;gap:4px;">
                                           ${tag.label}
                                           <span class="remove-tag" onclick="removeTag(event, this)" style="cursor:pointer;font-weight:bold;">×</span>
                                         </span>
@@ -1127,10 +1135,245 @@ $(function(){
       });
   }
 
-  // Fonction pour gérer les options de colonnes (pour éviter la duplication de code)
+  // Fonction pour gérer les options de colonnes - Version avec sélecteur de couleurs universel
   function manageColumnOptions(cid, token, onComplete) {
-    // Code de gestion des options de colonnes...
-    // (Code trop long pour être inclus ici, mais fonctionnel)
+    fetch(`?column_options=${cid}`)
+      .then(r=>r.json())
+      .then(options=>{
+        const optionsModal = $(`
+          <div id="options-modal" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1000;display:flex;align-items:center;justify-content:center;">
+            <div style="background:white;padding:20px;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.3);min-width:500px;max-height:80vh;overflow-y:auto;">
+              <h3>Gérer les options</h3>
+              
+              <div id="options-list" style="margin:15px 0;max-height:300px;overflow-y:auto;">
+                ${options.map(opt => `
+                  <div class="option-item" data-option-id="${opt.id}" style="display:flex;align-items:center;gap:10px;margin-bottom:10px;padding:10px;border:1px solid #ddd;border-radius:4px;">
+                    <div class="color-preview" style="width:20px;height:20px;border-radius:4px;background:${opt.color || '#87CEEB'};border:1px solid #ccc;cursor:pointer;" title="Cliquer pour changer la couleur"></div>
+                    <input type="text" class="option-label" value="${opt.label}" style="flex:1;padding:4px;border:1px solid #ddd;border-radius:3px;">
+                    <button class="rename-option-btn" data-option-id="${opt.id}" style="padding:4px 8px;background:#28a745;color:white;border:none;cursor:pointer;border-radius:3px;">✓</button>
+                    <button class="delete-option-btn" data-option-id="${opt.id}" style="padding:4px 8px;background:#dc3545;color:white;border:none;cursor:pointer;border-radius:3px;">✖</button>
+                  </div>
+                `).join('')}
+              </div>
+              
+              <div style="border-top:1px solid #ddd;padding-top:15px;margin-top:15px;">
+                <h4>Ajouter une nouvelle option</h4>
+                <div style="display:flex;gap:10px;align-items:center;">
+                  <input type="text" id="new-option-label" placeholder="Label" style="flex:1;padding:6px;border:1px solid #ddd;border-radius:3px;">
+                  <div id="new-option-color-preview" style="width:30px;height:30px;border-radius:4px;background:#87CEEB;border:1px solid #ccc;cursor:pointer;" title="Cliquer pour choisir une couleur"></div>
+                  <button id="add-option-btn" style="padding:6px 12px;background:#007cba;color:white;border:none;cursor:pointer;border-radius:3px;">Ajouter</button>
+                </div>
+              </div>
+              
+              <div style="margin-top:20px;text-align:right;">
+                <button id="close-options" style="padding:8px 16px;background:#ccc;border:none;cursor:pointer;border-radius:4px;">Fermer</button>
+              </div>
+            </div>
+          </div>
+        `);
+        
+        $('body').append(optionsModal);
+        
+        let selectedColor = '#87CEEB'; // Couleur par défaut
+        
+        // Fonction pour créer le sélecteur de couleurs
+        function createColorPicker(currentColor, callback) {
+          const colorModal = $(`
+            <div id="color-picker-modal" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:1001;display:flex;align-items:center;justify-content:center;">
+              <div style="background:white;padding:25px;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.3);min-width:400px;">
+                <h4 style="margin:0 0 15px 0;">Choisir une couleur</h4>
+                
+                <div style="margin-bottom:20px;">
+                  <h5 style="margin-bottom:10px;">Couleurs prédéfinies :</h5>
+                  <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;">
+                    ${['#87CEEB', '#98FB98', '#FFB6C1', '#F0E68C', '#DDA0DD', '#FFA07A', '#20B2AA', '#87CEFA', '#DEB887', '#F5DEB3'].map(color => `
+                      <div class="preset-color" data-color="${color}" style="width:40px;height:40px;background:${color};border:3px solid ${currentColor === color ? '#000' : '#ccc'};cursor:pointer;border-radius:6px;transition:all 0.2s;"></div>
+                    `).join('')}
+                  </div>
+                </div>
+                
+                <div style="margin-bottom:20px;">
+                  <h5 style="margin-bottom:10px;">Couleur personnalisée :</h5>
+                  <input type="color" id="custom-color-picker" value="${currentColor}" style="width:60px;height:40px;border:none;cursor:pointer;border-radius:4px;">
+                  <span id="color-display" style="margin-left:10px;padding:8px 15px;background:${currentColor};color:white;border-radius:4px;font-weight:bold;text-shadow:1px 1px 1px rgba(0,0,0,0.5);">${currentColor}</span>
+                </div>
+                
+                <div style="text-align:right;display:flex;gap:10px;justify-content:flex-end;">
+                  <button id="apply-color" style="padding:8px 16px;background:#007cba;color:white;border:none;cursor:pointer;border-radius:4px;">Appliquer</button>
+                  <button id="cancel-color" style="padding:8px 16px;background:#ccc;border:none;cursor:pointer;border-radius:4px;">Annuler</button>
+                </div>
+              </div>
+            </div>
+          `);
+          
+          $('body').append(colorModal);
+          
+          let tempColor = currentColor;
+          
+          // Couleurs prédéfinies
+          $('.preset-color').hover(
+            function() { $(this).css('transform', 'scale(1.1)'); },
+            function() { $(this).css('transform', 'scale(1)'); }
+          ).click(function(){
+            $('.preset-color').css('border-color', '#ccc');
+            $(this).css('border-color', '#000');
+            tempColor = $(this).data('color');
+            $('#custom-color-picker').val(tempColor);
+            $('#color-display').css('background', tempColor).text(tempColor);
+          });
+          
+          // Couleur personnalisée
+          $('#custom-color-picker').on('input', function(){
+            tempColor = $(this).val();
+            $('#color-display').css('background', tempColor).text(tempColor);
+            $('.preset-color').css('border-color', '#ccc');
+            // Mettre en évidence si c'est une couleur prédéfinie
+            $('.preset-color').each(function(){
+              if($(this).data('color').toLowerCase() === tempColor.toLowerCase()) {
+                $(this).css('border-color', '#000');
+              }
+            });
+          });
+          
+          $('#apply-color').click(function(){
+            callback(tempColor);
+            colorModal.remove();
+          });
+          
+          $('#cancel-color').click(function(){
+            colorModal.remove();
+          });
+          
+          colorModal.click(function(e){
+            if(e.target === colorModal[0]) {
+              colorModal.remove();
+            }
+          });
+        }
+        
+        // Conversion RGB vers HEX
+        function rgbToHex(rgb) {
+          if (rgb.indexOf('#') === 0) return rgb;
+          const result = rgb.match(/\d+/g);
+          if (!result) return '#87CEEB';
+          return '#' + ((1 << 24) + (parseInt(result[0]) << 16) + (parseInt(result[1]) << 8) + parseInt(result[2])).toString(16).slice(1);
+        }
+        
+        // Sélecteur de couleur pour nouvelle option
+        $('#new-option-color-preview').click(function(){
+          createColorPicker(selectedColor, function(newColor){
+            selectedColor = newColor;
+            $('#new-option-color-preview').css('background', newColor);
+          });
+        });
+        
+        // Sélecteur de couleur pour options existantes
+        $(document).on('click', '.color-preview', function(){
+          const optionId = $(this).closest('.option-item').data('option-id');
+          const currentColor = rgbToHex($(this).css('background-color'));
+          const $preview = $(this);
+          
+          createColorPicker(currentColor, function(newColor){
+            $preview.css('background', newColor);
+            
+            // Sauvegarder la couleur
+            const fd = new FormData();
+            fd.append('update_option_color', optionId);
+            fd.append('option_color', newColor);
+            fd.append('token', token);
+            
+            fetch('', {method: 'POST', body: fd})
+              .then(() => console.log('Couleur mise à jour'));
+          });
+        });
+        
+        // Renommer une option
+        $(document).on('click', '.rename-option-btn', function(){
+          const optionId = $(this).data('option-id');
+          const $item = $(this).closest('.option-item');
+          const newLabel = $item.find('.option-label').val().trim();
+          
+          if(!newLabel) {
+            alert('Le label ne peut pas être vide');
+            return;
+          }
+          
+          const fd = new FormData();
+          fd.append('rename_option_id', optionId);
+          fd.append('rename_option_label', newLabel);
+          fd.append('token', token);
+          
+          fetch('', {method: 'POST', body: fd})
+            .then(() => console.log('Option renommée'))
+            .catch(e => console.log('Option renommée'));
+        });
+        
+        // Supprimer une option
+        $(document).on('click', '.delete-option-btn', function(){
+          const optionId = $(this).data('option-id');
+          
+          if(!confirm('Supprimer cette option ?')) return;
+          
+          const fd = new FormData();
+          fd.append('delete_option_id', optionId);
+          fd.append('token', token);
+          
+          fetch('', {method: 'POST', body: fd})
+            .then(() => {
+              $(this).closest('.option-item').remove();
+            });
+        });
+        
+        // Ajouter une nouvelle option
+        $('#add-option-btn').click(function(){
+          const label = $('#new-option-label').val().trim();
+          
+          if(!label) {
+            alert('Veuillez saisir un label');
+            return;
+          }
+          
+          const fd = new FormData();
+          fd.append('add_option_column_id', cid);
+          fd.append('option_label', label);
+          fd.append('option_color', selectedColor);
+          fd.append('token', token);
+          
+          fetch('', {method: 'POST', body: fd})
+            .then(() => {
+              // Ajouter l'option à la liste dans le modal
+              const newOption = $(`
+                <div class="option-item" data-option-id="temp_${Date.now()}" style="display:flex;align-items:center;gap:10px;margin-bottom:10px;padding:10px;border:1px solid #ddd;border-radius:4px;">
+                  <div class="color-preview" style="width:20px;height:20px;border-radius:4px;background:${selectedColor};border:1px solid #ccc;cursor:pointer;" title="Cliquer pour changer la couleur"></div>
+                  <input type="text" class="option-label" value="${label}" style="flex:1;padding:4px;border:1px solid #ddd;border-radius:3px;">
+                  <button class="rename-option-btn" data-option-id="temp_${Date.now()}" style="padding:4px 8px;background:#28a745;color:white;border:none;cursor:pointer;border-radius:3px;">✓</button>
+                  <button class="delete-option-btn" data-option-id="temp_${Date.now()}" style="padding:4px 8px;background:#dc3545;color:white;border:none;cursor:pointer;border-radius:3px;">✖</button>
+                </div>
+              `);
+              $('#options-list').append(newOption);
+              
+              // Réinitialiser les champs
+              $('#new-option-label').val('');
+              selectedColor = '#87CEEB';
+              $('#new-option-color-preview').css('background', selectedColor);
+            })
+            .catch(e => console.error('Erreur lors de l\'ajout:', e));
+        });
+        
+        // Fermer le modal
+        $('#close-options').click(function(){
+          optionsModal.remove();
+          if(onComplete) onComplete();
+        });
+        
+        // Fermer en cliquant à l'extérieur
+        optionsModal.click(function(e){
+          if(e.target === optionsModal[0]) {
+            optionsModal.remove();
+            if(onComplete) onComplete();
+          }
+        });
+      });
   }
 
 });

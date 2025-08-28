@@ -174,6 +174,20 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['column_options'])) {
     exit;
 }
 
+// Nouvelle route pour récupérer les infos de la colonne
+if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['column_info'])) {
+    $cid = (int)$_GET['column_info'];
+    $res = $db->query("SELECT rowid, label, type FROM llx_myworkspace_column WHERE rowid = $cid");
+    if ($o = $db->fetch_object($res)) {
+        header('Content-Type: application/json');
+        echo json_encode(['id'=>$o->rowid,'label'=>$o->label,'type'=>$o->type]);
+    } else {
+        header('Content-Type: application/json');
+        echo json_encode(['error'=>'Column not found']);
+    }
+    exit;
+}
+
 if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['add_option_column_id'], $_POST['option_label'])) {
     if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
     $cid   = (int)$_POST['add_option_column_id'];
