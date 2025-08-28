@@ -1,0 +1,390 @@
+.column-menu {
+  min-width: 120px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+.column-menu button:hover {
+  background: #f3f3f3;
+}
+.color-option:hover {
+  transform: scale(1.1);
+  transition: transform 0.1s;
+}
+.cell-date {
+  cursor: pointer;
+}
+.cell-date::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: 0.7;
+}
+.cell-date::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
+}
+
+.cell-number {
+  cursor: pointer;
+  font-family: 'Courier New', monospace;
+  font-weight: 500;
+}
+.cell-number:focus {
+  background: #f8f9fa !important;
+  border: 1px solid #007cba !important;
+  border-radius: 3px;
+  box-shadow: 0 0 0 2px rgba(0, 124, 186, 0.1);
+}
+.cell-number:invalid {
+  border: 1px solid #dc3545 !important;
+  background: #fff5f5 !important;
+}
+.cell-number:focus:valid {
+  color: #28a745;
+}
+
+.type-choice {
+  transition: all 0.2s ease;
+}
+
+.deadline-cell {
+  min-height: 50px;
+  padding: 3px;
+}
+.deadline-ok {
+  color: #155724;
+  background: #d1e7dd;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.deadline-warning {
+  color: #664d03;
+  background: #fff3cd;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.deadline-urgent {
+  color: #842029;
+  background: #f8d7da;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.deadline-overdue {
+  color: #842029;
+  background: #f5c2c7;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: bold;
+}
+
+.tags-cell {
+  transition: all 0.2s ease;
+}
+.tags-cell:hover {
+  background: #f8f9fa !important;
+  border-color: #007cba !important;
+}
+
+.remove-tag {
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+.remove-tag:hover {
+  opacity: 1;
+}
+.tag-option {
+  transition: all 0.2s ease;
+}
+.tag-option:hover {
+  box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+}
+.add-tag-hint {
+  transition: opacity 0.2s;
+}
+.tags-cell:hover .add-tag-hint {
+  opacity: 0.7;
+}
+
+/* Panneau latéral de détail des tâches */
+.workspace-container {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.main-content {
+  flex: 1;
+  overflow-y: auto;
+  transition: width 0.3s ease;
+}
+
+.task-detail-panel {
+  width: 0;
+  min-width: 0;
+  background: #fff;
+  border-left: 1px solid #ddd;
+  overflow: hidden;
+  transition: width 0.3s ease;
+  display: flex;
+  flex-direction: column;
+}
+
+.task-detail-panel.open {
+  width: 400px;
+  min-width: 400px;
+}
+
+.panel-header {
+  padding: 20px;
+  border-bottom: 1px solid #eee;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #f8f9fa;
+}
+
+.panel-header h3 {
+  margin: 0;
+  font-size: 18px;
+  color: #333;
+}
+
+.close-panel-btn {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: #666;
+  padding: 0;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: background 0.2s;
+}
+
+.close-panel-btn:hover {
+  background: #e9ecef;
+}
+
+.panel-content {
+  flex: 1;
+  padding: 20px;
+  overflow-y: auto;
+}
+
+.task-info-section {
+  margin-bottom: 30px;
+}
+
+.task-info-section h4 {
+  margin: 0 0 15px 0;
+  color: #333;
+  font-size: 16px;
+  border-bottom: 2px solid #007cba;
+  padding-bottom: 5px;
+}
+
+.task-meta {
+  background: #f8f9fa;
+  padding: 15px;
+  border-radius: 6px;
+}
+
+.task-meta-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding: 8px 0;
+}
+
+.task-meta-item:last-child {
+  margin-bottom: 0;
+}
+
+.task-meta-item strong {
+  min-width: 80px;
+  color: #555;
+  font-size: 14px;
+}
+
+.edit-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #007cba;
+  font-size: 14px;
+  padding: 2px 4px;
+  border-radius: 3px;
+  transition: background 0.2s;
+}
+
+.edit-btn:hover {
+  background: #e9ecef;
+}
+
+.comments-section h4 {
+  margin: 0 0 20px 0;
+  color: #333;
+  font-size: 16px;
+  border-bottom: 2px solid #007cba;
+  padding-bottom: 5px;
+}
+
+.add-comment-form {
+  margin-bottom: 25px;
+  padding: 15px;
+  background: #f8f9fa;
+  border-radius: 6px;
+}
+
+.add-comment-form textarea {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 14px;
+  resize: vertical;
+  min-height: 80px;
+}
+
+.add-comment-form textarea:focus {
+  outline: none;
+  border-color: #007cba;
+  box-shadow: 0 0 0 2px rgba(0, 124, 186, 0.1);
+}
+
+#add-comment-btn {
+  margin-top: 10px;
+  padding: 8px 16px;
+  background: #007cba;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background 0.2s;
+}
+
+#add-comment-btn:hover {
+  background: #0056a3;
+}
+
+.comments-list {
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.comment-item {
+  background: white;
+  border: 1px solid #e9ecef;
+  border-radius: 6px;
+  padding: 15px;
+  margin-bottom: 15px;
+  transition: box-shadow 0.2s;
+}
+
+.comment-item:hover {
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.comment-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.comment-author {
+  font-weight: bold;
+  color: #007cba;
+  font-size: 14px;
+}
+
+.comment-date {
+  font-size: 12px;
+  color: #666;
+}
+
+.comment-text {
+  color: #333;
+  line-height: 1.4;
+  margin-bottom: 10px;
+  font-size: 14px;
+  white-space: pre-wrap;
+}
+
+.comment-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.comment-action-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #666;
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 3px;
+  transition: all 0.2s;
+}
+
+.comment-action-btn:hover {
+  background: #f8f9fa;
+  color: #007cba;
+}
+
+.edit-comment-form {
+  margin-top: 10px;
+}
+
+.edit-comment-form textarea {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 14px;
+  min-height: 60px;
+}
+
+.edit-comment-actions {
+  margin-top: 8px;
+  display: flex;
+  gap: 8px;
+}
+
+.save-edit-btn, .cancel-edit-btn {
+  padding: 4px 12px;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.save-edit-btn {
+  background: #28a745;
+  color: white;
+}
+
+.cancel-edit-btn {
+  background: #6c757d;
+  color: white;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .task-detail-panel.open {
+    width: 100%;
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    z-index: 1000;
+  }
+  
+  .main-content {
+    width: 100%;
+  }
+}
