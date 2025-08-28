@@ -82,6 +82,98 @@ $(function(){
     }
   };
 
+  window.openUserSelector = function(cell) {
+    const $cell = $(cell);
+    const taskId = $cell.data('task');
+    const columnId = $cell.data('column');
+    
+    fetch('?users_list')
+      .then(r=>r.json())
+      .then(users=>{
+        const currentUserId = $cell.find('select').val();
+        
+        const modal = $(`
+          <div id="user-modal" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1000;display:flex;align-items:center;justify-content:center;">
+            <div style="background:white;padding:20px;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.3);min-width:400px;max-height:80vh;overflow-y:auto;">
+              <h3>Assigner à un utilisateur</h3>
+              
+              <div id="users-list" style="margin:15px 0;">
+                <div class="user-option ${!currentUserId ? 'selected' : ''}" data-user-id="" style="display:flex;align-items:center;gap:10px;margin-bottom:8px;padding:10px;border:2px solid ${!currentUserId ? '#007cba' : 'transparent'};background:${!currentUserId ? '#f0f8ff' : '#f9f9f9'};border-radius:6px;cursor:pointer;">
+                  <div class="user-avatar" style="background:#999;">--</div>
+                  <span style="font-style:italic;color:#666;">Non assigné</span>
+                </div>
+                ${users.map(user => {
+                  const isSelected = currentUserId == user.id;
+                  const initials = user.name.split(' ').map(n => n[0]).join('').substr(0, 2).toUpperCase();
+                  return `
+                    <div class="user-option ${isSelected ? 'selected' : ''}" data-user-id="${user.id}" style="display:flex;align-items:center;gap:10px;margin-bottom:8px;padding:10px;border:2px solid ${isSelected ? '#007cba' : 'transparent'};background:${isSelected ? '#f0f8ff' : '#f9f9f9'};border-radius:6px;cursor:pointer;">
+                      <div class="user-avatar" title="${user.name}">${initials}</div>
+                      <div>
+                        <div style="font-weight:bold;">${user.name}</div>
+                        <div style="font-size:12px;color:#666;">${user.email || user.login}</div>
+                      </div>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+              
+              <div style="margin-top:20px;text-align:right;display:flex;gap:10px;justify-content:flex-end;">
+                <button id="save-user" style="padding:8px 16px;background:#007cba;color:white;border:none;cursor:pointer;border-radius:4px;">Assigner</button>
+                <button id="cancel-user" style="padding:8px 16px;background:#ccc;border:none;cursor:pointer;border-radius:4px;">Annuler</button>
+              </div>
+            </div>
+          </div>
+        `);
+        
+        $('body').append(modal);
+        
+        $('.user-option').click(function(){
+          $('.user-option').removeClass('selected').css({
+            'border': '2px solid transparent',
+            'background': '#f9f9f9'
+          });
+          $(this).addClass('selected').css({
+            'border': '2px solid #007cba',
+            'background': '#f0f8ff'
+          });
+        });
+        
+        $('#save-user').click(function(){
+          const selectedUserId = $('.user-option.selected').data('user-id') || '';
+          
+          const fd = new FormData();
+          fd.append('save_cell_task', taskId);
+          fd.append('save_cell_column', columnId);
+          fd.append('save_cell_value', selectedUserId);
+          fd.append('token', token);
+          
+          fetch('', {method: 'POST', body: fd}).then(()=>{
+            modal.remove();
+            
+            // Recharger les groupes pour mettre à jour l'affichage
+            const $activeWorkspace = $('.workspace-item').filter(function() {
+              return $(this).css('background-color') === 'rgb(0, 124, 186)';
+            });
+            
+            if ($activeWorkspace.length > 0) {
+              const wsId = $activeWorkspace.data('id');
+              loadGroups(wsId);
+            }
+          });
+        });
+        
+        $('#cancel-user').click(function(){
+          modal.remove();
+        });
+        
+        modal.click(function(e){
+          if(e.target === modal[0]) {
+            modal.remove();
+          }
+        });
+      });
+  };
+
   window.openTagsSelector = function(cell) {
     const $cell = $(cell);
     const taskId = $cell.data('task');
@@ -886,6 +978,38 @@ $(function(){
                                 </div>
                               `;
                               cellPromises.push(Promise.resolve(inputHtml));
+                            } else if(c.type === 'user') {
+                              const promise = fetch('?users_list')
+                                .then(r=>r.json())
+                                .then(users=>{
+                                  let selectHtml = `<select class="cell-select user-select" data-task="${t.id}" data-column="${c.id}" 
+                                                           style="border:none;background:transparent;width:100%;padding:2px;"
+                                                           onchange="saveCellValue(this)">
+                                                     <option value="">-- Non assigné --</option>`;
+                                  users.forEach(user=>{
+                                    const selected = cellValue == user.id ? 'selected' : '';
+                                    selectHtml += `<option value="${user.id}" ${selected}>${user.name}</option>`;
+                                  });
+                                  selectHtml += '</select>';
+                                  
+                                  // Si un utilisateur est sélectionné, on affiche avec avatar
+                                  if (cellValue) {
+                                    const selectedUser = users.find(u => u.id == cellValue);
+                                    if (selectedUser) {
+                                      const initials = selectedUser.name.split(' ').map(n => n[0]).join('').substr(0, 2).toUpperCase();
+                                      return `
+                                        <div class="user-cell" data-task="${t.id}" data-column="${c.id}" style="cursor:pointer;" onclick="openUserSelector(this)">
+                                          <div class="user-avatar" title="${selectedUser.name}">${initials}</div>
+                                          <span>${selectedUser.name}</span>
+                                          ${selectHtml.replace('style="', 'style="display:none;')}
+                                        </div>
+                                      `;
+                                    }
+                                  }
+                                  
+                                  return `<div class="user-cell unassigned" data-task="${t.id}" data-column="${c.id}" style="cursor:pointer;" onclick="openUserSelector(this)">${selectHtml}</div>`;
+                                });
+                              cellPromises.push(promise);
                             } else if(c.type === 'date') {
                               const inputHtml = `<input type="date" class="cell-input cell-date" 
                                                         data-task="${t.id}" 
@@ -995,6 +1119,13 @@ $(function(){
                 <div style="text-align:left;">
                   <div style="font-weight:bold;">Échéance</div>
                   <div style="font-size:12px;color:#666;">Période avec décompte des jours</div>
+                </div>
+              </button>
+              <button class="type-choice" data-type="user" style="padding:15px;border:2px solid #e0e0e0;background:#f9f9f9;cursor:pointer;border-radius:8px;display:flex;align-items:center;gap:15px;font-size:14px;transition:all 0.2s;">
+                <span style="font-size:20px;">👤</span>
+                <div style="text-align:left;">
+                  <div style="font-weight:bold;">Assigné à</div>
+                  <div style="font-size:12px;color:#666;">Choisir un utilisateur</div>
                 </div>
               </button>
             </div>

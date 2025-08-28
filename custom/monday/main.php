@@ -431,6 +431,30 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['task_details'])) {
     exit;
 }
 
+if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['users_list'])) {
+    $res = $db->query("
+        SELECT u.rowid, u.firstname, u.lastname, u.login, u.email
+        FROM llx_user u
+        WHERE u.statut = 1
+        ORDER BY u.firstname ASC, u.lastname ASC
+    ");
+    $out = [];
+    while ($o = $db->fetch_object($res)) {
+        $fullname = trim($o->firstname . ' ' . $o->lastname);
+        if (empty($fullname)) $fullname = $o->login;
+        
+        $out[] = [
+            'id' => $o->rowid,
+            'name' => $fullname,
+            'login' => $o->login,
+            'email' => $o->email
+        ];
+    }
+    header('Content-Type: application/json');
+    echo json_encode($out);
+    exit;
+}
+
 $res = $db->query("SELECT rowid,label FROM llx_myworkspace ORDER BY position ASC");
 $workspaces = [];
 while ($o=$db->fetch_object($res)) $workspaces[] = $o;
