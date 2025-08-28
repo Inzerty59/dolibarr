@@ -324,16 +324,40 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['add_comment_task'], $_P
     $uid = $user->id;
     $date = date('Y-m-d H:i:s');
     
-    $db->query("INSERT INTO llx_myworkspace_comment (fk_task, fk_user, comment, datec) VALUES ($tid, $uid, '$comment', '$date')");
+    // Insérer le commentaire
+    $sql = "INSERT INTO llx_myworkspace_comment (fk_task, fk_user, comment, datec) VALUES ($tid, $uid, '$comment', '$date')";
+    $result = $db->query($sql);
     
-    $new_id = $db->last_insert_id();
+    if (!$result) {
+        http_response_code(500);
+        header('Content-Type: application/json');
+        echo json_encode(['error' => 'Erreur lors de l\'insertion du commentaire']);
+        exit;
+    }
+    
+    $new_id = $db->last_insert_id('llx_myworkspace_comment');
+    if (!$new_id) {
+        http_response_code(500);
+        header('Content-Type: application/json');
+        echo json_encode(['error' => 'Impossible de récupérer l\'ID du commentaire']);
+        exit;
+    }
+    
+    // Récupérer les données du commentaire créé
     $res = $db->query("
         SELECT c.rowid, c.comment, c.datec, c.fk_user, u.firstname, u.lastname 
         FROM llx_myworkspace_comment c
         LEFT JOIN llx_user u ON u.rowid = c.fk_user
         WHERE c.rowid = $new_id
     ");
+    
     $comment_data = $db->fetch_object($res);
+    if (!$comment_data) {
+        http_response_code(500);
+        header('Content-Type: application/json');
+        echo json_encode(['error' => 'Commentaire créé mais impossible de le récupérer']);
+        exit;
+    }
     
     header('Content-Type: application/json');
     echo json_encode([

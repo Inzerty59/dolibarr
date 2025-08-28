@@ -395,14 +395,42 @@ $(function(){
     fd.append('token', token);
     
     fetch('', {method: 'POST', body: fd})
-      .then(r => r.json())
+      .then(response => {
+        console.log('Statut de la réponse:', response.status);
+        const contentType = response.headers.get('content-type');
+        console.log('Type de contenu:', contentType);
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        // Lire la réponse comme texte d'abord pour voir ce qu'on reçoit
+        return response.text().then(text => {
+          console.log('Réponse brute reçue:', text);
+          
+          if (contentType && contentType.includes('application/json')) {
+            try {
+              return JSON.parse(text);
+            } catch (e) {
+              console.error('Erreur de parsing JSON:', e);
+              console.error('Texte qui ne peut pas être parsé:', text);
+              throw new Error('La réponse n\'est pas du JSON valide');
+            }
+          } else {
+            console.error('Type de contenu inattendu:', contentType);
+            console.error('Réponse non-JSON reçue:', text);
+            throw new Error('La réponse n\'est pas du JSON valide');
+          }
+        });
+      })
       .then(comment => {
+        console.log('Commentaire ajouté avec succès:', comment);
         $('#new-comment-text').val('');
         loadComments(currentTaskId);
       })
       .catch(err => {
         console.error('Erreur lors de l\'ajout du commentaire:', err);
-        alert('Erreur lors de l\'ajout du commentaire');
+        alert('Erreur lors de l\'ajout du commentaire: ' + err.message);
       });
   }
 
