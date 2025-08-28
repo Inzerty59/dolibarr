@@ -373,7 +373,21 @@
   color: white;
 }
 
-/* Responsive */
+span.select2-container,
+span.select2-selection,
+span.select2-selection--single,
+span.select2-selection__rendered,
+span.select2-selection__arrow,
+span.searchselectcombo,
+span.vmenusearchselectcombo {
+  display: none !important;
+}
+
+#blockvmenusearch,
+.blockvmenusearch {
+  display: none !important;
+}
+
 @media (max-width: 768px) {
   .task-detail-panel.open {
     width: 100%;

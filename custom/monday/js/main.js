@@ -589,6 +589,7 @@ $(function(){
     // Marquer cet espace comme sélectionné visuellement
     $('.workspace-item').css({
       'background-color': 'transparent',
+      'color': 'black',
       'font-weight': 'normal'
     });
     $(this).css({
@@ -1283,8 +1284,11 @@ $(function(){
           });
         });
         
-        // Modifier une option (bouton crayon)
-        $(document).on('click', '.edit-option-btn', function(){
+        // Modifier une option (bouton crayon) - Gestionnaire délégué
+        $('#options-list').off('click', '.edit-option-btn').on('click', '.edit-option-btn', function(e){
+          e.preventDefault();
+          e.stopPropagation();
+          
           const optionId = $(this).data('option-id');
           const $item = $(this).closest('.option-item');
           const $labelDisplay = $item.find('.option-label-display');
@@ -1307,8 +1311,8 @@ $(function(){
             .catch(e => console.log('Erreur lors du renommage:', e));
         });
         
-        // Supprimer une option
-        $('.delete-option-btn').off('click').on('click', function(e){
+        // Supprimer une option - Gestionnaire délégué
+        $('#options-list').off('click', '.delete-option-btn').on('click', '.delete-option-btn', function(e){
           e.preventDefault();
           e.stopPropagation();
           
@@ -1357,26 +1361,7 @@ $(function(){
               `);
               $('#options-list').append(newOption);
               
-              // Attacher les événements aux nouveaux boutons
-              newOption.find('.delete-option-btn').off('click').on('click', function(e){
-                e.preventDefault();
-                e.stopPropagation();
-                
-                const optionId = $(this).data('option-id');
-                const $button = $(this);
-                
-                if(!confirm('Supprimer cette option ?')) return;
-                
-                const fd = new FormData();
-                fd.append('delete_option_id', optionId);
-                fd.append('token', token);
-                
-                fetch('', {method: 'POST', body: fd})
-                  .then(() => {
-                    $button.closest('.option-item').remove();
-                  })
-                  .catch(e => console.error('Erreur lors de la suppression:', e));
-              });
+              // Les événements sont maintenant gérés par délégation, plus besoin d'attacher manuellement
               
               // Réinitialiser les champs
               $('#new-option-label').val('');
