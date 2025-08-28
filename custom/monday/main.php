@@ -88,6 +88,17 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && !empty($_POST['new_workspace'])) {
     $r  = $db->query("SELECT MAX(position) as m FROM llx_myworkspace");
     $p  = ($r && $o=$db->fetch_object($r))?$o->m+1:0;
     $db->query("INSERT INTO llx_myworkspace(label,position) VALUES('".$db->escape($nw)."',$p)");
+    
+    // Si c'est une requête AJAX (vérifier si on a un paramètre ajax ou si c'est du fetch)
+    if (isset($_POST['ajax']) || 
+        (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) == 'xmlhttprequest') ||
+        (isset($_SERVER['CONTENT_TYPE']) && strpos($_SERVER['CONTENT_TYPE'], 'multipart/form-data') !== false)) {
+        $newId = $db->last_insert_id();
+        header('Content-Type: application/json');
+        echo json_encode(['id' => $newId, 'label' => $nw]);
+        exit;
+    }
+    
     header("Location: ".$_SERVER['PHP_SELF']);
     exit;
 }

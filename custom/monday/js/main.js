@@ -2,6 +2,58 @@ $(function(){
   $('.side-nav .vmenu').prepend(window.leftmenu || '');
   const token = window.formtoken;
 
+  // Intercepter le formulaire d'ajout d'espace de travail pour le rendre dynamique
+  $(document).on('submit', 'form', function(e) {
+    const form = $(this);
+    const newWorkspaceInput = form.find('input[name="new_workspace"]');
+    
+    if (newWorkspaceInput.length > 0) {
+      e.preventDefault();
+      const workspaceName = newWorkspaceInput.val().trim();
+      if (!workspaceName) return;
+      
+      const fd = new FormData();
+      fd.append('new_workspace', workspaceName);
+      fd.append('token', token);
+      fd.append('ajax', '1'); // Ajouter un paramètre pour identifier la requête AJAX
+      
+      fetch('', {
+        method: 'POST',
+        body: fd
+      })
+      .then(response => {
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          return response.json();
+        } else {
+          // Si ce n'est pas du JSON, c'est probablement une redirection
+          throw new Error('Response is not JSON');
+        }
+      })
+      .then(data => {
+        // Ajouter le nouvel espace à la liste avec le vrai ID
+        const newItem = `<li class="workspace-item" data-id="${data.id}" style="padding:8px;cursor:pointer;">${data.label}</li>`;
+        $('#workspace-list').append(newItem);
+        
+        // Vider le champ de saisie
+        newWorkspaceInput.val('');
+        
+        console.log('Espace ajouté avec succès:', data);
+      })
+      .catch(error => {
+        console.error('Erreur lors de l\'ajout de l\'espace:', error);
+        // Fallback : ajouter avec un ID temporaire et recharger
+        const newId = Date.now();
+        const newItem = `<li class="workspace-item" data-id="${newId}" style="padding:8px;cursor:pointer;">${workspaceName}</li>`;
+        $('#workspace-list').append(newItem);
+        newWorkspaceInput.val('');
+        
+        // Recharger la page après un délai pour obtenir les vrais IDs
+        setTimeout(() => location.reload(), 500);
+      });
+    }
+  });
+
   // Variables globales pour le panneau
   let currentTaskId = null;
 
@@ -377,9 +429,37 @@ $(function(){
     
     fetch('', {method: 'POST', body: fd})
       .then(() => {
+        // Mettre à jour le nom dans le panneau de détail
         $('#task-name-display').text(newName);
-        const wsId = $('.workspace-item[style*="font-weight: bold"], .workspace-item[style*="background"]').data('id') || $('.workspace-item').first().data('id');
-        if (wsId) loadGroups(wsId);
+        
+        // Mettre à jour le nom dans le tableau principal
+        $(`tr[data-id="${currentTaskId}"] td:nth-child(3)`).text(newName);
+        
+        // Recharger les groupes pour être sûr que tout est à jour
+        // Trouver l'espace de travail actuellement sélectionné (avec le nouveau style)
+        const $activeWorkspace = $('.workspace-item').filter(function() {
+          const $this = $(this);
+          return $this.css('background-color') === 'rgb(0, 124, 186)' || // #007cba en RGB
+                 $this.css('font-weight') === 'bold' ||
+                 $this.css('font-weight') === '700';
+        });
+        
+        if ($activeWorkspace.length > 0) {
+          const wsId = $activeWorkspace.data('id');
+          if (wsId) {
+            console.log('Rechargement des groupes pour l\'espace:', wsId);
+            loadGroups(wsId);
+          }
+        } else {
+          console.log('Aucun espace actif trouvé, recherche alternative...');
+          // Alternative : chercher par la présence de contenu dans main-content
+          const $allWorkspaces = $('.workspace-item');
+          if ($allWorkspaces.length > 0) {
+            const wsId = $allWorkspaces.first().data('id');
+            console.log('Utilisation du premier espace disponible:', wsId);
+            loadGroups(wsId);
+          }
+        }
       })
       .catch(err => {
         console.error('Erreur lors de la modification du nom:', err);
@@ -504,6 +584,18 @@ $(function(){
   $(document).on('click','.workspace-item', function(){
     const wsId    = this.dataset.id;
     const wsLabel = this.textContent;
+    
+    // Marquer cet espace comme sélectionné visuellement
+    $('.workspace-item').css({
+      'background-color': 'transparent',
+      'font-weight': 'normal'
+    });
+    $(this).css({
+      'background-color': '#007cba',
+      'color': 'white',
+      'font-weight': 'bold'
+    });
+    
     $('#main-content').html(`
       <div style="display:flex;align-items:center;gap:10px;">
         <h2 style="margin:0;cursor:pointer;">${wsLabel}</h2>
@@ -519,13 +611,53 @@ $(function(){
       if(!n) return;
       const fd=new FormData(); fd.append('rename_workspace_id',wsId);
       fd.append('rename_workspace_label',n); fd.append('token',token);
-      fetch('',{method:'POST',body:fd}).then(()=>location.reload());
+      
+      console.log('Renommage de l\'espace:', wsId, 'vers:', n);
+      
+      fetch('',{method:'POST',body:fd})
+        .then(response => {
+          console.log('Réponse du serveur pour renommage:', response.status);
+          return response.text(); // Récupérer la réponse pour debug
+        })
+        .then(responseText => {
+          console.log('Contenu de la réponse:', responseText);
+          
+          // Mettre à jour le titre de l'espace dans l'interface
+          $('#main-content h2').text(n);
+          // Mettre à jour le nom dans la sidebar
+          $(`.workspace-item[data-id="${wsId}"]`).text(n);
+          
+          console.log('Interface mise à jour avec succès');
+        })
+        .catch(error => {
+          console.error('Erreur lors du renommage:', error);
+        });
     });
     $('#delete-btn').click(()=>{
       if(!confirm('Supprimer cet espace ?')) return;
       const fd=new FormData(); fd.append('delete_workspace_id',wsId);
       fd.append('token',token);
-      fetch('',{method:'POST',body:fd}).then(()=>location.reload());
+      
+      console.log('Suppression de l\'espace:', wsId);
+      
+      fetch('',{method:'POST',body:fd})
+        .then(response => {
+          console.log('Réponse du serveur pour suppression:', response.status);
+          return response.text();
+        })
+        .then(responseText => {
+          console.log('Contenu de la réponse:', responseText);
+          
+          // Supprimer l'espace de la sidebar
+          $(`.workspace-item[data-id="${wsId}"]`).remove();
+          // Retourner à l'état initial
+          $('#main-content').html('<div style="text-align:center;padding:50px;color:#666;"><h3>Sélectionnez un espace de travail</h3><p>Choisissez un espace dans la liste de gauche pour commencer.</p></div>');
+          
+          console.log('Espace supprimé de l\'interface');
+        })
+        .catch(error => {
+          console.error('Erreur lors de la suppression:', error);
+        });
     });
     $('#add-group-btn').click(()=>{
       const n=prompt('Nom du groupe :');
@@ -535,7 +667,11 @@ $(function(){
       fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wsId));
     });
 
-    function loadGroups(wid){
+    loadGroups(wsId);
+  });
+
+  // Fonction globale pour charger les groupes d'un espace de travail
+  function loadGroups(wid){
       fetch(`get_groups.php?wid=${wid}`)
         .then(r=>r.json()).then(groups=>{
           $('#group-list').empty();
@@ -770,11 +906,9 @@ $(function(){
           // Gestionnaires d'événements pour les colonnes, groupes et tâches
           attachEventHandlers(wid);
         });
-    }
+  }
 
-    loadGroups(wsId);
-  });
-
+  // Fonction globale pour gérer les événements des éléments
   function attachEventHandlers(wid) {
     // Ajout de colonnes
     $('#group-list').off('click','.add-column-btn').on('click','.add-column-btn',function(e){
