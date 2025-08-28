@@ -89,7 +89,6 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && !empty($_POST['new_workspace'])) {
     $p  = ($r && $o=$db->fetch_object($r))?$o->m+1:0;
     $db->query("INSERT INTO llx_myworkspace(label,position) VALUES('".$db->escape($nw)."',$p)");
     
-    // Si c'est une requête AJAX (vérifier si on a un paramètre ajax ou si c'est du fetch)
     if (isset($_POST['ajax']) || 
         (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) == 'xmlhttprequest') ||
         (isset($_SERVER['CONTENT_TYPE']) && strpos($_SERVER['CONTENT_TYPE'], 'multipart/form-data') !== false)) {
@@ -294,7 +293,6 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['save_cell_task'], $_POS
     exit;
 }
 
-// Récupérer les commentaires d'une tâche
 if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['task_comments'])) {
     $tid = (int)$_GET['task_comments'];
     $res = $db->query("
@@ -319,7 +317,6 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['task_comments'])) {
     exit;
 }
 
-// Ajouter un commentaire
 if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['add_comment_task'], $_POST['comment_text'])) {
     if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
     $tid = (int)$_POST['add_comment_task'];
@@ -329,7 +326,6 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['add_comment_task'], $_P
     
     $db->query("INSERT INTO llx_myworkspace_comment (fk_task, fk_user, comment, datec) VALUES ($tid, $uid, '$comment', '$date')");
     
-    // Retourner le commentaire créé
     $new_id = $db->last_insert_id();
     $res = $db->query("
         SELECT c.rowid, c.comment, c.datec, c.fk_user, u.firstname, u.lastname 
@@ -350,14 +346,12 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['add_comment_task'], $_P
     exit;
 }
 
-// Modifier un commentaire
 if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['edit_comment_id'], $_POST['edit_comment_text'])) {
     if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
     $cid = (int)$_POST['edit_comment_id'];
     $comment = $db->escape($_POST['edit_comment_text']);
     $uid = $user->id;
     
-    // Vérifier que l'utilisateur est propriétaire du commentaire
     $res = $db->query("SELECT fk_user FROM llx_myworkspace_comment WHERE rowid = $cid");
     $owner = $db->fetch_object($res);
     
@@ -371,13 +365,11 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['edit_comment_id'], $_PO
     exit;
 }
 
-// Supprimer un commentaire
 if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['delete_comment_id'])) {
     if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
     $cid = (int)$_POST['delete_comment_id'];
     $uid = $user->id;
     
-    // Vérifier que l'utilisateur est propriétaire du commentaire
     $res = $db->query("SELECT fk_user FROM llx_myworkspace_comment WHERE rowid = $cid");
     $owner = $db->fetch_object($res);
     
@@ -391,7 +383,6 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['delete_comment_id'])) {
     exit;
 }
 
-// Récupérer les détails d'une tâche
 if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['task_details'])) {
     $tid = (int)$_GET['task_details'];
     $res = $db->query("
@@ -445,7 +436,6 @@ ob_start();
 <div class="workspace-container">
   <div class="main-content" id="main-content"></div>
   
-  <!-- Panneau latéral de détail des tâches -->
   <div id="task-detail-panel" class="task-detail-panel">
     <div class="panel-header">
       <h3 id="task-detail-title">Détail de la tâche</h3>
@@ -481,7 +471,6 @@ ob_start();
         </div>
         
         <div id="comments-list" class="comments-list">
-          <!-- Les commentaires seront ajoutés ici dynamiquement -->
         </div>
       </div>
     </div>
@@ -490,7 +479,6 @@ ob_start();
 
 <script src="https://code.jquery.com/ui/1.13.2/jquery-ui.min.js"></script>
 <script>
-// Variables globales pour le JavaScript
 window.leftmenu = <?php echo json_encode($leftmenu); ?>;
 window.formtoken = <?php echo json_encode($formtoken); ?>;
 </script>

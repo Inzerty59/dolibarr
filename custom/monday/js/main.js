@@ -2,7 +2,6 @@ $(function(){
   $('.side-nav .vmenu').prepend(window.leftmenu || '');
   const token = window.formtoken;
 
-  // Intercepter le formulaire d'ajout d'espace de travail pour le rendre dynamique
   $(document).on('submit', 'form', function(e) {
     const form = $(this);
     const newWorkspaceInput = form.find('input[name="new_workspace"]');
@@ -15,7 +14,7 @@ $(function(){
       const fd = new FormData();
       fd.append('new_workspace', workspaceName);
       fd.append('token', token);
-      fd.append('ajax', '1'); // Ajouter un paramètre pour identifier la requête AJAX
+      fd.append('ajax', '1'); 
       
       fetch('', {
         method: 'POST',
@@ -26,7 +25,6 @@ $(function(){
         if (contentType && contentType.includes('application/json')) {
           return response.json();
         } else {
-          // Si ce n'est pas du JSON, c'est probablement une redirection
           throw new Error('Response is not JSON');
         }
       })
@@ -112,7 +110,7 @@ $(function(){
                   const isSelected = selectedTags.includes(parseInt(opt.id));
                   console.log(`Option ${opt.label} (ID: ${opt.id}) - Sélectionnée: ${isSelected}`); // Debug
                   return `
-                    <div class="tag-option ${isSelected ? 'selected' : ''}" data-tag-id="${opt.id}" style="display:inline-block;margin:5px;padding:6px 12px;background:#87CEEB;color:white;border-radius:15px;cursor:pointer;border:2px solid ${isSelected ? '#000' : 'transparent'};">
+                    <div class="tag-option ${isSelected ? 'selected' : ''}" data-tag-id="${opt.id}" style="display:inline-block;margin:5px;padding:6px 12px;background:${opt.color || '#87CEEB'};color:white;border-radius:15px;cursor:pointer;border:2px solid ${isSelected ? '#000' : 'transparent'};">
                       ${opt.label}
                     </div>
                   `;
@@ -168,9 +166,9 @@ $(function(){
                 selectedTagIds.forEach(tagId => {
                   const tag = allOptions.find(opt => parseInt(opt.id) === tagId);
                   if(tag) {
-                    // Toujours utiliser la couleur bleu ciel pour les tags
+                    // Utiliser la couleur définie pour le tag
                     tagsHtml += `
-                      <span class="tag-item" data-tag-id="${tag.id}" style="background:#87CEEB;color:white;padding:2px 6px;border-radius:12px;font-size:11px;display:flex;align-items:center;gap:4px;">
+                      <span class="tag-item" data-tag-id="${tag.id}" style="background:${tag.color || '#87CEEB'};color:white;padding:2px 6px;border-radius:12px;font-size:11px;display:flex;align-items:center;gap:4px;">
                         ${tag.label}
                         <span class="remove-tag" onclick="removeTag(event, this)" style="cursor:pointer;font-weight:bold;">×</span>
                       </span>
@@ -766,11 +764,9 @@ $(function(){
                                                      <option value="">-- Choisir --</option>`;
                                   options.forEach(opt=>{
                                     const selected = cellValue == opt.id ? 'selected' : '';
-                                    // Couleurs simples par défaut pour les listes déroulantes
-                                    const colors = ['#87CEEB', '#98FB98', '#FFB6C1', '#F0E68C', '#DDA0DD'];
-                                    const colorIndex = options.indexOf(opt) % colors.length;
-                                    const defaultColor = colors[colorIndex];
-                                    selectHtml += `<option value="${opt.id}" ${selected} style="background:${defaultColor};">${opt.label}</option>`;
+                                    // Utiliser la couleur de l'option ou une couleur par défaut
+                                    const optionColor = opt.color || '#87CEEB';
+                                    selectHtml += `<option value="${opt.id}" ${selected} style="background:${optionColor};">${opt.label}</option>`;
                                   });
                                   selectHtml += '</select>';
                                   return selectHtml;
@@ -801,9 +797,9 @@ $(function(){
                                   selectedTags.forEach(tagId => {
                                     const tag = options.find(opt => opt.id == tagId);
                                     if(tag) {
-                                      // Toujours utiliser la couleur bleu ciel pour les tags
+                                      // Utiliser la couleur définie pour le tag
                                       tagsHtml += `
-                                        <span class="tag-item" data-tag-id="${tag.id}" style="background:#87CEEB;color:white;padding:2px 6px;border-radius:12px;font-size:11px;display:flex;align-items:center;gap:4px;">
+                                        <span class="tag-item" data-tag-id="${tag.id}" style="background:${tag.color || '#87CEEB'};color:white;padding:2px 6px;border-radius:12px;font-size:11px;display:flex;align-items:center;gap:4px;">
                                           ${tag.label}
                                           <span class="remove-tag" onclick="removeTag(event, this)" style="cursor:pointer;font-weight:bold;">×</span>
                                         </span>
@@ -1186,7 +1182,7 @@ $(function(){
                 <div style="margin-bottom:20px;">
                   <h5 style="margin-bottom:10px;">Couleurs prédéfinies :</h5>
                   <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;">
-                    ${['#87CEEB', '#98FB98', '#FFB6C1', '#F0E68C', '#DDA0DD', '#FFA07A', '#20B2AA', '#87CEFA', '#DEB887', '#F5DEB3'].map(color => `
+                    ${['#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#FF8000', '#00FFFF', '#800080', '#008000', '#FFC0CB'].map(color => `
                       <div class="preset-color" data-color="${color}" style="width:40px;height:40px;background:${color};border:3px solid ${currentColor === color ? '#000' : '#ccc'};cursor:pointer;border-radius:6px;transition:all 0.2s;"></div>
                     `).join('')}
                   </div>
