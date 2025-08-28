@@ -1145,8 +1145,8 @@ $(function(){
                 ${options.map(opt => `
                   <div class="option-item" data-option-id="${opt.id}" style="display:flex;align-items:center;gap:10px;margin-bottom:10px;padding:10px;border:1px solid #ddd;border-radius:4px;">
                     <div class="color-preview" style="width:20px;height:20px;border-radius:4px;background:${opt.color || '#87CEEB'};border:1px solid #ccc;cursor:pointer;" title="Cliquer pour changer la couleur"></div>
-                    <input type="text" class="option-label" value="${opt.label}" style="flex:1;padding:4px;border:1px solid #ddd;border-radius:3px;">
-                    <button class="rename-option-btn" data-option-id="${opt.id}" style="padding:4px 8px;background:#28a745;color:white;border:none;cursor:pointer;border-radius:3px;">✓</button>
+                    <span class="option-label-display" style="flex:1;padding:4px;">${opt.label}</span>
+                    <button class="edit-option-btn" data-option-id="${opt.id}" style="padding:4px 8px;background:#007cba;color:white;border:none;cursor:pointer;border-radius:3px;">✎</button>
                     <button class="delete-option-btn" data-option-id="${opt.id}" style="padding:4px 8px;background:#dc3545;color:white;border:none;cursor:pointer;border-radius:3px;">✖</button>
                   </div>
                 `).join('')}
@@ -1283,16 +1283,16 @@ $(function(){
           });
         });
         
-        // Renommer une option
-        $(document).on('click', '.rename-option-btn', function(){
+        // Modifier une option (bouton crayon)
+        $(document).on('click', '.edit-option-btn', function(){
           const optionId = $(this).data('option-id');
           const $item = $(this).closest('.option-item');
-          const newLabel = $item.find('.option-label').val().trim();
+          const $labelDisplay = $item.find('.option-label-display');
+          const currentLabel = $labelDisplay.text();
           
-          if(!newLabel) {
-            alert('Le label ne peut pas être vide');
-            return;
-          }
+          const newLabel = prompt('Nouveau nom de l\'option :', currentLabel);
+          
+          if(!newLabel || newLabel === currentLabel) return;
           
           const fd = new FormData();
           fd.append('rename_option_id', optionId);
@@ -1300,13 +1300,20 @@ $(function(){
           fd.append('token', token);
           
           fetch('', {method: 'POST', body: fd})
-            .then(() => console.log('Option renommée'))
-            .catch(e => console.log('Option renommée'));
+            .then(() => {
+              $labelDisplay.text(newLabel);
+              console.log('Option renommée');
+            })
+            .catch(e => console.log('Erreur lors du renommage:', e));
         });
         
         // Supprimer une option
-        $(document).on('click', '.delete-option-btn', function(){
+        $('.delete-option-btn').off('click').on('click', function(e){
+          e.preventDefault();
+          e.stopPropagation();
+          
           const optionId = $(this).data('option-id');
+          const $button = $(this);
           
           if(!confirm('Supprimer cette option ?')) return;
           
@@ -1316,8 +1323,9 @@ $(function(){
           
           fetch('', {method: 'POST', body: fd})
             .then(() => {
-              $(this).closest('.option-item').remove();
-            });
+              $button.closest('.option-item').remove();
+            })
+            .catch(e => console.error('Erreur lors de la suppression:', e));
         });
         
         // Ajouter une nouvelle option
@@ -1338,15 +1346,37 @@ $(function(){
           fetch('', {method: 'POST', body: fd})
             .then(() => {
               // Ajouter l'option à la liste dans le modal
+              const tempId = Date.now();
               const newOption = $(`
-                <div class="option-item" data-option-id="temp_${Date.now()}" style="display:flex;align-items:center;gap:10px;margin-bottom:10px;padding:10px;border:1px solid #ddd;border-radius:4px;">
+                <div class="option-item" data-option-id="temp_${tempId}" style="display:flex;align-items:center;gap:10px;margin-bottom:10px;padding:10px;border:1px solid #ddd;border-radius:4px;">
                   <div class="color-preview" style="width:20px;height:20px;border-radius:4px;background:${selectedColor};border:1px solid #ccc;cursor:pointer;" title="Cliquer pour changer la couleur"></div>
-                  <input type="text" class="option-label" value="${label}" style="flex:1;padding:4px;border:1px solid #ddd;border-radius:3px;">
-                  <button class="rename-option-btn" data-option-id="temp_${Date.now()}" style="padding:4px 8px;background:#28a745;color:white;border:none;cursor:pointer;border-radius:3px;">✓</button>
-                  <button class="delete-option-btn" data-option-id="temp_${Date.now()}" style="padding:4px 8px;background:#dc3545;color:white;border:none;cursor:pointer;border-radius:3px;">✖</button>
+                  <span class="option-label-display" style="flex:1;padding:4px;">${label}</span>
+                  <button class="edit-option-btn" data-option-id="temp_${tempId}" style="padding:4px 8px;background:#007cba;color:white;border:none;cursor:pointer;border-radius:3px;">✎</button>
+                  <button class="delete-option-btn" data-option-id="temp_${tempId}" style="padding:4px 8px;background:#dc3545;color:white;border:none;cursor:pointer;border-radius:3px;">✖</button>
                 </div>
               `);
               $('#options-list').append(newOption);
+              
+              // Attacher les événements aux nouveaux boutons
+              newOption.find('.delete-option-btn').off('click').on('click', function(e){
+                e.preventDefault();
+                e.stopPropagation();
+                
+                const optionId = $(this).data('option-id');
+                const $button = $(this);
+                
+                if(!confirm('Supprimer cette option ?')) return;
+                
+                const fd = new FormData();
+                fd.append('delete_option_id', optionId);
+                fd.append('token', token);
+                
+                fetch('', {method: 'POST', body: fd})
+                  .then(() => {
+                    $button.closest('.option-item').remove();
+                  })
+                  .catch(e => console.error('Erreur lors de la suppression:', e));
+              });
               
               // Réinitialiser les champs
               $('#new-option-label').val('');
