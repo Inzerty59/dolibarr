@@ -953,7 +953,15 @@ $(function(){
         <button id="rename-btn" style="padding:2px 6px;">✎</button>
         <button id="delete-btn" style="padding:2px 6px;">✖</button>
       </div>
-      <button id="add-group-btn" style="margin:1rem 0;">+ Ajouter un groupe</button>
+      <div style="display:flex;align-items:center;gap:10px;margin:1rem 0;">
+        <button id="add-group-btn">+ Ajouter un groupe</button>
+        <div style="position:relative;display:inline-block;">
+          <input type="text" id="workspace-search" placeholder="Rechercher dans cet espace..." 
+                 style="padding:6px 30px 6px 10px;border:1px solid #ccc;border-radius:4px;width:250px;">
+          <button id="clear-workspace-search" style="position:absolute;right:5px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:#999;font-size:16px;padding:0;width:20px;height:20px;display:none;">×</button>
+        </div>
+      </div>
+      <div id="search-info" style="font-size:12px;color:#666;margin-bottom:10px;display:none;"></div>
       <div id="group-list"></div>
     `);
 
@@ -1013,6 +1021,12 @@ $(function(){
       fd.append('group_label',n); fd.append('token',token);
       fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wsId));
     });
+
+    // Réinitialiser la recherche quand on change d'espace
+    if ($('#workspace-search').length) {
+      $('#workspace-search').val('');
+      $('#search-info').hide();
+    }
 
     loadGroups(wsId);
   });
@@ -1274,6 +1288,14 @@ $(function(){
           initGroupSortable();
 
           attachEventHandlers(wid);
+          
+          setTimeout(function() {
+            if ($('#workspace-search').length && $('#workspace-search').val().trim()) {
+              const searchTerm = $('#workspace-search').val();
+              $('#workspace-search').trigger('input');
+            }
+            initWorkspaceSearch();
+          }, 100);
         });
   }
 
@@ -1711,5 +1733,213 @@ $(function(){
         });
       });
   }
+
+  let searchTimeout;
+
+  function initWorkspaceSearch() {
+    const $searchInput = $('#workspace-search');
+    const $clearButton = $('#clear-workspace-search');
+    const $searchInfo = $('#search-info');
+    
+    if ($searchInput.length === 0) return;
+    
+    function normalizeText(text) {
+      return text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    }
+    
+    function performWorkspaceSearch(searchTerm) {
+      const $groups = $('.group');
+      let totalItems = 0;
+      let visibleItems = 0;
+      let foundInGroups = new Set();
+      
+      $('.search-highlight').contents().unwrap();
+      $('td').css('background-color', '');
+      
+      if (!searchTerm.trim()) {
+        $groups.show();
+        $groups.find('tr').removeClass('task-row-hidden').show();
+        $groups.find('td').css('background-color', '');
+        $searchInfo.hide();
+        $('#no-results-message').remove();
+        return;
+      }
+      
+      const normalizedSearchTerm = normalizeText(searchTerm.trim());
+      const searchRegex = new RegExp(searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+      
+      $groups.each(function() {
+        const $group = $(this);
+        const groupId = $group.attr('data-id');
+        let hasMatchInGroup = false;
+        
+        const $groupLabel = $group.find('.group-label');
+        const groupLabelText = $groupLabel.text().trim();
+        if (normalizeText(groupLabelText).includes(normalizedSearchTerm)) {
+          const highlightedText = groupLabelText.replace(searchRegex, '<span class="search-highlight">$&</span>');
+          $groupLabel.html(highlightedText);
+          hasMatchInGroup = true;
+          totalItems++;
+          visibleItems++;
+        }
+        
+        const $rows = $group.find('tbody tr');
+        $rows.each(function() {
+          const $row = $(this);
+          let hasMatchInRow = false;
+          
+          $row.find('td').each(function() {
+            const $cell = $(this);
+            let cellText = '';
+            
+            if ($cell.find('input[type="text"], input[type="date"], textarea').length > 0) {
+              cellText = $cell.find('input, textarea').val() || '';
+            } else if ($cell.find('select').length > 0) {
+              const selectedText = $cell.find('select option:selected').text() || '';
+              cellText = selectedText.replace('-- Choisir --', '').trim();
+            } else if ($cell.find('.selected-tags').length > 0) {
+              $cell.find('.tag-item').each(function() {
+                cellText += $(this).text().replace('×', '').trim() + ' ';
+              });
+            } else if ($cell.find('.days-remaining').length > 0) {
+              cellText = $cell.find('.days-remaining').text();
+            } else if ($cell.find('.user-cell').length > 0) {
+              cellText = $cell.find('.user-cell').text().trim();
+            } else {
+              cellText = $cell.text().trim();
+            }
+            
+            if (cellText && normalizeText(cellText).includes(normalizedSearchTerm)) {
+              if ($cell.find('input, textarea').length === 0 && 
+                  $cell.find('select').length === 0 && 
+                  $cell.find('.tag-item').length === 0 && 
+                  $cell.find('.user-cell').length === 0) {
+                const highlightedText = cellText.replace(searchRegex, '<span class="search-highlight">$&</span>');
+                $cell.html(highlightedText);
+              } else if ($cell.find('select').length > 0) {
+                $cell.css('background-color', '#fff3cd');
+              } else if ($cell.find('.tag-item').length > 0) {
+                $cell.find('.tag-item').each(function() {
+                  const $tag = $(this);
+                  const tagText = $tag.text().replace('×', '').trim();
+                  if (normalizeText(tagText).includes(normalizedSearchTerm)) {
+                    const highlightedTagText = tagText.replace(searchRegex, '<span class="search-highlight">$&</span>');
+                    $tag.html(highlightedTagText + '<span class="remove-tag" onclick="removeTag(event, this)" style="cursor:pointer;font-weight:bold;">×</span>');
+                  }
+                });
+              } else if ($cell.find('.user-cell').length > 0) {
+                $cell.css('background-color', '#fff3cd');
+              } else if ($cell.find('input, textarea').length > 0) {
+                $cell.css('background-color', '#fff3cd');
+              }
+              hasMatchInRow = true;
+              hasMatchInGroup = true;
+            }
+          });
+          
+          if (hasMatchInRow) {
+            $row.removeClass('task-row-hidden').show();
+            totalItems++;
+            visibleItems++;
+          } else {
+            $row.addClass('task-row-hidden').hide();
+          }
+        });
+        
+        $group.find('.column-label').each(function() {
+          const $colLabel = $(this);
+          const colText = $colLabel.text().trim();
+          if (normalizeText(colText).includes(normalizedSearchTerm)) {
+            const highlightedText = colText.replace(searchRegex, '<span class="search-highlight">$&</span>');
+            $colLabel.html(highlightedText);
+            hasMatchInGroup = true;
+            totalItems++;
+            visibleItems++;
+          }
+        });
+        
+        if (hasMatchInGroup) {
+          foundInGroups.add(groupId);
+          $group.show();
+          if ($group.find('.group-body').is(':hidden')) {
+            $group.find('.group-body').show();
+            $group.find('.group-toggle').text('▼');
+          }
+        } else {
+          $group.hide();
+        }
+      });
+      
+      if (visibleItems === 0) {
+        $searchInfo.html(`Aucun résultat trouvé pour "<strong>${escapeHtml(searchTerm)}</strong>"`).show();
+        
+        if ($('.group:visible').length === 0 && $('.group').length > 0) {
+          if ($('#no-results-message').length === 0) {
+            $('#group-list').append(`
+              <div id="no-results-message" style="text-align:center;padding:40px;background:#f8f9fa;border-radius:8px;margin-top:20px;border:2px dashed #ddd;">
+                <div style="font-size:48px;color:#ccc;margin-bottom:15px;">🔍</div>
+                <h3 style="color:#666;margin-bottom:10px;">Aucun résultat trouvé</h3>
+                <p style="color:#999;margin:0;">Essayez de modifier votre terme de recherche dans cet espace de travail.</p>
+              </div>
+            `);
+          }
+        }
+      } else {
+        $searchInfo.html(`${visibleItems} élément(s) trouvé(s) pour "<strong>${escapeHtml(searchTerm)}</strong>"`).show();
+        $('#no-results-message').remove();
+      }
+    }
+    
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+    
+    $searchInput.on('input', function() {
+      clearTimeout(searchTimeout);
+      const searchTerm = $(this).val();
+      
+      if (searchTerm.trim()) {
+        $clearButton.show();
+      } else {
+        $clearButton.hide();
+      }
+      
+      searchTimeout = setTimeout(function() {
+        performWorkspaceSearch(searchTerm);
+      }, 300);
+    });
+    
+    $searchInput.on('keypress', function(e) {
+      if (e.which === 13) {
+        clearTimeout(searchTimeout);
+        performWorkspaceSearch($(this).val());
+      }
+    });
+    
+    $clearButton.on('click', function() {
+      $searchInput.val('');
+      $clearButton.hide();
+      performWorkspaceSearch('');
+    });
+    
+    $(document).on('keydown', function(e) {
+      if (e.ctrlKey && e.key === 'f' && $searchInput.is(':visible')) {
+        e.preventDefault();
+        $searchInput.focus();
+      }
+      
+      if (e.key === 'Escape' && $searchInput.is(':focus')) {
+        $searchInput.val('');
+        $clearButton.hide();
+        performWorkspaceSearch('');
+        $searchInput.blur();
+      }
+    });
+  }
+  
+  $(document).ready(function() {
+  });
 
 });
