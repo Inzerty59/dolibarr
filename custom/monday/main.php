@@ -456,23 +456,38 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['users_list'])) {
 }
 
 if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['upload_task_file'], $_FILES['task_file'])) {
-    if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
+    error_log("=== UPLOAD TASK FILE DEBUG ===");
+    error_log("Token POST: " . $_POST['token']);
+    error_log("Token SESSION: " . $_SESSION['newtoken']);
+    error_log("Task ID: " . $_POST['upload_task_file']);
+    error_log("File info: " . print_r($_FILES['task_file'], true));
+    
+    if ($_POST['token'] !== $_SESSION['newtoken']) {
+        error_log("CSRF token mismatch!");
+        accessforbidden('CSRF token invalid');
+    }
     
     $task_id = (int)$_POST['upload_task_file'];
-    $upload_dir = $conf->file->dir_output.'/myworkspace/tasks/';
+    $upload_dir = '/var/www/documents/myworkspace/tasks/';
+    error_log("Upload dir: " . $upload_dir);
     
     // Créer le dossier s'il n'existe pas
     if (!file_exists($upload_dir)) {
+        error_log("Creating upload directory...");
         mkdir($upload_dir, 0755, true);
     }
     
     $file = $_FILES['task_file'];
     $filename = basename($file['name']);
+    // Nettoyer le nom de fichier
+    $filename = preg_replace('/[^a-zA-Z0-9._-]/', '_', $filename);
     $extension = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+    error_log("Filename: " . $filename . ", Extension: " . $extension);
     
     // Vérifier les extensions autorisées
     $allowed_extensions = ['jpg', 'jpeg', 'png', 'gif', 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'txt', 'zip'];
     if (!in_array($extension, $allowed_extensions)) {
+        error_log("Extension not allowed: " . $extension);
         http_response_code(400);
         header('Content-Type: application/json');
         echo json_encode(['error' => 'Type de fichier non autorisé']);
@@ -481,6 +496,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['upload_task_file'], $_F
     
     // Vérifier la taille (max 10MB)
     if ($file['size'] > 10 * 1024 * 1024) {
+        error_log("File too large: " . $file['size']);
         http_response_code(400);
         header('Content-Type: application/json');
         echo json_encode(['error' => 'Fichier trop volumineux (max 10MB)']);
@@ -490,8 +506,10 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['upload_task_file'], $_F
     // Générer un nom unique
     $unique_filename = time() . '_' . uniqid() . '_' . $filename;
     $filepath = $upload_dir . $unique_filename;
+    error_log("Target filepath: " . $filepath);
     
     if (move_uploaded_file($file['tmp_name'], $filepath)) {
+        error_log("File moved successfully");
         // Enregistrer en base
         $original_name = $db->escape($filename);
         $unique_name = $db->escape($unique_filename);
@@ -502,9 +520,11 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['upload_task_file'], $_F
         
         $sql = "INSERT INTO llx_myworkspace_task_file (fk_task, original_name, filename, filesize, mimetype, fk_user, datec) 
                 VALUES ($task_id, '$original_name', '$unique_name', $filesize, '$mimetype', $uid, '$date')";
+        error_log("SQL: " . $sql);
         
         if ($db->query($sql)) {
             $file_id = $db->last_insert_id('llx_myworkspace_task_file');
+            error_log("File inserted with ID: " . $file_id);
             header('Content-Type: application/json');
             echo json_encode([
                 'rowid' => $file_id,
@@ -514,12 +534,14 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['upload_task_file'], $_F
                 'mimetype' => $file['type']
             ]);
         } else {
+            error_log("Database insert failed: " . $db->error());
             unlink($filepath); // Supprimer le fichier si l'insertion échoue
             http_response_code(500);
             header('Content-Type: application/json');
             echo json_encode(['error' => 'Erreur lors de l\'enregistrement']);
         }
     } else {
+        error_log("Move uploaded file failed. Upload error: " . $file['error']);
         http_response_code(500);
         header('Content-Type: application/json');
         echo json_encode(['error' => 'Erreur lors de l\'upload']);
@@ -566,7 +588,7 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['download_file'])) {
     }
     
     if ($file = $db->fetch_object($res)) {
-        $filepath = $conf->file->dir_output.'/myworkspace/'.$subdir.'/' . $file->filename;
+        $filepath = '/var/www/documents/myworkspace/'.$subdir.'/' . $file->filename;
         
         if (file_exists($filepath)) {
             header('Content-Type: ' . $file->mimetype);
@@ -604,7 +626,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['delete_file_id'])) {
     
     if ($file && $file->fk_user == $uid) {
         // Supprimer le fichier physique
-        $filepath = $conf->file->dir_output.'/myworkspace/'.$subdir.'/' . $file->filename;
+        $filepath = '/var/www/documents/myworkspace/'.$subdir.'/' . $file->filename;
         if (file_exists($filepath)) {
             unlink($filepath);
         }
