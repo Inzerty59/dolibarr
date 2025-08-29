@@ -1,6 +1,7 @@
 $(function(){
   $('.side-nav .vmenu').prepend(window.leftmenu || '');
   const token = window.formtoken;
+  const userId = window.userId;
 
   $(document).on('submit', 'form', function(e) {
     const form = $(this);
@@ -410,6 +411,7 @@ $(function(){
       });
     
     loadComments(taskId);
+    loadTaskFiles(taskId);
   };
 
   // Fonction pour fermer le panneau
@@ -466,6 +468,173 @@ $(function(){
         console.error('Erreur lors du chargement des commentaires:', err);
       });
   }
+
+  // Fonction pour charger les fichiers d'une tâche
+  function loadTaskFiles(taskId) {
+    console.log('loadTaskFiles appelée avec taskId:', taskId);
+    fetch(`?task_files=${taskId}`)
+      .then(r => {
+        console.log('Réponse task_files reçue:', r.status);
+        return r.json();
+      })
+      .then(files => {
+        console.log('Fichiers reçus:', files);
+        const $filesList = $('#task-files-list');
+        $filesList.empty();
+        
+        if (files.length === 0) {
+          $filesList.append(`
+            <div class="no-files" style="text-align:center;color:#666;font-style:italic;padding:20px;">
+              Aucun fichier pour cette tâche
+            </div>
+          `);
+        } else {
+          files.forEach(file => {
+            const fileSize = formatFileSize(file.filesize);
+            const fileIcon = getFileIcon(file.mimetype, file.original_name);
+            
+            const $fileItem = $(`
+              <div class="task-file-item" data-file-id="${file.rowid}">
+                <div class="task-file-info">
+                  <a href="#" class="task-file-name" onclick="viewTaskFile(${file.rowid}, '${file.original_name}', '${file.mimetype}'); return false;">
+                    ${fileIcon} ${file.original_name}
+                  </a>
+                  <div class="task-file-meta">${fileSize} • ${file.user_name || 'Inconnu'}</div>
+                </div>
+                <div class="task-file-actions">
+                  <button class="task-delete-file" onclick="deleteTaskFile(${file.rowid})" title="Supprimer">×</button>
+                </div>
+              </div>
+            `);
+            
+            $filesList.append($fileItem);
+          });
+        }
+      })
+      .catch(err => {
+        console.error('Erreur lors du chargement des fichiers de tâche:', err);
+        const $filesList = $('#task-files-list');
+        $filesList.html(`
+          <div style="text-align:center;color:#dc3545;padding:20px;">
+            Erreur lors du chargement des fichiers
+          </div>
+        `);
+      });
+  }
+
+  // Fonction pour formater la taille des fichiers
+  function formatFileSize(bytes) {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  }
+
+  // Fonction pour obtenir l'icône du fichier
+  function getFileIcon(mimetype, filename) {
+    if (!mimetype && filename) {
+      const ext = filename.split('.').pop().toLowerCase();
+      switch(ext) {
+        case 'pdf': return '📄';
+        case 'doc':
+        case 'docx': return '📝';
+        case 'xls':
+        case 'xlsx': return '📊';
+        case 'zip':
+        case 'rar': return '🗜️';
+        case 'txt': return '📃';
+        default: return '📎';
+      }
+    }
+    
+    if (mimetype) {
+      if (mimetype.startsWith('image/')) return '🖼️';
+      if (mimetype.startsWith('video/')) return '🎥';
+      if (mimetype.startsWith('audio/')) return '🎵';
+      if (mimetype.includes('pdf')) return '📄';
+      if (mimetype.includes('word') || mimetype.includes('document')) return '📝';
+      if (mimetype.includes('sheet') || mimetype.includes('excel')) return '📊';
+      if (mimetype.includes('zip') || mimetype.includes('compressed')) return '🗜️';
+    }
+    
+    return '📎';
+  }
+
+  // Fonction globale pour visualiser un fichier de tâche
+  window.viewTaskFile = function(fileId, fileName, mimeType) {
+    const isImage = mimeType && mimeType.startsWith('image/');
+    const isPdf = mimeType && mimeType.includes('pdf');
+    
+    if (isImage || isPdf) {
+      // Ouvrir dans une modale pour les images et PDFs
+      const modal = $(`
+        <div id="file-viewer-modal" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);z-index:1001;display:flex;align-items:center;justify-content:center;">
+          <div style="position:relative;max-width:90%;max-height:90%;background:white;padding:20px;border-radius:8px;">
+            <button id="close-viewer" style="position:absolute;top:10px;right:10px;background:none;border:none;font-size:24px;cursor:pointer;">✖</button>
+            <h4 style="margin:0 0 15px 0;">${fileName}</h4>
+            ${isImage ? 
+              `<img src="?download_file=${fileId}&type=task" style="max-width:100%;max-height:70vh;" alt="${fileName}">` :
+              `<iframe src="?download_file=${fileId}&type=task" style="width:80vw;height:70vh;border:none;"></iframe>`
+            }
+          </div>
+        </div>
+      `);
+      
+      $('body').append(modal);
+      
+      $('#close-viewer').click(() => modal.remove());
+      modal.click(function(e) {
+        if (e.target === modal[0]) modal.remove();
+      });
+    } else {
+      // Télécharger directement pour les autres types
+      window.open(`?download_file=${fileId}&type=task`, '_blank');
+    }
+  };
+
+  // Fonction globale pour supprimer un fichier de tâche
+  window.deleteTaskFile = function(fileId) {
+    if (!confirm('Êtes-vous sûr de vouloir supprimer ce fichier ?')) {
+      return;
+    }
+    
+    const fd = new FormData();
+    fd.append('delete_file_id', fileId);
+    fd.append('type', 'task');
+    fd.append('token', token);
+    
+    fetch('', {method: 'POST', body: fd})
+      .then(r => r.text())
+      .then(response => {
+        if (response === 'OK') {
+          loadTaskFiles(currentTaskId);
+        } else {
+          alert('Erreur lors de la suppression');
+        }
+      });
+  };
+
+  // Fonction globale pour supprimer un fichier
+  window.deleteFile = function(fileId) {
+    if (!confirm('Êtes-vous sûr de vouloir supprimer ce fichier ?')) {
+      return;
+    }
+    
+    const fd = new FormData();
+    fd.append('delete_file_id', fileId);
+    fd.append('token', token);
+    
+    fetch('', {method: 'POST', body: fd})
+      .then(r => r.text())
+      .then(response => {
+        if (response === 'OK') {
+          $(`.file-item[data-file-id="${fileId}"]`).remove();
+        } else {
+          alert('Erreur lors de la suppression');
+        }
+      });
+  };
 
   // Fonction pour ajouter un commentaire
   function addComment() {
@@ -663,6 +832,71 @@ $(function(){
     $commentItem.find('.edit-comment-form').remove();
     $commentItem.find('.comment-text').show();
     $commentItem.find('.comment-actions').show();
+  });
+
+  // Gestionnaires pour les fichiers des tâches
+  $(document).on('click', '#add-task-file-btn', function() {
+    console.log('Bouton add-task-file-btn cliqué');
+    console.log('currentTaskId:', currentTaskId);
+    $('#task-file-input').click();
+  });
+
+  $(document).on('change', '#task-file-input', function() {
+    const files = this.files;
+    console.log('Files sélectionnés:', files.length);
+    console.log('currentTaskId:', currentTaskId);
+    
+    if (files.length === 0) {
+      console.log('Aucun fichier sélectionné');
+      return;
+    }
+    
+    if (!currentTaskId) {
+      console.log('Erreur: currentTaskId est null');
+      alert('Erreur: Aucune tâche sélectionnée');
+      return;
+    }
+    
+    // Créer un indicateur de chargement
+    const $loadingDiv = $(`<div class="upload-progress">Upload en cours...</div>`);
+    $('.task-file-upload-area').append($loadingDiv);
+    
+    // Upload des fichiers un par un
+    Array.from(files).forEach((file, index) => {
+      console.log('Upload du fichier:', file.name);
+      const fd = new FormData();
+      fd.append('upload_task_file', currentTaskId);
+      fd.append('task_file', file);
+      fd.append('token', token);
+      
+      fetch('', {method: 'POST', body: fd})
+        .then(r => {
+          console.log('Réponse reçue:', r.status);
+          if (!r.ok) throw new Error('Upload failed');
+          return r.json();
+        })
+        .then(result => {
+          console.log('Résultat:', result);
+          if (result.error) {
+            alert('Erreur upload: ' + result.error);
+          } else {
+            // Recharger les fichiers de la tâche
+            loadTaskFiles(currentTaskId);
+          }
+        })
+        .catch(err => {
+          console.error('Erreur upload:', err);
+          alert('Erreur lors de l\'upload du fichier: ' + file.name);
+        })
+        .finally(() => {
+          if (index === files.length - 1) {
+            $loadingDiv.remove();
+          }
+        });
+    });
+    
+    // Reset input
+    $(this).val('');
   });
 
   $('#workspace-list').sortable({

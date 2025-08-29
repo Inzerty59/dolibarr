@@ -455,6 +455,170 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['users_list'])) {
     exit;
 }
 
+if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['upload_task_file'], $_FILES['task_file'])) {
+    if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
+    
+    $task_id = (int)$_POST['upload_task_file'];
+    $upload_dir = $conf->file->dir_output.'/myworkspace/tasks/';
+    
+    // Créer le dossier s'il n'existe pas
+    if (!file_exists($upload_dir)) {
+        mkdir($upload_dir, 0755, true);
+    }
+    
+    $file = $_FILES['task_file'];
+    $filename = basename($file['name']);
+    $extension = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+    
+    // Vérifier les extensions autorisées
+    $allowed_extensions = ['jpg', 'jpeg', 'png', 'gif', 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'txt', 'zip'];
+    if (!in_array($extension, $allowed_extensions)) {
+        http_response_code(400);
+        header('Content-Type: application/json');
+        echo json_encode(['error' => 'Type de fichier non autorisé']);
+        exit;
+    }
+    
+    // Vérifier la taille (max 10MB)
+    if ($file['size'] > 10 * 1024 * 1024) {
+        http_response_code(400);
+        header('Content-Type: application/json');
+        echo json_encode(['error' => 'Fichier trop volumineux (max 10MB)']);
+        exit;
+    }
+    
+    // Générer un nom unique
+    $unique_filename = time() . '_' . uniqid() . '_' . $filename;
+    $filepath = $upload_dir . $unique_filename;
+    
+    if (move_uploaded_file($file['tmp_name'], $filepath)) {
+        // Enregistrer en base
+        $original_name = $db->escape($filename);
+        $unique_name = $db->escape($unique_filename);
+        $filesize = (int)$file['size'];
+        $mimetype = $db->escape($file['type']);
+        $uid = $user->id;
+        $date = date('Y-m-d H:i:s');
+        
+        $sql = "INSERT INTO llx_myworkspace_task_file (fk_task, original_name, filename, filesize, mimetype, fk_user, datec) 
+                VALUES ($task_id, '$original_name', '$unique_name', $filesize, '$mimetype', $uid, '$date')";
+        
+        if ($db->query($sql)) {
+            $file_id = $db->last_insert_id('llx_myworkspace_task_file');
+            header('Content-Type: application/json');
+            echo json_encode([
+                'rowid' => $file_id,
+                'original_name' => $filename,
+                'filename' => $unique_filename,
+                'filesize' => $filesize,
+                'mimetype' => $file['type']
+            ]);
+        } else {
+            unlink($filepath); // Supprimer le fichier si l'insertion échoue
+            http_response_code(500);
+            header('Content-Type: application/json');
+            echo json_encode(['error' => 'Erreur lors de l\'enregistrement']);
+        }
+    } else {
+        http_response_code(500);
+        header('Content-Type: application/json');
+        echo json_encode(['error' => 'Erreur lors de l\'upload']);
+    }
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['task_files'])) {
+    $task_id = (int)$_GET['task_files'];
+    $res = $db->query("
+        SELECT f.rowid, f.original_name, f.filename, f.filesize, f.mimetype, f.datec, u.firstname, u.lastname
+        FROM llx_myworkspace_task_file f
+        LEFT JOIN llx_user u ON u.rowid = f.fk_user
+        WHERE f.fk_task = $task_id
+        ORDER BY f.datec ASC
+    ");
+    $out = [];
+    while ($o = $db->fetch_object($res)) {
+        $out[] = [
+            'rowid' => $o->rowid,
+            'original_name' => $o->original_name,
+            'filename' => $o->filename,
+            'filesize' => $o->filesize,
+            'mimetype' => $o->mimetype,
+            'date' => $o->datec,
+            'user_name' => trim($o->firstname . ' ' . $o->lastname) ?: 'Utilisateur'
+        ];
+    }
+    header('Content-Type: application/json');
+    echo json_encode($out);
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['download_file'])) {
+    $file_id = (int)$_GET['download_file'];
+    $type = isset($_GET['type']) ? $_GET['type'] : 'comment'; // 'comment' ou 'task'
+    
+    if ($type === 'task') {
+        $res = $db->query("SELECT original_name, filename, mimetype FROM llx_myworkspace_task_file WHERE rowid = $file_id");
+        $subdir = 'tasks';
+    } else {
+        $res = $db->query("SELECT original_name, filename, mimetype FROM llx_myworkspace_comment_file WHERE rowid = $file_id");
+        $subdir = 'comments';
+    }
+    
+    if ($file = $db->fetch_object($res)) {
+        $filepath = $conf->file->dir_output.'/myworkspace/'.$subdir.'/' . $file->filename;
+        
+        if (file_exists($filepath)) {
+            header('Content-Type: ' . $file->mimetype);
+            header('Content-Disposition: inline; filename="' . $file->original_name . '"');
+            header('Content-Length: ' . filesize($filepath));
+            readfile($filepath);
+        } else {
+            http_response_code(404);
+            echo 'Fichier non trouvé';
+        }
+    } else {
+        http_response_code(404);
+        echo 'Fichier non trouvé';
+    }
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['delete_file_id'])) {
+    if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
+    $file_id = (int)$_POST['delete_file_id'];
+    $type = isset($_POST['type']) ? $_POST['type'] : 'comment'; // 'comment' ou 'task'
+    $uid = $user->id;
+    
+    if ($type === 'task') {
+        $res = $db->query("SELECT filename, fk_user FROM llx_myworkspace_task_file WHERE rowid = $file_id");
+        $subdir = 'tasks';
+        $table = 'llx_myworkspace_task_file';
+    } else {
+        $res = $db->query("SELECT filename, fk_user FROM llx_myworkspace_comment_file WHERE rowid = $file_id");
+        $subdir = 'comments';
+        $table = 'llx_myworkspace_comment_file';
+    }
+    
+    $file = $db->fetch_object($res);
+    
+    if ($file && $file->fk_user == $uid) {
+        // Supprimer le fichier physique
+        $filepath = $conf->file->dir_output.'/myworkspace/'.$subdir.'/' . $file->filename;
+        if (file_exists($filepath)) {
+            unlink($filepath);
+        }
+        
+        // Supprimer de la base
+        $db->query("DELETE FROM $table WHERE rowid = $file_id");
+        echo 'OK';
+    } else {
+        http_response_code(403);
+        echo 'Accès refusé';
+    }
+    exit;
+}
+
 $res = $db->query("SELECT rowid,label FROM llx_myworkspace ORDER BY position ASC");
 $workspaces = [];
 while ($o=$db->fetch_object($res)) $workspaces[] = $o;
@@ -521,6 +685,20 @@ ob_start();
         <div id="comments-list" class="comments-list">
         </div>
       </div>
+      
+      <div class="task-files-section">
+        <h4>Fichiers de la tâche</h4>
+        
+        <div class="task-files-content">
+          <div class="task-file-upload-area">
+            <input type="file" id="task-file-input" style="display:none;" multiple accept=".jpg,.jpeg,.png,.gif,.pdf,.doc,.docx,.xls,.xlsx,.txt,.zip">
+            <button id="add-task-file-btn">📎 Ajouter des fichiers</button>
+          </div>
+          
+          <div id="task-files-list" class="task-files-list">
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -529,8 +707,9 @@ ob_start();
 <script>
 window.leftmenu = <?php echo json_encode($leftmenu); ?>;
 window.formtoken = <?php echo json_encode($formtoken); ?>;
+window.userId = <?php echo $user->id; ?>;
 </script>
-<script src="<?php echo DOL_URL_ROOT ?>/custom/monday/js/main.js"></script>
+<script src="<?php echo DOL_URL_ROOT ?>/custom/monday/js/main.js?v=<?php echo time(); ?>"></script>
 
 <?php
 echo ob_get_clean();

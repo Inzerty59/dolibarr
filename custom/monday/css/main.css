@@ -428,6 +428,265 @@ span.vmenusearchselectcombo {
   font-style: italic;
 }
 
+/* Styles pour les fichiers des commentaires */
+.comment-files {
+  margin: 10px 0;
+  padding: 10px;
+  background: #f8f9fa;
+  border-radius: 4px;
+  border: 1px solid #e9ecef;
+}
+
+.files-list {
+  margin-bottom: 10px;
+}
+
+.file-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px;
+  margin-bottom: 5px;
+  background: white;
+  border-radius: 4px;
+  border: 1px solid #dee2e6;
+  transition: all 0.2s;
+}
+
+.file-item:hover {
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.file-info {
+  display: flex;
+  align-items: center;
+  flex: 1;
+}
+
+.file-icon {
+  font-size: 20px;
+  margin-right: 10px;
+}
+
+.file-details {
+  flex: 1;
+}
+
+.file-name {
+  font-weight: 500;
+  color: #333;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.file-name:hover {
+  color: #007cba;
+}
+
+.file-meta {
+  font-size: 12px;
+  color: #666;
+  margin-top: 2px;
+}
+
+.delete-file-btn {
+  background: none;
+  border: none;
+  color: #dc3545;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 3px;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.delete-file-btn:hover {
+  background: #f5c6cb;
+}
+
+.file-upload-area {
+  text-align: center;
+}
+
+.add-file-btn {
+  background: #6c757d;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 0.2s;
+}
+
+.add-file-btn:hover {
+  background: #5a6268;
+}
+
+.upload-progress {
+  background: #fff3cd;
+  color: #856404;
+  padding: 8px;
+  border-radius: 4px;
+  margin-top: 5px;
+  font-size: 12px;
+  text-align: center;
+}
+
+/* Modal viewer pour les fichiers */
+#file-viewer-modal {
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+#file-viewer-modal img {
+  box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+  border-radius: 4px;
+}
+
+#close-viewer {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: background 0.2s;
+}
+
+#close-viewer:hover {
+  background: #f8f9fa;
+}
+
+.task-files-section {
+  margin: 20px 0;
+  border: 1px solid #e1e4e8;
+  border-radius: 6px;
+  background: #f6f8fa;
+}
+
+.task-files-section h4 {
+  margin: 0;
+  padding: 12px 16px;
+  background: #e1e4e8;
+  border-radius: 6px 6px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #24292e;
+}
+
+.task-files-content {
+  padding: 16px;
+}
+
+.task-file-upload-area {
+  margin-bottom: 16px;
+  text-align: center;
+  padding: 20px;
+  border: 2px dashed #d1d5da;
+  border-radius: 6px;
+  background: white;
+}
+
+.task-file-upload-area:hover {
+  border-color: #0366d6;
+  background: #f1f8ff;
+}
+
+#add-task-file-btn {
+  background: #0366d6;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background 0.2s;
+}
+
+#add-task-file-btn:hover {
+  background: #0256cc;
+}
+
+#task-file-input {
+  display: none;
+}
+
+.task-files-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.task-file-item {
+  display: flex;
+  align-items: center;
+  background: white;
+  border: 1px solid #d1d5da;
+  border-radius: 6px;
+  padding: 8px 12px;
+  max-width: 250px;
+}
+
+.task-file-item:hover {
+  background: #f6f8fa;
+  border-color: #0366d6;
+}
+
+.task-file-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.task-file-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: #0366d6;
+  cursor: pointer;
+  text-decoration: none;
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.task-file-name:hover {
+  text-decoration: underline;
+}
+
+.task-file-meta {
+  font-size: 11px;
+  color: #586069;
+  margin-top: 2px;
+}
+
+.task-file-actions {
+  margin-left: 8px;
+}
+
+.task-delete-file {
+  background: #dc3545;
+  color: white;
+  border: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.task-delete-file:hover {
+  background: #c82333;
+}
+
 @media (max-width: 768px) {
   .task-detail-panel.open {
     width: 100%;
