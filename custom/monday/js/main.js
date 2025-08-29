@@ -857,10 +857,6 @@ $(function(){
       return;
     }
     
-    // Créer un indicateur de chargement
-    const $loadingDiv = $(`<div class="upload-progress">Upload en cours...</div>`);
-    $('.task-file-upload-area').append($loadingDiv);
-    
     // Upload des fichiers un par un
     Array.from(files).forEach((file, index) => {
       console.log('Upload du fichier:', file.name);
@@ -887,11 +883,6 @@ $(function(){
         .catch(err => {
           console.error('Erreur upload:', err);
           alert('Erreur lors de l\'upload du fichier: ' + file.name);
-        })
-        .finally(() => {
-          if (index === files.length - 1) {
-            $loadingDiv.remove();
-          }
         });
     });
     
