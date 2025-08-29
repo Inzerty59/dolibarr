@@ -37,11 +37,10 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['add_task_group_id'], $_
     if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
     $gid   = (int)$_POST['add_task_group_id'];
     $label = $db->escape($_POST['task_label']);
-    $datec = date('Y-m-d H:i:s'); // NOUVEAU : Date de création
+    $datec = date('Y-m-d H:i:s');
     $r     = $db->query("SELECT MAX(position) as m FROM llx_myworkspace_task WHERE fk_group=$gid");
     $p     = ($r && $o=$db->fetch_object($r)) ? $o->m+1 : 0;
     
-    // MODIFIER cette ligne pour inclure datec :
     $db->query("INSERT INTO llx_myworkspace_task (fk_group,label,position,datec) VALUES ($gid,'$label',$p,'$datec')");
     exit;
 }
@@ -173,7 +172,6 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['column_options'])) {
     exit;
 }
 
-// Nouvelle route pour récupérer les infos de la colonne
 if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['column_info'])) {
     $cid = (int)$_GET['column_info'];
     $res = $db->query("SELECT rowid, label, type FROM llx_myworkspace_column WHERE rowid = $cid");
@@ -324,7 +322,6 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['add_comment_task'], $_P
     $uid = $user->id;
     $date = date('Y-m-d H:i:s');
     
-    // Insérer le commentaire
     $sql = "INSERT INTO llx_myworkspace_comment (fk_task, fk_user, comment, datec) VALUES ($tid, $uid, '$comment', '$date')";
     $result = $db->query($sql);
     
@@ -343,7 +340,6 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['add_comment_task'], $_P
         exit;
     }
     
-    // Récupérer les données du commentaire créé
     $res = $db->query("
         SELECT c.rowid, c.comment, c.datec, c.fk_user, u.firstname, u.lastname 
         FROM llx_myworkspace_comment c
@@ -471,7 +467,6 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['upload_task_file'], $_F
     $upload_dir = '/var/www/documents/myworkspace/tasks/';
     error_log("Upload dir: " . $upload_dir);
     
-    // Créer le dossier s'il n'existe pas
     if (!file_exists($upload_dir)) {
         error_log("Creating upload directory...");
         mkdir($upload_dir, 0755, true);
@@ -479,12 +474,10 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['upload_task_file'], $_F
     
     $file = $_FILES['task_file'];
     $filename = basename($file['name']);
-    // Nettoyer le nom de fichier
     $filename = preg_replace('/[^a-zA-Z0-9._-]/', '_', $filename);
     $extension = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
     error_log("Filename: " . $filename . ", Extension: " . $extension);
     
-    // Vérifier les extensions autorisées
     $allowed_extensions = ['jpg', 'jpeg', 'png', 'gif', 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'txt', 'zip'];
     if (!in_array($extension, $allowed_extensions)) {
         error_log("Extension not allowed: " . $extension);
@@ -494,7 +487,6 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['upload_task_file'], $_F
         exit;
     }
     
-    // Vérifier la taille (max 10MB)
     if ($file['size'] > 10 * 1024 * 1024) {
         error_log("File too large: " . $file['size']);
         http_response_code(400);
@@ -503,14 +495,12 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['upload_task_file'], $_F
         exit;
     }
     
-    // Générer un nom unique
     $unique_filename = time() . '_' . uniqid() . '_' . $filename;
     $filepath = $upload_dir . $unique_filename;
     error_log("Target filepath: " . $filepath);
     
     if (move_uploaded_file($file['tmp_name'], $filepath)) {
         error_log("File moved successfully");
-        // Enregistrer en base
         $original_name = $db->escape($filename);
         $unique_name = $db->escape($unique_filename);
         $filesize = (int)$file['size'];
@@ -535,7 +525,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['upload_task_file'], $_F
             ]);
         } else {
             error_log("Database insert failed: " . $db->error());
-            unlink($filepath); // Supprimer le fichier si l'insertion échoue
+            unlink($filepath);
             http_response_code(500);
             header('Content-Type: application/json');
             echo json_encode(['error' => 'Erreur lors de l\'enregistrement']);
@@ -577,7 +567,7 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['task_files'])) {
 
 if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['download_file'])) {
     $file_id = (int)$_GET['download_file'];
-    $type = isset($_GET['type']) ? $_GET['type'] : 'comment'; // 'comment' ou 'task'
+    $type = isset($_GET['type']) ? $_GET['type'] : 'comment';
     
     if ($type === 'task') {
         $res = $db->query("SELECT original_name, filename, mimetype FROM llx_myworkspace_task_file WHERE rowid = $file_id");
@@ -609,7 +599,7 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['download_file'])) {
 if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['delete_file_id'])) {
     if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
     $file_id = (int)$_POST['delete_file_id'];
-    $type = isset($_POST['type']) ? $_POST['type'] : 'comment'; // 'comment' ou 'task'
+    $type = isset($_POST['type']) ? $_POST['type'] : 'comment';
     $uid = $user->id;
     
     if ($type === 'task') {
@@ -625,13 +615,11 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['delete_file_id'])) {
     $file = $db->fetch_object($res);
     
     if ($file && $file->fk_user == $uid) {
-        // Supprimer le fichier physique
         $filepath = '/var/www/documents/myworkspace/'.$subdir.'/' . $file->filename;
         if (file_exists($filepath)) {
             unlink($filepath);
         }
         
-        // Supprimer de la base
         $db->query("DELETE FROM $table WHERE rowid = $file_id");
         echo 'OK';
     } else {

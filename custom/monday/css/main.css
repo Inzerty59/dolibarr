@@ -548,7 +548,6 @@ span.vmenusearchselectcombo {
   text-align: center;
 }
 
-/* Modal viewer pour les fichiers */
 #file-viewer-modal {
   animation: fadeIn 0.3s ease;
 }

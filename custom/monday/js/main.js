@@ -30,30 +30,25 @@ $(function(){
         }
       })
       .then(data => {
-        // Ajouter le nouvel espace à la liste avec le vrai ID
         const newItem = `<li class="workspace-item" data-id="${data.id}" style="padding:8px;cursor:pointer;">${data.label}</li>`;
         $('#workspace-list').append(newItem);
         
-        // Vider le champ de saisie
         newWorkspaceInput.val('');
         
         console.log('Espace ajouté avec succès:', data);
       })
       .catch(error => {
         console.error('Erreur lors de l\'ajout de l\'espace:', error);
-        // Fallback : ajouter avec un ID temporaire et recharger
         const newId = Date.now();
         const newItem = `<li class="workspace-item" data-id="${newId}" style="padding:8px;cursor:pointer;">${workspaceName}</li>`;
         $('#workspace-list').append(newItem);
         newWorkspaceInput.val('');
         
-        // Recharger la page après un délai pour obtenir les vrais IDs
         setTimeout(() => location.reload(), 500);
       });
     }
   });
 
-  // Variables globales pour le panneau
   let currentTaskId = null;
 
   window.saveCellValue = function(input) {
@@ -151,7 +146,6 @@ $(function(){
           fetch('', {method: 'POST', body: fd}).then(()=>{
             modal.remove();
             
-            // Recharger les groupes pour mettre à jour l'affichage
             const $activeWorkspace = $('.workspace-item').filter(function() {
               return $(this).css('background-color') === 'rgb(0, 124, 186)';
             });
@@ -248,7 +242,6 @@ $(function(){
           fetch('', {method: 'POST', body: fd}).then(()=>{
             modal.remove();
             
-            // Recréer dynamiquement l'affichage des tags sans rechargement complet
             let tagsHtml = `
               <div class="selected-tags" style="display:flex;flex-wrap:wrap;gap:3px;margin-bottom:5px;">
             `;
@@ -259,7 +252,6 @@ $(function(){
                 selectedTagIds.forEach(tagId => {
                   const tag = allOptions.find(opt => parseInt(opt.id) === tagId);
                   if(tag) {
-                    // Utiliser la couleur définie pour le tag
                     tagsHtml += `
                       <span class="tag-item" data-tag-id="${tag.id}" style="background:${tag.color || '#87CEEB'};color:white;padding:2px 6px;border-radius:12px;font-size:11px;display:flex;align-items:center;gap:4px;">
                         ${tag.label}
@@ -274,7 +266,6 @@ $(function(){
                   <div class="add-tag-hint" style="color:#999;font-size:10px;font-style:italic;">+ Cliquer pour ajouter des étiquettes</div>
                 `;
                 
-                // Mettre à jour directement le contenu de la cellule
                 $cell.html(tagsHtml);
               });
           });
@@ -373,7 +364,6 @@ $(function(){
     $select.css('background-color', 'transparent');
   }
 
-  // Fonction pour ouvrir le panneau de détail d'une tâche
   window.openTaskDetail = function(taskId, taskName, groupName) {
     currentTaskId = taskId;
     
@@ -414,13 +404,11 @@ $(function(){
     loadTaskFiles(taskId);
   };
 
-  // Fonction pour fermer le panneau
   window.closeTaskDetail = function() {
     $('#task-detail-panel').removeClass('open');
     currentTaskId = null;
   };
 
-  // Fonction pour charger les commentaires
   function loadComments(taskId) {
     fetch(`?task_comments=${taskId}`)
       .then(r => r.json())
@@ -469,7 +457,6 @@ $(function(){
       });
   }
 
-  // Fonction pour charger les fichiers d'une tâche
   function loadTaskFiles(taskId) {
     console.log('loadTaskFiles appelée avec taskId:', taskId);
     fetch(`?task_files=${taskId}`)
@@ -522,7 +509,6 @@ $(function(){
       });
   }
 
-  // Fonction pour formater la taille des fichiers
   function formatFileSize(bytes) {
     if (bytes === 0) return '0 B';
     const k = 1024;
@@ -531,7 +517,6 @@ $(function(){
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   }
 
-  // Fonction pour obtenir l'icône du fichier
   function getFileIcon(mimetype, filename) {
     if (!mimetype && filename) {
       const ext = filename.split('.').pop().toLowerCase();
@@ -561,13 +546,11 @@ $(function(){
     return '📎';
   }
 
-  // Fonction globale pour visualiser un fichier de tâche
   window.viewTaskFile = function(fileId, fileName, mimeType) {
     const isImage = mimeType && mimeType.startsWith('image/');
     const isPdf = mimeType && mimeType.includes('pdf');
     
     if (isImage || isPdf) {
-      // Ouvrir dans une modale pour les images et PDFs
       const modal = $(`
         <div id="file-viewer-modal" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);z-index:1001;display:flex;align-items:center;justify-content:center;">
           <div style="position:relative;max-width:90%;max-height:90%;background:white;padding:20px;border-radius:8px;">
@@ -588,12 +571,10 @@ $(function(){
         if (e.target === modal[0]) modal.remove();
       });
     } else {
-      // Télécharger directement pour les autres types
       window.open(`?download_file=${fileId}&type=task`, '_blank');
     }
   };
 
-  // Fonction globale pour supprimer un fichier de tâche
   window.deleteTaskFile = function(fileId) {
     if (!confirm('Êtes-vous sûr de vouloir supprimer ce fichier ?')) {
       return;
@@ -615,7 +596,6 @@ $(function(){
       });
   };
 
-  // Fonction globale pour supprimer un fichier
   window.deleteFile = function(fileId) {
     if (!confirm('Êtes-vous sûr de vouloir supprimer ce fichier ?')) {
       return;
@@ -636,7 +616,6 @@ $(function(){
       });
   };
 
-  // Fonction pour ajouter un commentaire
   function addComment() {
     const commentText = $('#new-comment-text').val().trim();
     
@@ -665,7 +644,6 @@ $(function(){
           throw new Error(`HTTP error! status: ${response.status}`);
         }
         
-        // Lire la réponse comme texte d'abord pour voir ce qu'on reçoit
         return response.text().then(text => {
           console.log('Réponse brute reçue:', text);
           
@@ -695,7 +673,6 @@ $(function(){
       });
   }
 
-  // Gestionnaires d'événements pour le panneau
   $('#close-panel').click(closeTaskDetail);
   $('#add-comment-btn').click(addComment);
 
@@ -705,7 +682,6 @@ $(function(){
     }
   });
 
-  // Gestionnaire pour supprimer la tâche depuis le panneau
   $('#delete-task-from-panel').click(function() {
     if (!currentTaskId) {
       alert('Erreur: aucune tâche sélectionnée');
@@ -722,11 +698,8 @@ $(function(){
     
     fetch('', {method: 'POST', body: fd})
       .then(() => {
-        // Fermer le panneau
         closeTaskDetail();
         
-        // Recharger les groupes pour mettre à jour le tableau
-        // Trouver l'espace de travail actuellement sélectionné
         const $activeWorkspace = $('.workspace-item').filter(function() {
           const $this = $(this);
           return $this.css('background-color') === 'rgb(0, 124, 186)' || 
@@ -748,7 +721,6 @@ $(function(){
       });
   });
 
-  // Gestionnaire pour modifier le nom de la tâche
   $('#edit-task-name').click(function() {
     const currentName = $('#task-name-display').text();
     const newName = prompt('Nouveau nom de la tâche:', currentName);
@@ -762,14 +734,10 @@ $(function(){
     
     fetch('', {method: 'POST', body: fd})
       .then(() => {
-        // Mettre à jour le nom dans le panneau de détail
         $('#task-name-display').text(newName);
         
-        // Mettre à jour le nom dans le tableau principal
         $(`tr[data-id="${currentTaskId}"] td:nth-child(1)`).text(newName);
         
-        // Recharger les groupes pour être sûr que tout est à jour
-        // Trouver l'espace de travail actuellement sélectionné (avec le nouveau style)
         const $activeWorkspace = $('.workspace-item').filter(function() {
           const $this = $(this);
           return $this.css('background-color') === 'rgb(0, 124, 186)' || // #007cba en RGB
@@ -785,7 +753,6 @@ $(function(){
           }
         } else {
           console.log('Aucun espace actif trouvé, recherche alternative...');
-          // Alternative : chercher par la présence de contenu dans main-content
           const $allWorkspaces = $('.workspace-item');
           if ($allWorkspaces.length > 0) {
             const wsId = $allWorkspaces.first().data('id');
@@ -800,7 +767,6 @@ $(function(){
       });
   });
 
-  // Gestionnaires pour les actions sur les commentaires
   $(document).on('click', '.edit-comment-btn', function() {
     const commentId = $(this).data('comment-id');
     const $commentItem = $(this).closest('.comment-item');
@@ -877,7 +843,6 @@ $(function(){
     $commentItem.find('.comment-actions').show();
   });
 
-  // Gestionnaires pour les fichiers des tâches
   $(document).on('click', '#add-task-file-btn', function() {
     console.log('Bouton add-task-file-btn cliqué');
     console.log('currentTaskId:', currentTaskId);
@@ -900,7 +865,6 @@ $(function(){
       return;
     }
     
-    // Upload des fichiers un par un
     Array.from(files).forEach((file, index) => {
       console.log('Upload du fichier:', file.name);
       const fd = new FormData();
@@ -919,7 +883,6 @@ $(function(){
           if (result.error) {
             alert('Erreur upload: ' + result.error);
           } else {
-            // Recharger les fichiers de la tâche
             loadTaskFiles(currentTaskId);
           }
         })
@@ -929,7 +892,6 @@ $(function(){
         });
     });
     
-    // Reset input
     $(this).val('');
   });
 
@@ -974,7 +936,6 @@ $(function(){
     const wsId    = this.dataset.id;
     const wsLabel = this.textContent;
     
-    // Marquer cet espace comme sélectionné visuellement
     $('.workspace-item').css({
       'background-color': 'transparent',
       'color': 'black',
@@ -1007,14 +968,12 @@ $(function(){
       fetch('',{method:'POST',body:fd})
         .then(response => {
           console.log('Réponse du serveur pour renommage:', response.status);
-          return response.text(); // Récupérer la réponse pour debug
+          return response.text();
         })
         .then(responseText => {
           console.log('Contenu de la réponse:', responseText);
           
-          // Mettre à jour le titre de l'espace dans l'interface
           $('#main-content h2').text(n);
-          // Mettre à jour le nom dans la sidebar
           $(`.workspace-item[data-id="${wsId}"]`).text(n);
           
           console.log('Interface mise à jour avec succès');
@@ -1038,9 +997,7 @@ $(function(){
         .then(responseText => {
           console.log('Contenu de la réponse:', responseText);
           
-          // Supprimer l'espace de la sidebar
           $(`.workspace-item[data-id="${wsId}"]`).remove();
-          // Retourner à l'état initial
           $('#main-content').html('<div style="text-align:center;padding:50px;color:#666;"><h3>Sélectionnez un espace de travail</h3><p>Choisissez un espace dans la liste de gauche pour commencer.</p></div>');
           
           console.log('Espace supprimé de l\'interface');
@@ -1060,7 +1017,6 @@ $(function(){
     loadGroups(wsId);
   });
 
-  // Fonction globale pour charger les groupes d'un espace de travail
   function loadGroups(wid){
       fetch(`get_groups.php?wid=${wid}`)
         .then(r=>r.json()).then(groups=>{
@@ -1145,7 +1101,6 @@ $(function(){
                                                      <option value="">-- Choisir --</option>`;
                                   options.forEach(opt=>{
                                     const selected = cellValue == opt.id ? 'selected' : '';
-                                    // Utiliser la couleur de l'option ou une couleur par défaut
                                     const optionColor = opt.color || '#87CEEB';
                                     selectHtml += `<option value="${opt.id}" ${selected} style="background:${optionColor};">${opt.label}</option>`;
                                   });
@@ -1178,7 +1133,6 @@ $(function(){
                                   selectedTags.forEach(tagId => {
                                     const tag = options.find(opt => opt.id == tagId);
                                     if(tag) {
-                                      // Utiliser la couleur définie pour le tag
                                       tagsHtml += `
                                         <span class="tag-item" data-tag-id="${tag.id}" style="background:${tag.color || '#87CEEB'};color:white;padding:2px 6px;border-radius:12px;font-size:11px;display:flex;align-items:center;gap:4px;">
                                           ${tag.label}
@@ -1252,7 +1206,6 @@ $(function(){
                                   });
                                   selectHtml += '</select>';
                                   
-                                  // Si un utilisateur est sélectionné, on affiche avec avatar
                                   if (cellValue) {
                                     const selectedUser = users.find(u => u.id == cellValue);
                                     if (selectedUser) {
@@ -1320,14 +1273,11 @@ $(function(){
 
           initGroupSortable();
 
-          // Gestionnaires d'événements pour les colonnes, groupes et tâches
           attachEventHandlers(wid);
         });
   }
 
-  // Fonction globale pour gérer les événements des éléments
   function attachEventHandlers(wid) {
-    // Ajout de colonnes
     $('#group-list').off('click','.add-column-btn').on('click','.add-column-btn',function(e){
       e.stopPropagation();
       const gid = $(this).data('gid');
@@ -1441,7 +1391,6 @@ $(function(){
       });
     });
 
-    // Toggle groupes
     $('.group-toggle').off('click').on('click',function(e){
       e.stopPropagation();
       const $g    = $(this).closest('.group');
@@ -1456,7 +1405,6 @@ $(function(){
       fetch('',{method:'POST',body:fd});
     });
 
-    // Autres gestionnaires d'événements
     $('#group-list')
       .off('click','.rename-group').on('click','.rename-group',function(){
         const $g=$(this).closest('.group');
@@ -1514,8 +1462,6 @@ $(function(){
         e.stopPropagation();
         const cid = $(this).data('cid');
         
-        // Gestionnaire des options (code très long, abrégé ici)
-        // Ce serait idéal de déplacer cette partie vers un fichier séparé
         manageColumnOptions(cid, token, () => loadGroups(wid));
       })
       .off('click','.column-menu-btn').on('click','.column-menu-btn',function(e){
@@ -1528,7 +1474,6 @@ $(function(){
       });
   }
 
-  // Fonction pour gérer les options de colonnes - Version avec sélecteur de couleurs universel
   function manageColumnOptions(cid, token, onComplete) {
     fetch(`?column_options=${cid}`)
       .then(r=>r.json())
@@ -1567,9 +1512,8 @@ $(function(){
         
         $('body').append(optionsModal);
         
-        let selectedColor = '#87CEEB'; // Couleur par défaut
+        let selectedColor = '#87CEEB';
         
-        // Fonction pour créer le sélecteur de couleurs
         function createColorPicker(currentColor, callback) {
           const colorModal = $(`
             <div id="color-picker-modal" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:1001;display:flex;align-items:center;justify-content:center;">
@@ -1603,7 +1547,6 @@ $(function(){
           
           let tempColor = currentColor;
           
-          // Couleurs prédéfinies
           $('.preset-color').hover(
             function() { $(this).css('transform', 'scale(1.1)'); },
             function() { $(this).css('transform', 'scale(1)'); }
@@ -1615,12 +1558,10 @@ $(function(){
             $('#color-display').css('background', tempColor).text(tempColor);
           });
           
-          // Couleur personnalisée
           $('#custom-color-picker').on('input', function(){
             tempColor = $(this).val();
             $('#color-display').css('background', tempColor).text(tempColor);
             $('.preset-color').css('border-color', '#ccc');
-            // Mettre en évidence si c'est une couleur prédéfinie
             $('.preset-color').each(function(){
               if($(this).data('color').toLowerCase() === tempColor.toLowerCase()) {
                 $(this).css('border-color', '#000');
@@ -1644,7 +1585,6 @@ $(function(){
           });
         }
         
-        // Conversion RGB vers HEX
         function rgbToHex(rgb) {
           if (rgb.indexOf('#') === 0) return rgb;
           const result = rgb.match(/\d+/g);
@@ -1652,7 +1592,6 @@ $(function(){
           return '#' + ((1 << 24) + (parseInt(result[0]) << 16) + (parseInt(result[1]) << 8) + parseInt(result[2])).toString(16).slice(1);
         }
         
-        // Sélecteur de couleur pour nouvelle option
         $('#new-option-color-preview').click(function(){
           createColorPicker(selectedColor, function(newColor){
             selectedColor = newColor;
@@ -1660,7 +1599,6 @@ $(function(){
           });
         });
         
-        // Sélecteur de couleur pour options existantes
         $(document).on('click', '.color-preview', function(){
           const optionId = $(this).closest('.option-item').data('option-id');
           const currentColor = rgbToHex($(this).css('background-color'));
@@ -1669,7 +1607,6 @@ $(function(){
           createColorPicker(currentColor, function(newColor){
             $preview.css('background', newColor);
             
-            // Sauvegarder la couleur
             const fd = new FormData();
             fd.append('update_option_color', optionId);
             fd.append('option_color', newColor);
@@ -1680,7 +1617,6 @@ $(function(){
           });
         });
         
-        // Modifier une option (bouton crayon) - Gestionnaire délégué
         $('#options-list').off('click', '.edit-option-btn').on('click', '.edit-option-btn', function(e){
           e.preventDefault();
           e.stopPropagation();
@@ -1707,7 +1643,6 @@ $(function(){
             .catch(e => console.log('Erreur lors du renommage:', e));
         });
         
-        // Supprimer une option - Gestionnaire délégué
         $('#options-list').off('click', '.delete-option-btn').on('click', '.delete-option-btn', function(e){
           e.preventDefault();
           e.stopPropagation();
@@ -1728,7 +1663,6 @@ $(function(){
             .catch(e => console.error('Erreur lors de la suppression:', e));
         });
         
-        // Ajouter une nouvelle option
         $('#add-option-btn').click(function(){
           const label = $('#new-option-label').val().trim();
           
@@ -1745,7 +1679,6 @@ $(function(){
           
           fetch('', {method: 'POST', body: fd})
             .then(() => {
-              // Ajouter l'option à la liste dans le modal
               const tempId = Date.now();
               const newOption = $(`
                 <div class="option-item" data-option-id="temp_${tempId}" style="display:flex;align-items:center;gap:10px;margin-bottom:10px;padding:10px;border:1px solid #ddd;border-radius:4px;">
@@ -1757,9 +1690,7 @@ $(function(){
               `);
               $('#options-list').append(newOption);
               
-              // Les événements sont maintenant gérés par délégation, plus besoin d'attacher manuellement
               
-              // Réinitialiser les champs
               $('#new-option-label').val('');
               selectedColor = '#87CEEB';
               $('#new-option-color-preview').css('background', selectedColor);
@@ -1767,13 +1698,11 @@ $(function(){
             .catch(e => console.error('Erreur lors de l\'ajout:', e));
         });
         
-        // Fermer le modal
         $('#close-options').click(function(){
           optionsModal.remove();
           if(onComplete) onComplete();
         });
         
-        // Fermer en cliquant à l'extérieur
         optionsModal.click(function(e){
           if(e.target === optionsModal[0]) {
             optionsModal.remove();
