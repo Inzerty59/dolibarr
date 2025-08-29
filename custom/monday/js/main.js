@@ -705,6 +705,49 @@ $(function(){
     }
   });
 
+  // Gestionnaire pour supprimer la tâche depuis le panneau
+  $('#delete-task-from-panel').click(function() {
+    if (!currentTaskId) {
+      alert('Erreur: aucune tâche sélectionnée');
+      return;
+    }
+    
+    if (!confirm('Êtes-vous sûr de vouloir supprimer cette tâche ?')) {
+      return;
+    }
+    
+    const fd = new FormData();
+    fd.append('delete_task_id', currentTaskId);
+    fd.append('token', token);
+    
+    fetch('', {method: 'POST', body: fd})
+      .then(() => {
+        // Fermer le panneau
+        closeTaskDetail();
+        
+        // Recharger les groupes pour mettre à jour le tableau
+        // Trouver l'espace de travail actuellement sélectionné
+        const $activeWorkspace = $('.workspace-item').filter(function() {
+          const $this = $(this);
+          return $this.css('background-color') === 'rgb(0, 124, 186)' || 
+                 $this.css('font-weight') === 'bold' ||
+                 $this.css('font-weight') === '700';
+        });
+        
+        if ($activeWorkspace.length > 0) {
+          const wsId = $activeWorkspace.data('id');
+          if (wsId) {
+            console.log('Rechargement des groupes après suppression de la tâche:', wsId);
+            loadGroups(wsId);
+          }
+        }
+      })
+      .catch(err => {
+        console.error('Erreur lors de la suppression de la tâche:', err);
+        alert('Erreur lors de la suppression de la tâche');
+      });
+  });
+
   // Gestionnaire pour modifier le nom de la tâche
   $('#edit-task-name').click(function() {
     const currentName = $('#task-name-display').text();
@@ -723,7 +766,7 @@ $(function(){
         $('#task-name-display').text(newName);
         
         // Mettre à jour le nom dans le tableau principal
-        $(`tr[data-id="${currentTaskId}"] td:nth-child(3)`).text(newName);
+        $(`tr[data-id="${currentTaskId}"] td:nth-child(1)`).text(newName);
         
         // Recharger les groupes pour être sûr que tout est à jour
         // Trouver l'espace de travail actuellement sélectionné (avec le nouveau style)
@@ -1027,8 +1070,6 @@ $(function(){
               .then(r=>r.json())
               .then(cols=>{
                 let ths = `
-                  <th style="border:1px solid #ddd;padding:4px;"></th>
-                  <th style="border:1px solid #ddd;padding:4px;"></th>
                   <th style="border:1px solid #ddd;padding:4px;">Tâche</th>
                 `;
                 cols.forEach(c=>{
@@ -1084,12 +1125,6 @@ $(function(){
                   .then(tasks=>{
                     tasks.forEach(t=>{
                       let tds = `
-                        <td style="border:1px solid #ddd;padding:4px;text-align:center;">
-                          <button class="rename-task-row" style="border:none;background:transparent;cursor:pointer;">✎</button>
-                        </td>
-                        <td style="border:1px solid #ddd;padding:4px;text-align:center;">
-                          <button class="delete-task-row" style="border:none;background:transparent;cursor:pointer;">✖</button>
-                        </td>
                         <td style="border:1px solid #ddd;padding:4px;">${t.label}</td>
                       `;
                       
@@ -1264,7 +1299,7 @@ $(function(){
                             const $taskRow = $(`<tr data-id="${t.id}" style="cursor:pointer;">${tds}</tr>`);
                             $grp.find('tbody').append($taskRow);
                             
-                            $taskRow.find('td:nth-child(3)').click(function(e) {
+                            $taskRow.find('td:nth-child(1)').click(function(e) {
                               if ($(e.target).is('button')) return;
                               
                               const taskName = $(this).text();
@@ -1451,29 +1486,6 @@ $(function(){
         const fd=new FormData();
         fd.append('add_task_group_id',gid);
         fd.append('task_label',lbl);
-        fd.append('token',token);
-        fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
-      })
-      .off('click','.delete-task-row').on('click','.delete-task-row',function(e){
-        e.stopPropagation();
-        const $tr = $(this).closest('tr');
-        const tid = $tr.data('id');
-        if(!confirm('Supprimer cette tâche ?')) return;
-        const fd=new FormData();
-        fd.append('delete_task_id',tid);
-        fd.append('token',token);
-        fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
-      })
-      .off('click','.rename-task-row').on('click','.rename-task-row',function(e){
-        e.stopPropagation();
-        const $tr = $(this).closest('tr');
-        const tid = $tr.data('id');
-        const old = $tr.find('td:nth-child(3)').text();
-        const nw = prompt('Modifier le nom de la tâche :', old);
-        if(!nw) return;
-        const fd=new FormData();
-        fd.append('rename_task_id',tid);
-        fd.append('rename_task_label',nw);
         fd.append('token',token);
         fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
       })

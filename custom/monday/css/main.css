@@ -222,6 +222,21 @@
   background: #e9ecef;
 }
 
+.delete-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #dc3545;
+  font-size: 14px;
+  padding: 2px 4px;
+  border-radius: 3px;
+  transition: background 0.2s;
+}
+
+.delete-btn:hover {
+  background: #f8d7da;
+}
+
 .comments-section h4 {
   margin: 0 0 20px 0;
   color: #333;

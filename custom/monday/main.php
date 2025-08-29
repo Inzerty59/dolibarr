@@ -684,6 +684,7 @@ ob_start();
             <strong>Tâche :</strong>
             <span id="task-name-display"></span>
             <button id="edit-task-name" class="edit-btn">✎</button>
+            <button id="delete-task-from-panel" class="delete-btn" style="margin-left: 5px;">✖</button>
           </div>
           <div class="task-meta-item">
             <strong>Groupe :</strong>
