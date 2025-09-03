@@ -1711,6 +1711,27 @@ $(function(){
     
     // Réinsérer les lignes triées
     $tbody.empty().append($rows);
+    
+    // Ré-attacher les gestionnaires d'événements après le tri
+    $rows.forEach(row => {
+      const $row = $(row);
+      const taskId = $row.data('id');
+      const $group = $row.closest('.group');
+      
+      // Ré-attacher le clic sur la première colonne (nom de la tâche)
+      $row.find('td:nth-child(1)').off('click').on('click', function(e) {
+        if ($(e.target).is('button')) return;
+        
+        const taskName = $(this).text();
+        const groupName = $group.find('.group-label').text();
+        openTaskDetail(taskId, taskName, groupName);
+      });
+      
+      // Ré-appliquer les couleurs des select
+      $row.find('select.cell-select').each(function(){
+        applySelectColor($(this));
+      });
+    });
   }
 
   function manageColumnOptions(cid, token, onComplete) {
