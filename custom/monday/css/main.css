@@ -958,3 +958,134 @@ td[style*="background-color: rgb(255, 243, 205)"] {
 .cell-select[style*="background-color"]:not([style*="transparent"]) {
   text-shadow: 0 1px 1px rgba(0,0,0,0.1);
 }
+
+/* Styles pour les boutons d'interface - Design léger et moderne */
+
+/* Bouton principal "Ajouter un groupe" */
+#add-group-btn {
+  background: linear-gradient(135deg, #0073ea 0%, #005bb5 100%);
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 4px rgba(0, 115, 234, 0.2);
+}
+
+#add-group-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(0, 115, 234, 0.3);
+  background: linear-gradient(135deg, #005bb5 0%, #0073ea 100%);
+}
+
+#add-group-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 4px rgba(0, 115, 234, 0.2);
+}
+
+/* Boutons d'action secondaires (renommer, supprimer) */
+#rename-btn, #delete-btn, .rename-group, .delete-group {
+  background: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#rename-btn:hover, .rename-group:hover {
+  background: #e3f2fd;
+  border-color: #0073ea;
+  color: #0073ea;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 115, 234, 0.15);
+}
+
+#delete-btn:hover, .delete-group:hover {
+  background: #ffebee;
+  border-color: #e2445c;
+  color: #e2445c;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(226, 68, 92, 0.15);
+}
+
+/* Boutons "Ajouter tâche" et "Ajouter colonne" */
+.add-row-btn, .add-column-btn {
+  background: #f8f9fa;
+  border: 1px dashed #0073ea;
+  color: #0073ea;
+  border-radius: 4px;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.add-row-btn:hover, .add-column-btn:hover {
+  background: #e3f2fd;
+  border-style: solid;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 115, 234, 0.15);
+}
+
+.add-row-btn:active, .add-column-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 1px 2px rgba(0, 115, 234, 0.1);
+}
+
+/* Bouton spécial pour "Ajouter colonne" (plus petit) */
+.add-column-btn {
+  padding: 4px 8px;
+  font-size: 12px;
+  min-width: 24px;
+  height: 24px;
+  border-radius: 3px;
+}
+
+/* Animation pour tous les boutons */
+#add-group-btn, #rename-btn, #delete-btn, .rename-group, .delete-group, .add-row-btn, .add-column-btn {
+  position: relative;
+  overflow: hidden;
+}
+
+/* Effet de focus pour l'accessibilité */
+#add-group-btn:focus, #rename-btn:focus, #delete-btn:focus, 
+.rename-group:focus, .delete-group:focus, .add-row-btn:focus, .add-column-btn:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(0, 115, 234, 0.2);
+}
+
+/* Style spécial pour les boutons désactivés */
+#add-group-btn:disabled, #rename-btn:disabled, #delete-btn:disabled, 
+.rename-group:disabled, .delete-group:disabled, .add-row-btn:disabled, .add-column-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+/* Amélioration des icônes dans les boutons */
+#rename-btn, .rename-group {
+  font-family: "Segoe UI", Arial, sans-serif;
+}
+
+#delete-btn, .delete-group {
+  font-family: "Segoe UI", Arial, sans-serif;
+  font-weight: bold;
+}
+
+/* Espacement entre les boutons d'action */
+#rename-btn + #delete-btn,
+.rename-group + .delete-group {
+  margin-left: 4px;
+}
