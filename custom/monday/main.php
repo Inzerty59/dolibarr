@@ -653,7 +653,7 @@ $leftmenu .= '</ul>';
 
 ob_start();
 ?>
-<link rel="stylesheet" href="<?php echo DOL_URL_ROOT ?>/custom/monday/css/main.css">
+<link rel="stylesheet" href="<?php echo DOL_URL_ROOT ?>/custom/monday/css/main.css?v=<?php echo time(); ?>&popup=1">
 
 <div class="workspace-container">
   <div class="main-content" id="main-content"></div>

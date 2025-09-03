@@ -576,56 +576,56 @@ $(function(){
   };
 
   window.deleteTaskFile = function(fileId) {
-    if (!confirm('Êtes-vous sûr de vouloir supprimer ce fichier ?')) {
-      return;
-    }
-    
-    const fd = new FormData();
-    fd.append('delete_file_id', fileId);
-    fd.append('type', 'task');
-    fd.append('token', token);
-    
-    fetch('', {method: 'POST', body: fd})
-      .then(r => r.text())
-      .then(response => {
-        if (response === 'OK') {
-          loadTaskFiles(currentTaskId);
-        } else {
-          alert('Erreur lors de la suppression');
-        }
-      });
+    CustomPopup.confirm('Êtes-vous sûr de vouloir supprimer ce fichier ?', function(result) {
+      if (!result) return;
+      
+      const fd = new FormData();
+      fd.append('delete_file_id', fileId);
+      fd.append('type', 'task');
+      fd.append('token', token);
+      
+      fetch('', {method: 'POST', body: fd})
+        .then(r => r.text())
+        .then(response => {
+          if (response === 'OK') {
+            loadTaskFiles(currentTaskId);
+          } else {
+            CustomPopup.error('Erreur lors de la suppression');
+          }
+        });
+    });
   };
 
   window.deleteFile = function(fileId) {
-    if (!confirm('Êtes-vous sûr de vouloir supprimer ce fichier ?')) {
-      return;
-    }
-    
-    const fd = new FormData();
-    fd.append('delete_file_id', fileId);
-    fd.append('token', token);
-    
-    fetch('', {method: 'POST', body: fd})
-      .then(r => r.text())
-      .then(response => {
-        if (response === 'OK') {
-          $(`.file-item[data-file-id="${fileId}"]`).remove();
-        } else {
-          alert('Erreur lors de la suppression');
-        }
-      });
+    CustomPopup.confirm('Êtes-vous sûr de vouloir supprimer ce fichier ?', function(result) {
+      if (!result) return;
+      
+      const fd = new FormData();
+      fd.append('delete_file_id', fileId);
+      fd.append('token', token);
+      
+      fetch('', {method: 'POST', body: fd})
+        .then(r => r.text())
+        .then(response => {
+          if (response === 'OK') {
+            $(`.file-item[data-file-id="${fileId}"]`).remove();
+          } else {
+            CustomPopup.error('Erreur lors de la suppression');
+          }
+        });
+    });
   };
 
   function addComment() {
     const commentText = $('#new-comment-text').val().trim();
     
     if (!commentText) {
-      alert('Veuillez saisir un commentaire');
+      CustomPopup.error('Veuillez saisir un commentaire', 'Champ obligatoire');
       return;
     }
     
     if (!currentTaskId) {
-      alert('Erreur: aucune tâche sélectionnée');
+      CustomPopup.error('Erreur: aucune tâche sélectionnée');
       return;
     }
     
@@ -669,7 +669,7 @@ $(function(){
       })
       .catch(err => {
         console.error('Erreur lors de l\'ajout du commentaire:', err);
-        alert('Erreur lors de l\'ajout du commentaire: ' + err.message);
+        CustomPopup.error('Erreur lors de l\'ajout du commentaire: ' + err.message);
       });
   }
 
@@ -684,87 +684,88 @@ $(function(){
 
   $('#delete-task-from-panel').click(function() {
     if (!currentTaskId) {
-      alert('Erreur: aucune tâche sélectionnée');
+      CustomPopup.error('Erreur: aucune tâche sélectionnée');
       return;
     }
     
-    if (!confirm('Êtes-vous sûr de vouloir supprimer cette tâche ?')) {
-      return;
-    }
-    
-    const fd = new FormData();
-    fd.append('delete_task_id', currentTaskId);
-    fd.append('token', token);
-    
-    fetch('', {method: 'POST', body: fd})
-      .then(() => {
-        closeTaskDetail();
-        
-        const $activeWorkspace = $('.workspace-item').filter(function() {
-          const $this = $(this);
-          return $this.css('background-color') === 'rgb(0, 124, 186)' || 
-                 $this.css('font-weight') === 'bold' ||
-                 $this.css('font-weight') === '700';
-        });
-        
-        if ($activeWorkspace.length > 0) {
-          const wsId = $activeWorkspace.data('id');
-          if (wsId) {
-            console.log('Rechargement des groupes après suppression de la tâche:', wsId);
-            loadGroups(wsId);
+    CustomPopup.confirm('Êtes-vous sûr de vouloir supprimer cette tâche ?', function(result) {
+      if (!result) return;
+      
+      const fd = new FormData();
+      fd.append('delete_task_id', currentTaskId);
+      fd.append('token', token);
+      
+      fetch('', {method: 'POST', body: fd})
+        .then(() => {
+          closeTaskDetail();
+          
+          const $activeWorkspace = $('.workspace-item').filter(function() {
+            const $this = $(this);
+            return $this.css('background-color') === 'rgb(0, 124, 186)' || 
+                   $this.css('font-weight') === 'bold' ||
+                   $this.css('font-weight') === '700';
+          });
+          
+          if ($activeWorkspace.length > 0) {
+            const wsId = $activeWorkspace.data('id');
+            if (wsId) {
+              console.log('Rechargement des groupes après suppression de la tâche:', wsId);
+              loadGroups(wsId);
+            }
           }
-        }
-      })
-      .catch(err => {
-        console.error('Erreur lors de la suppression de la tâche:', err);
-        alert('Erreur lors de la suppression de la tâche');
-      });
+        })
+        .catch(err => {
+          console.error('Erreur lors de la suppression de la tâche:', err);
+          CustomPopup.error('Erreur lors de la suppression de la tâche');
+        });
+    });
   });
 
   $('#edit-task-name').click(function() {
     const currentName = $('#task-name-display').text();
-    const newName = prompt('Nouveau nom de la tâche:', currentName);
     
-    if (!newName || newName === currentName) return;
-    
-    const fd = new FormData();
-    fd.append('rename_task_id', currentTaskId);
-    fd.append('rename_task_label', newName);
-    fd.append('token', token);
-    
-    fetch('', {method: 'POST', body: fd})
-      .then(() => {
-        $('#task-name-display').text(newName);
-        
-        $(`tr[data-id="${currentTaskId}"] td:nth-child(1)`).text(newName);
-        
-        const $activeWorkspace = $('.workspace-item').filter(function() {
-          const $this = $(this);
-          return $this.css('background-color') === 'rgb(0, 124, 186)' || // #007cba en RGB
-                 $this.css('font-weight') === 'bold' ||
-                 $this.css('font-weight') === '700';
+    CustomPopup.prompt('Nouveau nom de la tâche:', function(newName) {
+      if (!newName || newName === currentName) return;
+      
+      const fd = new FormData();
+      fd.append('rename_task_id', currentTaskId);
+      fd.append('rename_task_label', newName);
+      fd.append('token', token);
+      
+      fetch('', {method: 'POST', body: fd})
+        .then(() => {
+          $('#task-name-display').text(newName);
+          
+          $(`tr[data-id="${currentTaskId}"] td:nth-child(1)`).text(newName);
+          
+          const $activeWorkspace = $('.workspace-item').filter(function() {
+            const $this = $(this);
+            return $this.css('background-color') === 'rgb(0, 124, 186)' || // #007cba en RGB
+                   $this.css('font-weight') === 'bold' ||
+                   $this.css('font-weight') === '700';
+          });
+          
+          if ($activeWorkspace.length > 0) {
+            const wsId = $activeWorkspace.data('id');
+            if (wsId) {
+              console.log('Rechargement des groupes pour l\'espace:', wsId);
+              loadGroups(wsId);
+            }
+          } else {
+            console.log('Aucun espace actif trouvé, recherche alternative...');
+            const $allWorkspaces = $('.workspace-item');
+            if ($allWorkspaces.length > 0) {
+              const wsId = $allWorkspaces.first().data('id');
+              console.log('Utilisation du premier espace disponible:', wsId);
+              loadGroups(wsId);
+            }
+          }
+        })
+        .catch(err => {
+          console.error('Erreur lors de la modification du nom:', err);
+          CustomPopup.error('Erreur lors de la modification du nom');
         });
-        
-        if ($activeWorkspace.length > 0) {
-          const wsId = $activeWorkspace.data('id');
-          if (wsId) {
-            console.log('Rechargement des groupes pour l\'espace:', wsId);
-            loadGroups(wsId);
-          }
-        } else {
-          console.log('Aucun espace actif trouvé, recherche alternative...');
-          const $allWorkspaces = $('.workspace-item');
-          if ($allWorkspaces.length > 0) {
-            const wsId = $allWorkspaces.first().data('id');
-            console.log('Utilisation du premier espace disponible:', wsId);
-            loadGroups(wsId);
-          }
-        }
-      })
-      .catch(err => {
-        console.error('Erreur lors de la modification du nom:', err);
-        alert('Erreur lors de la modification du nom');
-      });
+    }, currentName, 'Renommer la tâche');
   });
 
   $(document).on('click', '.edit-comment-btn', function() {
@@ -794,7 +795,7 @@ $(function(){
     const newText = $commentItem.find('.edit-comment-textarea').val().trim();
     
     if (!newText) {
-      alert('Le commentaire ne peut pas être vide');
+      CustomPopup.error('Le commentaire ne peut pas être vide', 'Champ obligatoire');
       return;
     }
     
@@ -809,7 +810,7 @@ $(function(){
         if (response === 'OK') {
           loadComments(currentTaskId);
         } else {
-          alert('Erreur lors de la modification');
+          CustomPopup.error('Erreur lors de la modification');
         }
       });
   });
@@ -817,23 +818,23 @@ $(function(){
   $(document).on('click', '.delete-comment-btn', function() {
     const commentId = $(this).data('comment-id');
     
-    if (!confirm('Êtes-vous sûr de vouloir supprimer ce commentaire ?')) {
-      return;
-    }
-    
-    const fd = new FormData();
-    fd.append('delete_comment_id', commentId);
-    fd.append('token', token);
-    
-    fetch('', {method: 'POST', body: fd})
-      .then(r => r.text())
-      .then(response => {
-        if (response === 'OK') {
-          loadComments(currentTaskId);
-        } else {
-          alert('Erreur lors de la suppression');
-        }
-      });
+    CustomPopup.confirm('Êtes-vous sûr de vouloir supprimer ce commentaire ?', function(result) {
+      if (!result) return;
+      
+      const fd = new FormData();
+      fd.append('delete_comment_id', commentId);
+      fd.append('token', token);
+      
+      fetch('', {method: 'POST', body: fd})
+        .then(r => r.text())
+        .then(response => {
+          if (response === 'OK') {
+            loadComments(currentTaskId);
+          } else {
+            CustomPopup.error('Erreur lors de la suppression');
+          }
+        });
+    });
   });
 
   $(document).on('click', '.cancel-edit-btn', function() {
@@ -861,7 +862,7 @@ $(function(){
     
     if (!currentTaskId) {
       console.log('Erreur: currentTaskId est null');
-      alert('Erreur: Aucune tâche sélectionnée');
+      CustomPopup.error('Erreur: Aucune tâche sélectionnée');
       return;
     }
     
@@ -881,14 +882,14 @@ $(function(){
         .then(result => {
           console.log('Résultat:', result);
           if (result.error) {
-            alert('Erreur upload: ' + result.error);
+            CustomPopup.error('Erreur upload: ' + result.error);
           } else {
             loadTaskFiles(currentTaskId);
           }
         })
         .catch(err => {
           console.error('Erreur upload:', err);
-          alert('Erreur lors de l\'upload du fichier: ' + file.name);
+          CustomPopup.error('Erreur lors de l\'upload du fichier: ' + file.name);
         });
     });
     
@@ -966,60 +967,65 @@ $(function(){
     `);
 
     $('#rename-btn').click(()=>{
-      const n=prompt("Nouveau nom de l'espace :",wsLabel);
-      if(!n) return;
-      const fd=new FormData(); fd.append('rename_workspace_id',wsId);
-      fd.append('rename_workspace_label',n); fd.append('token',token);
-      
-      console.log('Renommage de l\'espace:', wsId, 'vers:', n);
-      
-      fetch('',{method:'POST',body:fd})
-        .then(response => {
-          console.log('Réponse du serveur pour renommage:', response.status);
-          return response.text();
-        })
-        .then(responseText => {
-          console.log('Contenu de la réponse:', responseText);
-          
-          $('#main-content h2').text(n);
-          $(`.workspace-item[data-id="${wsId}"]`).text(n);
-          
-          console.log('Interface mise à jour avec succès');
-        })
-        .catch(error => {
-          console.error('Erreur lors du renommage:', error);
-        });
+      CustomPopup.prompt("Nouveau nom de l'espace :", function(n) {
+        if(!n) return;
+        const fd=new FormData(); fd.append('rename_workspace_id',wsId);
+        fd.append('rename_workspace_label',n); fd.append('token',token);
+        
+        console.log('Renommage de l\'espace:', wsId, 'vers:', n);
+        
+        fetch('',{method:'POST',body:fd})
+          .then(response => {
+            console.log('Réponse du serveur pour renommage:', response.status);
+            return response.text();
+          })
+          .then(responseText => {
+            console.log('Contenu de la réponse:', responseText);
+            
+            $('#main-content h2').text(n);
+            $(`.workspace-item[data-id="${wsId}"]`).text(n);
+            
+            console.log('Interface mise à jour avec succès');
+          })
+          .catch(error => {
+            console.error('Erreur lors du renommage:', error);
+          });
+      }, wsLabel, "Renommer l'espace");
     });
     $('#delete-btn').click(()=>{
-      if(!confirm('Supprimer cet espace ?')) return;
-      const fd=new FormData(); fd.append('delete_workspace_id',wsId);
-      fd.append('token',token);
-      
-      console.log('Suppression de l\'espace:', wsId);
-      
-      fetch('',{method:'POST',body:fd})
-        .then(response => {
-          console.log('Réponse du serveur pour suppression:', response.status);
-          return response.text();
-        })
-        .then(responseText => {
-          console.log('Contenu de la réponse:', responseText);
-          
-          $(`.workspace-item[data-id="${wsId}"]`).remove();
-          $('#main-content').html('<div style="text-align:center;padding:50px;color:#666;"><h3>Sélectionnez un espace de travail</h3><p>Choisissez un espace dans la liste de gauche pour commencer.</p></div>');
-          
-          console.log('Espace supprimé de l\'interface');
-        })
-        .catch(error => {
-          console.error('Erreur lors de la suppression:', error);
-        });
+      CustomPopup.confirm('Supprimer cet espace ?', function(result) {
+        if(!result) return;
+        const fd=new FormData(); fd.append('delete_workspace_id',wsId);
+        fd.append('token',token);
+        
+        console.log('Suppression de l\'espace:', wsId);
+        
+        fetch('',{method:'POST',body:fd})
+        fetch('',{method:'POST',body:fd})
+          .then(response => {
+            console.log('Réponse du serveur pour suppression:', response.status);
+            return response.text();
+          })
+          .then(responseText => {
+            console.log('Contenu de la réponse:', responseText);
+            
+            $(`.workspace-item[data-id="${wsId}"]`).remove();
+            $('#main-content').html('<div style="text-align:center;padding:50px;color:#666;"><h3>Sélectionnez un espace de travail</h3><p>Choisissez un espace dans la liste de gauche pour commencer.</p></div>');
+            
+            console.log('Espace supprimé de l\'interface');
+          })
+          .catch(error => {
+            console.error('Erreur lors de la suppression:', error);
+          });
+      });
     });
     $('#add-group-btn').click(()=>{
-      const n=prompt('Nom du groupe :');
-      if(!n) return;
-      const fd=new FormData(); fd.append('add_group_workspace_id',wsId);
-      fd.append('group_label',n); fd.append('token',token);
-      fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wsId));
+      CustomPopup.prompt('Nom du groupe :', function(n) {
+        if(!n) return;
+        const fd=new FormData(); fd.append('add_group_workspace_id',wsId);
+        fd.append('group_label',n); fd.append('token',token);
+        fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wsId));
+      }, '', 'Ajouter un groupe');
     });
 
     // Réinitialiser la recherche quand on change d'espace
@@ -1303,10 +1309,11 @@ $(function(){
     $('#group-list').off('click','.add-column-btn').on('click','.add-column-btn',function(e){
       e.stopPropagation();
       const gid = $(this).data('gid');
-      const lbl = prompt('Nom de la colonne :');
-      if(!lbl) return;
       
-      const typeModal = $(`
+      CustomPopup.prompt('Nom de la colonne :', function(lbl) {
+        if(!lbl) return;
+        
+        const typeModal = $(`
         <div id="type-modal" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1001;display:flex;align-items:center;justify-content:center;">
           <div style="background:white;padding:25px;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.3);min-width:350px;">
             <h3 style="margin:0 0 20px 0;text-align:center;color:#333;">Choisir le type de colonne</h3>
@@ -1411,6 +1418,7 @@ $(function(){
           typeModal.remove();
         }
       });
+      }, '', 'Ajouter une colonne');
     });
 
     $('.group-toggle').off('click').on('click',function(e){
@@ -1432,53 +1440,60 @@ $(function(){
         const $g=$(this).closest('.group');
         const gid=$g.data('id');
         const old=$g.find('.group-label').text();
-        const nw=prompt('Nouveau nom du groupe :',old);
-        if(!nw) return;
-        const fd=new FormData();
-        fd.append('rename_group_id',gid);
-        fd.append('group_label',nw);
-        fd.append('token',token);
-        fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
+        CustomPopup.prompt('Nouveau nom du groupe :', function(nw) {
+          if(!nw) return;
+          const fd=new FormData();
+          fd.append('rename_group_id',gid);
+          fd.append('group_label',nw);
+          fd.append('token',token);
+          fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
+        }, old, 'Renommer le groupe');
       })
       .off('click','.delete-group').on('click','.delete-group',function(){
         const $g=$(this).closest('.group');
         const gid=$g.data('id');
-        if(!confirm('Supprimer ce groupe ?')) return;
-        const fd=new FormData();
-        fd.append('delete_group_id',gid);
-        fd.append('token',token);
-        fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
+        CustomPopup.confirm('Supprimer ce groupe ?', function(result) {
+          if(!result) return;
+          const fd=new FormData();
+          fd.append('delete_group_id',gid);
+          fd.append('token',token);
+          fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
+        });
       })
       .off('click','.add-row-btn').on('click','.add-row-btn',function(){
         const gid=$(this).closest('.group').data('id');
-        const lbl=prompt('Nom de la tâche :');
-        if(!lbl) return;
-        const fd=new FormData();
-        fd.append('add_task_group_id',gid);
-        fd.append('task_label',lbl);
-        fd.append('token',token);
-        fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
+        CustomPopup.prompt('Nom de la tâche :', function(lbl) {
+          if(!lbl) return;
+          const fd=new FormData();
+          fd.append('add_task_group_id',gid);
+          fd.append('task_label',lbl);
+          fd.append('token',token);
+          fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
+        }, '', 'Ajouter une tâche');
       })
       .off('click','.rename-column-btn').on('click','.rename-column-btn',function(e){
         e.stopPropagation();
         const cid = $(this).data('cid');
         const old = $(this).closest('.column-menu').siblings('.column-label').text();
-        const nw = prompt('Nouveau nom de la colonne :', old);
-        if(!nw) return;
-        const fd = new FormData();
-        fd.append('rename_column_id', cid);
-        fd.append('rename_column_label', nw);
-        fd.append('token', token);
-        fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
+        CustomPopup.prompt('Nouveau nom de la colonne :', function(nw) {
+          if(!nw) return;
+          const fd = new FormData();
+          fd.append('rename_column_id', cid);
+          fd.append('rename_column_label', nw);
+          fd.append('token', token);
+          fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
+        }, old, 'Renommer la colonne');
       })
       .off('click','.delete-column-btn').on('click','.delete-column-btn',function(e){
         e.stopPropagation();
         const cid = $(this).data('cid');
-        if(!confirm('Supprimer cette colonne ?')) return;
-        const fd = new FormData();
-        fd.append('delete_column_id', cid);
-        fd.append('token', token);
-        fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
+        CustomPopup.confirm('Supprimer cette colonne ?', function(result) {
+          if(!result) return;
+          const fd = new FormData();
+          fd.append('delete_column_id', cid);
+          fd.append('token', token);
+          fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
+        });
       })
       .off('click','.manage-options-btn').on('click','.manage-options-btn',function(e){
         e.stopPropagation();
@@ -1672,24 +1687,26 @@ $(function(){
           const optionId = $(this).data('option-id');
           const $button = $(this);
           
-          if(!confirm('Supprimer cette option ?')) return;
-          
-          const fd = new FormData();
-          fd.append('delete_option_id', optionId);
-          fd.append('token', token);
-          
-          fetch('', {method: 'POST', body: fd})
-            .then(() => {
-              $button.closest('.option-item').remove();
-            })
-            .catch(e => console.error('Erreur lors de la suppression:', e));
+          CustomPopup.confirm('Supprimer cette option ?', function(result) {
+            if(!result) return;
+            
+            const fd = new FormData();
+            fd.append('delete_option_id', optionId);
+            fd.append('token', token);
+            
+            fetch('', {method: 'POST', body: fd})
+              .then(() => {
+                $button.closest('.option-item').remove();
+              })
+              .catch(e => console.error('Erreur lors de la suppression:', e));
+          });
         });
         
         $('#add-option-btn').click(function(){
           const label = $('#new-option-label').val().trim();
           
           if(!label) {
-            alert('Veuillez saisir un label');
+            CustomPopup.error('Veuillez saisir un label', 'Champ obligatoire');
             return;
           }
           
@@ -1941,5 +1958,186 @@ $(function(){
   
   $(document).ready(function() {
   });
+
+  // Système de popup stylisé pour remplacer les alertes natives - Version simplifiée
+  window.CustomPopup = {
+    show: function(options) {
+      const defaults = {
+        type: 'info',
+        title: 'Information',
+        message: '',
+        showInput: false,
+        inputPlaceholder: '',
+        inputValue: '',
+        buttons: [
+          {
+            text: 'OK',
+            class: 'custom-popup-btn-primary',
+            callback: null
+          }
+        ]
+      };
+      
+      const config = Object.assign({}, defaults, options);
+      
+      // Supprimer le popup existant
+      $('.custom-popup-overlay').remove();
+      
+      const headerClass = config.type === 'info' ? '' : config.type;
+      
+      let inputHtml = '';
+      if (config.showInput) {
+        inputHtml = `<input type="text" class="custom-popup-input" placeholder="${config.inputPlaceholder}" value="${config.inputValue}">`;
+      }
+      
+      let buttonsHtml = '';
+      config.buttons.forEach(button => {
+        buttonsHtml += `<button class="custom-popup-btn ${button.class}" data-action="${button.text.toLowerCase()}">${button.text}</button>`;
+      });
+      
+      const popupHtml = `
+        <div class="custom-popup-overlay">
+          <div class="custom-popup">
+            <div class="custom-popup-header ${headerClass}">
+              <h3 class="custom-popup-title">${config.title}</h3>
+            </div>
+            <div class="custom-popup-content">
+              <p class="custom-popup-message">${config.message}</p>
+              ${inputHtml}
+              <div class="custom-popup-buttons">
+                ${buttonsHtml}
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+      
+      $('body').append(popupHtml);
+      
+      // Afficher avec animation
+      setTimeout(() => {
+        $('.custom-popup-overlay').addClass('show');
+      }, 10);
+      
+      // Gérer les clics sur les boutons
+      $('.custom-popup-overlay').on('click', '.custom-popup-btn', function(e) {
+        const action = $(this).data('action');
+        const inputValue = $('.custom-popup-input').val();
+        
+        // Trouver le bouton correspondant dans la configuration
+        const button = config.buttons.find(b => b.text.toLowerCase() === action);
+        
+        if (button && button.callback) {
+          const result = button.callback(inputValue);
+          // Si le callback retourne false, ne pas fermer le popup
+          if (result === false) {
+            return;
+          }
+        }
+        
+        CustomPopup.hide();
+      });
+      
+      // Fermer en cliquant sur l'overlay
+      $('.custom-popup-overlay').on('click', function(e) {
+        if (e.target === this) {
+          CustomPopup.hide();
+        }
+      });
+      
+      // Fermer avec la touche Échap
+      $(document).on('keydown.popup', function(e) {
+        if (e.keyCode === 27) {
+          CustomPopup.hide();
+        }
+      });
+      
+      // Focus sur l'input s'il existe
+      if (config.showInput) {
+        setTimeout(() => {
+          $('.custom-popup-input').focus();
+        }, 350);
+      }
+    },
+    
+    hide: function() {
+      $('.custom-popup-overlay').removeClass('show');
+      setTimeout(() => {
+        $('.custom-popup-overlay').remove();
+        $(document).off('keydown.popup');
+      }, 300);
+    },
+    
+    alert: function(message, title = 'Information', type = 'info') {
+      this.show({
+        type: type,
+        title: title,
+        message: message,
+        buttons: [
+          {
+            text: 'OK',
+            class: 'custom-popup-btn-primary'
+          }
+        ]
+      });
+    },
+    
+    confirm: function(message, callback, title = 'Confirmation') {
+      this.show({
+        type: 'warning',
+        title: title,
+        message: message,
+        buttons: [
+          {
+            text: 'Annuler',
+            class: 'custom-popup-btn-secondary'
+          },
+          {
+            text: 'Confirmer',
+            class: 'custom-popup-btn-primary',
+            callback: function() {
+              if (callback) callback(true);
+            }
+          }
+        ]
+      });
+    },
+    
+    prompt: function(message, callback, defaultValue = '', title = 'Saisie') {
+      this.show({
+        type: 'info',
+        title: title,
+        message: message,
+        showInput: true,
+        inputValue: defaultValue,
+        buttons: [
+          {
+            text: 'Annuler',
+            class: 'custom-popup-btn-secondary'
+          },
+          {
+            text: 'Valider',
+            class: 'custom-popup-btn-primary',
+            callback: function(inputValue) {
+              if (callback) callback(inputValue);
+            }
+          }
+        ]
+      });
+    },
+    
+    success: function(message, title = 'Succès') {
+      this.alert(message, title, 'success');
+    },
+    
+    error: function(message, title = 'Erreur') {
+      this.alert(message, title, 'error');
+    }
+  };
+  
+  // Remplacer les fonctions natives pour une utilisation transparente
+  window.customAlert = window.CustomPopup.alert.bind(window.CustomPopup);
+  window.customConfirm = window.CustomPopup.confirm.bind(window.CustomPopup);
+  window.customPrompt = window.CustomPopup.prompt.bind(window.CustomPopup);
 
 });
