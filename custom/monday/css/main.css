@@ -932,3 +932,29 @@ td[style*="background-color: rgb(255, 243, 205)"] {
 .custom-popup-btn-danger:hover {
   background: #c73650;
 }
+
+/* Styles pour les selects colorés */
+.cell-select {
+  transition: all 0.2s ease;
+  min-width: 100px;
+}
+
+.cell-select:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(0, 115, 234, 0.3);
+}
+
+/* Amélioration du style des options dans les selects */
+.cell-select option {
+  padding: 4px 8px;
+  font-weight: normal;
+}
+
+.cell-select option:checked {
+  font-weight: bold;
+}
+
+/* Style pour les selects avec couleur de fond */
+.cell-select[style*="background-color"]:not([style*="transparent"]) {
+  text-shadow: 0 1px 1px rgba(0,0,0,0.1);
+}

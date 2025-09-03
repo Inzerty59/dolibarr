@@ -356,12 +356,83 @@ $(function(){
       if(style) {
         const color = style.match(/background:([^;]+)/)?.[1];
         if(color) {
+          // Appliquer la couleur de fond
           $select.css('background-color', color);
+          
+          // Calculer la couleur de texte appropriée (blanc ou noir) selon la luminosité
+          const textColor = getContrastColor(color);
+          $select.css('color', textColor);
+          
+          // Améliorer l'apparence avec un padding et des bordures arrondies
+          $select.css({
+            'border': 'none',
+            'padding': '4px 8px',
+            'border-radius': '4px',
+            'font-weight': 'bold'
+          });
           return;
         }
       }
     }
-    $select.css('background-color', 'transparent');
+    
+    // Réinitialiser les styles si aucune valeur sélectionnée
+    $select.css({
+      'background-color': 'transparent',
+      'color': 'inherit',
+      'border': '1px solid #ddd',
+      'padding': '2px',
+      'border-radius': '0',
+      'font-weight': 'normal'
+    });
+  }
+  
+  // Fonction pour calculer la couleur de texte contrastée
+  function getContrastColor(hexColor) {
+    // Convertir la couleur hex en RGB
+    let r, g, b;
+    
+    if (hexColor.startsWith('#')) {
+      const hex = hexColor.substring(1);
+      r = parseInt(hex.substr(0, 2), 16);
+      g = parseInt(hex.substr(2, 2), 16);
+      b = parseInt(hex.substr(4, 2), 16);
+    } else if (hexColor.startsWith('rgb')) {
+      const matches = hexColor.match(/\d+/g);
+      if (matches && matches.length >= 3) {
+        r = parseInt(matches[0]);
+        g = parseInt(matches[1]);
+        b = parseInt(matches[2]);
+      } else {
+        return '#000000'; // Fallback vers noir
+      }
+    } else {
+      // Couleurs nommées courantes
+      const namedColors = {
+        'red': '#FF0000',
+        'green': '#008000',
+        'blue': '#0000FF',
+        'yellow': '#FFFF00',
+        'orange': '#FFA500',
+        'purple': '#800080',
+        'pink': '#FFC0CB',
+        'brown': '#A52A2A',
+        'gray': '#808080',
+        'black': '#000000',
+        'white': '#FFFFFF'
+      };
+      
+      if (namedColors[hexColor.toLowerCase()]) {
+        return getContrastColor(namedColors[hexColor.toLowerCase()]);
+      }
+      
+      return '#000000'; // Fallback vers noir
+    }
+    
+    // Calculer la luminosité relative (formule W3C)
+    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    
+    // Retourner blanc pour les couleurs sombres, noir pour les couleurs claires
+    return luminance > 0.5 ? '#000000' : '#FFFFFF';
   }
 
   window.openTaskDetail = function(taskId, taskName, groupName) {
