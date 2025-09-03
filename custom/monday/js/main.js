@@ -1749,21 +1749,21 @@ $(function(){
           const $labelDisplay = $item.find('.option-label-display');
           const currentLabel = $labelDisplay.text();
           
-          const newLabel = prompt('Nouveau nom de l\'option :', currentLabel);
-          
-          if(!newLabel || newLabel === currentLabel) return;
-          
-          const fd = new FormData();
-          fd.append('rename_option_id', optionId);
-          fd.append('rename_option_label', newLabel);
-          fd.append('token', token);
-          
-          fetch('', {method: 'POST', body: fd})
-            .then(() => {
-              $labelDisplay.text(newLabel);
-              console.log('Option renommée');
-            })
-            .catch(e => console.log('Erreur lors du renommage:', e));
+          CustomPopup.prompt('Nouveau nom de l\'option :', function(newLabel) {
+            if(!newLabel || newLabel === currentLabel) return;
+            
+            const fd = new FormData();
+            fd.append('rename_option_id', optionId);
+            fd.append('rename_option_label', newLabel);
+            fd.append('token', token);
+            
+            fetch('', {method: 'POST', body: fd})
+              .then(() => {
+                $labelDisplay.text(newLabel);
+                console.log('Option renommée');
+              })
+              .catch(e => console.log('Erreur lors du renommage:', e));
+          }, currentLabel);
         });
         
         $('#options-list').off('click', '.delete-option-btn').on('click', '.delete-option-btn', function(e){
