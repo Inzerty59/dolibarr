@@ -1386,3 +1386,54 @@ form[method="POST"] input[name="new_workspace"]:focus {
 #tags-modal #available-tags::-webkit-scrollbar-thumb:hover {
   background: #a8a8a8;
 }
+
+/* Styles pour le modal de gestion d'options */
+#options-modal .option-item:hover {
+  border-color: #0073ea !important;
+  box-shadow: 0 2px 8px rgba(0, 115, 234, 0.1) !important;
+  transform: translateY(-1px);
+}
+
+#options-modal .color-preview:hover {
+  transform: scale(1.1) !important;
+  border-color: #0073ea !important;
+}
+
+#options-modal .edit-option-btn:hover {
+  background: #005bb5 !important;
+  transform: translateY(-1px) !important;
+}
+
+#options-modal .delete-option-btn:hover {
+  background: #c73650 !important;
+  transform: translateY(-1px) !important;
+}
+
+#options-modal #new-option-label:focus {
+  outline: none !important;
+  border-color: #0073ea !important;
+  box-shadow: 0 0 0 2px rgba(0, 115, 234, 0.1) !important;
+}
+
+#options-modal .new-option-color-preview:hover {
+  transform: scale(1.05) !important;
+  border-color: #0073ea !important;
+}
+
+#options-modal #options-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+#options-modal #options-list::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 3px;
+}
+
+#options-modal #options-list::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 3px;
+}
+
+#options-modal #options-list::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}

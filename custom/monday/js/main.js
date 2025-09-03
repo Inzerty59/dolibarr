@@ -1596,32 +1596,35 @@ $(function(){
       .then(r=>r.json())
       .then(options=>{
         const optionsModal = $(`
-          <div id="options-modal" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1000;display:flex;align-items:center;justify-content:center;">
-            <div style="background:white;padding:20px;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.3);min-width:500px;max-height:80vh;overflow-y:auto;">
-              <h3>Gérer les options</h3>
-              
-              <div id="options-list" style="margin:15px 0;max-height:300px;overflow-y:auto;">
-                ${options.map(opt => `
-                  <div class="option-item" data-option-id="${opt.id}" style="display:flex;align-items:center;gap:10px;margin-bottom:10px;padding:10px;border:1px solid #ddd;border-radius:4px;">
-                    <div class="color-preview" style="width:20px;height:20px;border-radius:4px;background:${opt.color || '#87CEEB'};border:1px solid #ccc;cursor:pointer;" title="Cliquer pour changer la couleur"></div>
-                    <span class="option-label-display" style="flex:1;padding:4px;">${opt.label}</span>
-                    <button class="edit-option-btn" data-option-id="${opt.id}" style="padding:4px 8px;background:#007cba;color:white;border:none;cursor:pointer;border-radius:3px;">✎</button>
-                    <button class="delete-option-btn" data-option-id="${opt.id}" style="padding:4px 8px;background:#dc3545;color:white;border:none;cursor:pointer;border-radius:3px;">✖</button>
-                  </div>
-                `).join('')}
+          <div id="options-modal" class="custom-popup-overlay show">
+            <div class="custom-popup" style="max-width: 600px; width: 90%;">
+              <div class="custom-popup-header">
+                <h3 class="custom-popup-title">Gérer les options</h3>
               </div>
-              
-              <div style="border-top:1px solid #ddd;padding-top:15px;margin-top:15px;">
-                <h4>Ajouter une nouvelle option</h4>
-                <div style="display:flex;gap:10px;align-items:center;">
-                  <input type="text" id="new-option-label" placeholder="Label" style="flex:1;padding:6px;border:1px solid #ddd;border-radius:3px;">
-                  <div id="new-option-color-preview" style="width:30px;height:30px;border-radius:4px;background:#87CEEB;border:1px solid #ccc;cursor:pointer;" title="Cliquer pour choisir une couleur"></div>
-                  <button id="add-option-btn" style="padding:6px 12px;background:#007cba;color:white;border:none;cursor:pointer;border-radius:3px;">Ajouter</button>
+              <div class="custom-popup-content">
+                <div id="options-list" style="margin:15px 0;max-height:350px;overflow-y:auto;padding:10px;background:#f8f9fa;border-radius:6px;">
+                  ${options.map(opt => `
+                    <div class="option-item" data-option-id="${opt.id}" style="display:flex;align-items:center;gap:12px;margin-bottom:12px;padding:12px;border:1px solid #e9ecef;border-radius:8px;background:#fff;transition:all 0.2s ease;">
+                      <div class="color-preview" style="width:24px;height:24px;border-radius:6px;background:${opt.color || '#87CEEB'};border:2px solid #e9ecef;cursor:pointer;transition:all 0.2s ease;" title="Cliquer pour changer la couleur"></div>
+                      <span class="option-label-display" style="flex:1;padding:8px;font-weight:500;color:#333;">${opt.label}</span>
+                      <button class="edit-option-btn modal-btn modal-btn-edit" data-option-id="${opt.id}" style="padding:6px 10px;background:#0073ea;color:white;border:none;cursor:pointer;border-radius:4px;font-size:12px;transition:all 0.2s ease;">✎</button>
+                      <button class="delete-option-btn modal-btn modal-btn-danger" data-option-id="${opt.id}" style="padding:6px 10px;background:#e2445c;color:white;border:none;cursor:pointer;border-radius:4px;font-size:12px;transition:all 0.2s ease;">✖</button>
+                    </div>
+                  `).join('')}
                 </div>
-              </div>
-              
-              <div style="margin-top:20px;text-align:right;">
-                <button id="close-options" style="padding:8px 16px;background:#ccc;border:none;cursor:pointer;border-radius:4px;">Fermer</button>
+                
+                <div class="add-option-section" style="border-top:1px solid #e9ecef;padding-top:20px;margin-top:20px;">
+                  <h4 style="margin:0 0 15px 0;color:#333;font-size:16px;">Ajouter une nouvelle option</h4>
+                  <div class="add-option-form" style="display:flex;gap:10px;align-items:center;">
+                    <input type="text" id="new-option-label" placeholder="Nom de l'option" style="flex:1;padding:10px;border:1px solid #e9ecef;border-radius:6px;font-size:14px;transition:all 0.2s ease;">
+                    <div id="new-option-color-preview" class="new-option-color-preview" style="width:36px;height:36px;border-radius:6px;background:#87CEEB;border:2px solid #e9ecef;cursor:pointer;transition:all 0.2s ease;" title="Cliquer pour choisir une couleur"></div>
+                    <button id="add-option-btn" class="custom-popup-btn custom-popup-btn-primary">Ajouter</button>
+                  </div>
+                </div>
+                
+                <div class="custom-popup-buttons" style="margin-top:25px;">
+                  <button id="close-options" class="custom-popup-btn custom-popup-btn-secondary">Fermer</button>
+                </div>
               </div>
             </div>
           </div>
@@ -1633,28 +1636,31 @@ $(function(){
         
         function createColorPicker(currentColor, callback) {
           const colorModal = $(`
-            <div id="color-picker-modal" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:1001;display:flex;align-items:center;justify-content:center;">
-              <div style="background:white;padding:25px;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.3);min-width:400px;">
-                <h4 style="margin:0 0 15px 0;">Choisir une couleur</h4>
-                
-                <div style="margin-bottom:20px;">
-                  <h5 style="margin-bottom:10px;">Couleurs prédéfinies :</h5>
-                  <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;">
+            <div id="color-picker-modal" class="custom-popup-overlay show">
+              <div class="custom-popup" style="max-width: 450px;">
+                <div class="custom-popup-header">
+                  <h3 class="custom-popup-title">Choisir une couleur</h3>
+                </div>
+                <div class="custom-popup-content">
+                  <div class="section-title">Couleurs prédéfinies</div>
+                  <div class="color-grid" style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:20px;">
                     ${['#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#FF8000', '#00FFFF', '#800080', '#008000', '#FFC0CB'].map(color => `
-                      <div class="preset-color" data-color="${color}" style="width:40px;height:40px;background:${color};border:3px solid ${currentColor === color ? '#000' : '#ccc'};cursor:pointer;border-radius:6px;transition:all 0.2s;"></div>
+                      <div class="preset-color ${currentColor === color ? 'selected' : ''}" data-color="${color}" style="width:44px;height:44px;background:${color};border:3px solid ${currentColor === color ? '#0073ea' : '#e9ecef'};cursor:pointer;border-radius:8px;transition:all 0.2s ease;"></div>
                     `).join('')}
                   </div>
-                </div>
-                
-                <div style="margin-bottom:20px;">
-                  <h5 style="margin-bottom:10px;">Couleur personnalisée :</h5>
-                  <input type="color" id="custom-color-picker" value="${currentColor}" style="width:60px;height:40px;border:none;cursor:pointer;border-radius:4px;">
-                  <span id="color-display" style="margin-left:10px;padding:8px 15px;background:${currentColor};color:white;border-radius:4px;font-weight:bold;text-shadow:1px 1px 1px rgba(0,0,0,0.5);">${currentColor}</span>
-                </div>
-                
-                <div style="text-align:right;display:flex;gap:10px;justify-content:flex-end;">
-                  <button id="apply-color" style="padding:8px 16px;background:#007cba;color:white;border:none;cursor:pointer;border-radius:4px;">Appliquer</button>
-                  <button id="cancel-color" style="padding:8px 16px;background:#ccc;border:none;cursor:pointer;border-radius:4px;">Annuler</button>
+                  
+                  <div class="custom-color-section" style="display:flex;align-items:center;gap:15px;margin-bottom:20px;">
+                    <div>
+                      <div class="section-title">Couleur personnalisée</div>
+                      <input type="color" id="custom-color-picker" value="${currentColor}" class="custom-color-picker" style="width:60px;height:40px;border:none;cursor:pointer;border-radius:6px;border:2px solid #e9ecef;">
+                    </div>
+                    <div class="color-display" style="padding:8px 15px;background:${currentColor};color:white;border-radius:6px;font-weight:600;font-size:14px;text-shadow:0 1px 2px rgba(0,0,0,0.3);border:1px solid rgba(0,0,0,0.1);">${currentColor}</div>
+                  </div>
+                  
+                  <div class="custom-popup-buttons">
+                    <button id="apply-color" class="custom-popup-btn custom-popup-btn-primary">Appliquer</button>
+                    <button id="cancel-color" class="custom-popup-btn custom-popup-btn-secondary">Annuler</button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1668,8 +1674,8 @@ $(function(){
             function() { $(this).css('transform', 'scale(1.1)'); },
             function() { $(this).css('transform', 'scale(1)'); }
           ).click(function(){
-            $('.preset-color').css('border-color', '#ccc');
-            $(this).css('border-color', '#000');
+            $('.preset-color').removeClass('selected').css('border-color', '#e9ecef');
+            $(this).addClass('selected').css('border-color', '#0073ea');
             tempColor = $(this).data('color');
             $('#custom-color-picker').val(tempColor);
             $('#color-display').css('background', tempColor).text(tempColor);
