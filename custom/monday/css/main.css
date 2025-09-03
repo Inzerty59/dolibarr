@@ -79,8 +79,44 @@
   background: #8e24aa;
 }
 
+.column-menu .sort-asc-btn:hover {
+  background: linear-gradient(90deg, #e8f5e8 0%, #f8f9fa 100%);
+  color: #00c875;
+  padding-left: 20px;
+}
+
+.column-menu .sort-asc-btn:hover::before {
+  background: #00c875;
+}
+
+.column-menu .sort-desc-btn:hover {
+  background: linear-gradient(90deg, #fff3e0 0%, #f8f9fa 100%);
+  color: #ff9800;
+  padding-left: 20px;
+}
+
+.column-menu .sort-desc-btn:hover::before {
+  background: #ff9800;
+}
+
 .column-menu button:active {
   transform: scale(0.98);
+}
+
+/* Style pour les indicateurs de tri dans les en-têtes */
+.column-sort-indicator {
+  font-size: 12px;
+  margin-left: 6px;
+  opacity: 0.7;
+  font-weight: bold;
+}
+
+.column-sort-indicator.asc {
+  color: #00c875;
+}
+
+.column-sort-indicator.desc {
+  color: #ff9800;
 }
 
 /* Style pour le bouton des trois points */

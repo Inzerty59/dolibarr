@@ -1118,9 +1118,11 @@ $(function(){
                 `;
                 cols.forEach(c=>{
                   ths += `<th style="border:1px solid #ddd;padding:4px;position:relative;">
-                            <span class="column-label" data-cid="${c.id}" style="cursor:pointer;">${c.label}</span>
+                            <span class="column-label" data-cid="${c.id}" style="cursor:pointer;">${c.label}<span class="column-sort-indicator" data-cid="${c.id}"></span></span>
                             <button class="column-menu-btn" data-cid="${c.id}">⋮</button>
                             <div class="column-menu" style="display:none;position:absolute;right:0;top:22px;z-index:10;">
+                              <button class="sort-asc-btn" data-cid="${c.id}" data-type="${c.type}">Trier croissant ↑</button>
+                              <button class="sort-desc-btn" data-cid="${c.id}" data-type="${c.type}">Trier décroissant ↓</button>
                               <button class="rename-column-btn" data-cid="${c.id}">Renommer</button>
                               <button class="delete-column-btn" data-cid="${c.id}">Supprimer</button>
                               ${(c.type === 'select' || c.type === 'tags') ? `<button class="manage-options-btn" data-cid="${c.id}">Gérer options</button>` : ''}
@@ -1569,6 +1571,34 @@ $(function(){
         
         manageColumnOptions(cid, token, () => loadGroups(wid));
       })
+      .off('click','.sort-asc-btn').on('click','.sort-asc-btn',function(e){
+        e.stopPropagation();
+        const cid = $(this).data('cid');
+        const type = $(this).data('type');
+        const $group = $(this).closest('.group');
+        sortColumn($group, cid, type, 'asc');
+        
+        // Mettre à jour l'indicateur visuel
+        $group.find('.column-sort-indicator').text('').removeClass('asc desc');
+        $group.find(`[data-cid="${cid}"].column-sort-indicator`).text('↑').addClass('asc');
+        
+        $('.column-menu').removeClass('show');
+        setTimeout(() => $('.column-menu').hide(), 200);
+      })
+      .off('click','.sort-desc-btn').on('click','.sort-desc-btn',function(e){
+        e.stopPropagation();
+        const cid = $(this).data('cid');
+        const type = $(this).data('type');
+        const $group = $(this).closest('.group');
+        sortColumn($group, cid, type, 'desc');
+        
+        // Mettre à jour l'indicateur visuel
+        $group.find('.column-sort-indicator').text('').removeClass('asc desc');
+        $group.find(`[data-cid="${cid}"].column-sort-indicator`).text('↓').addClass('desc');
+        
+        $('.column-menu').removeClass('show');
+        setTimeout(() => $('.column-menu').hide(), 200);
+      })
       .off('click','.column-menu-btn').on('click','.column-menu-btn',function(e){
         e.stopPropagation();
         $('.column-menu').removeClass('show');
@@ -1589,6 +1619,98 @@ $(function(){
         setTimeout(() => $('.column-menu').hide(), 200);
       }
     });
+  }
+
+  function sortColumn($group, columnId, columnType, direction) {
+    const $tbody = $group.find('tbody');
+    const $rows = $tbody.find('tr').toArray();
+    
+    // Trouver l'index de la colonne à trier (en tenant compte de la colonne "Tâche" en première position)
+    const $headers = $group.find('th');
+    let columnIndex = -1;
+    
+    $headers.each(function(index) {
+      const $header = $(this);
+      const $label = $header.find('.column-label');
+      if ($label.data('cid') == columnId) {
+        columnIndex = index;
+        return false;
+      }
+    });
+    
+    if (columnIndex === -1) return;
+    
+    // Trier les lignes
+    $rows.sort(function(a, b) {
+      const $cellA = $(a).find('td').eq(columnIndex);
+      const $cellB = $(b).find('td').eq(columnIndex);
+      
+      let valueA, valueB;
+      
+      switch(columnType) {
+        case 'text':
+          valueA = $cellA.find('input').val() || $cellA.text() || '';
+          valueB = $cellB.find('input').val() || $cellB.text() || '';
+          valueA = valueA.toLowerCase();
+          valueB = valueB.toLowerCase();
+          break;
+          
+        case 'number':
+          valueA = parseFloat($cellA.find('input').val() || '0') || 0;
+          valueB = parseFloat($cellB.find('input').val() || '0') || 0;
+          break;
+          
+        case 'date':
+        case 'deadline':
+          if (columnType === 'deadline') {
+            valueA = $cellA.find('.deadline-end').val() || '';
+            valueB = $cellB.find('.deadline-end').val() || '';
+          } else {
+            valueA = $cellA.find('input[type="date"]').val() || '';
+            valueB = $cellB.find('input[type="date"]').val() || '';
+          }
+          valueA = valueA ? new Date(valueA) : new Date('1970-01-01');
+          valueB = valueB ? new Date(valueB) : new Date('1970-01-01');
+          break;
+          
+        case 'select':
+          valueA = $cellA.find('select option:selected').text() || '';
+          valueB = $cellB.find('select option:selected').text() || '';
+          valueA = valueA.toLowerCase();
+          valueB = valueB.toLowerCase();
+          break;
+          
+        case 'user':
+          valueA = $cellA.find('span').text() || $cellA.find('select option:selected').text() || '';
+          valueB = $cellB.find('span').text() || $cellB.find('select option:selected').text() || '';
+          valueA = valueA.toLowerCase();
+          valueB = valueB.toLowerCase();
+          break;
+          
+        case 'tags':
+          valueA = $cellA.find('.tag-item').length;
+          valueB = $cellB.find('.tag-item').length;
+          break;
+          
+        default:
+          valueA = $cellA.text() || '';
+          valueB = $cellB.text() || '';
+          valueA = valueA.toLowerCase();
+          valueB = valueB.toLowerCase();
+      }
+      
+      let result = 0;
+      if (columnType === 'number' || columnType === 'date' || columnType === 'deadline' || columnType === 'tags') {
+        result = valueA - valueB;
+      } else {
+        result = valueA.localeCompare(valueB);
+      }
+      
+      return direction === 'desc' ? -result : result;
+    });
+    
+    // Réinsérer les lignes triées
+    $tbody.empty().append($rows);
   }
 
   function manageColumnOptions(cid, token, onComplete) {
