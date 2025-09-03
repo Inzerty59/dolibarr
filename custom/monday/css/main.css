@@ -1,9 +1,110 @@
 .column-menu {
-  min-width: 120px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  min-width: 150px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12), 0 4px 8px rgba(0, 0, 0, 0.08);
+  border-radius: 8px;
+  background: #fff;
+  border: 1px solid #e9ecef;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(-8px) scale(0.95);
+  transition: all 0.2s cubic-bezier(0.23, 1, 0.32, 1);
+  pointer-events: none;
 }
-.column-menu button:hover {
-  background: #f3f3f3;
+
+.column-menu.show {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+
+.column-menu button {
+  display: block;
+  width: 100%;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 10px 14px;
+  text-align: left;
+  font-size: 13px;
+  font-weight: 500;
+  color: #333;
+  transition: all 0.15s ease;
+  border-bottom: 1px solid #f4f6f8;
+  position: relative;
+  white-space: nowrap;
+}
+
+.column-menu button:last-child {
+  border-bottom: none;
+}
+
+.column-menu button::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: transparent;
+  transition: all 0.15s ease;
+}
+
+.column-menu .rename-column-btn:hover {
+  background: linear-gradient(90deg, #e3f2fd 0%, #f8f9fa 100%);
+  color: #0073ea;
+  padding-left: 20px;
+}
+
+.column-menu .rename-column-btn:hover::before {
+  background: #0073ea;
+}
+
+.column-menu .delete-column-btn:hover {
+  background: linear-gradient(90deg, #ffebee 0%, #f8f9fa 100%);
+  color: #e2445c;
+  padding-left: 20px;
+}
+
+.column-menu .delete-column-btn:hover::before {
+  background: #e2445c;
+}
+
+.column-menu .manage-options-btn:hover {
+  background: linear-gradient(90deg, #f3e5f5 0%, #f8f9fa 100%);
+  color: #8e24aa;
+  padding-left: 20px;
+}
+
+.column-menu .manage-options-btn:hover::before {
+  background: #8e24aa;
+}
+
+.column-menu button:active {
+  transform: scale(0.98);
+}
+
+/* Style pour le bouton des trois points */
+.column-menu-btn {
+  background: transparent !important;
+  border: none !important;
+  cursor: pointer !important;
+  padding: 6px 8px !important;
+  font-size: 18px !important;
+  font-weight: bold !important;
+  color: #999 !important;
+  border-radius: 4px !important;
+  transition: all 0.2s ease !important;
+  line-height: 1 !important;
+}
+
+.column-menu-btn:hover {
+  background: #f0f2f5 !important;
+  color: #0073ea !important;
+  transform: scale(1.05) !important;
+}
+
+.column-menu-btn:active {
+  transform: scale(0.95) !important;
 }
 .color-option:hover {
   transform: scale(1.1);

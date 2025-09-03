@@ -1114,11 +1114,11 @@ $(function(){
                 cols.forEach(c=>{
                   ths += `<th style="border:1px solid #ddd;padding:4px;position:relative;">
                             <span class="column-label" data-cid="${c.id}" style="cursor:pointer;">${c.label}</span>
-                            <button class="column-menu-btn" data-cid="${c.id}" style="border:none;background:transparent;cursor:pointer;padding:0 2px;">⋮</button>
-                            <div class="column-menu" style="display:none;position:absolute;right:0;top:22px;background:#fff;border:1px solid #ccc;z-index:10;">
-                              <button class="rename-column-btn" data-cid="${c.id}" style="display:block;width:100%;border:none;background:transparent;cursor:pointer;padding:4px;">Renommer</button>
-                              <button class="delete-column-btn" data-cid="${c.id}" style="display:block;width:100%;border:none;background:transparent;cursor:pointer;padding:4px;">Supprimer</button>
-                              ${(c.type === 'select' || c.type === 'tags') ? `<button class="manage-options-btn" data-cid="${c.id}" style="display:block;width:100%;border:none;background:transparent;cursor:pointer;padding:4px;">Gérer options</button>` : ''}
+                            <button class="column-menu-btn" data-cid="${c.id}">⋮</button>
+                            <div class="column-menu" style="display:none;position:absolute;right:0;top:22px;z-index:10;">
+                              <button class="rename-column-btn" data-cid="${c.id}">Renommer</button>
+                              <button class="delete-column-btn" data-cid="${c.id}">Supprimer</button>
+                              ${(c.type === 'select' || c.type === 'tags') ? `<button class="manage-options-btn" data-cid="${c.id}">Gérer options</button>` : ''}
                             </div>
                          </th>`;
                 });
@@ -1566,12 +1566,24 @@ $(function(){
       })
       .off('click','.column-menu-btn').on('click','.column-menu-btn',function(e){
         e.stopPropagation();
-        $('.column-menu').hide();
-        $(this).siblings('.column-menu').toggle();
+        $('.column-menu').removeClass('show');
+        setTimeout(() => {
+          const menu = $(this).siblings('.column-menu');
+          menu.show();
+          setTimeout(() => menu.addClass('show'), 10);
+        }, 200);
       })
       .off('click','.column-menu').on('click','.column-menu',function(e){
         e.stopPropagation();
       });
+      
+    // Fermer les menus contextuels quand on clique ailleurs
+    $(document).on('click', function(e) {
+      if (!$(e.target).closest('.column-menu, .column-menu-btn').length) {
+        $('.column-menu').removeClass('show');
+        setTimeout(() => $('.column-menu').hide(), 200);
+      }
+    });
   }
 
   function manageColumnOptions(cid, token, onComplete) {
