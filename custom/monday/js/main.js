@@ -1617,7 +1617,7 @@ $(function(){
                   <h4 style="margin:0 0 15px 0;color:#333;font-size:16px;">Ajouter une nouvelle option</h4>
                   <div class="add-option-form" style="display:flex;gap:10px;align-items:center;">
                     <input type="text" id="new-option-label" placeholder="Nom de l'option" style="flex:1;padding:10px;border:1px solid #e9ecef;border-radius:6px;font-size:14px;transition:all 0.2s ease;">
-                    <div id="new-option-color-preview" class="new-option-color-preview" style="width:36px;height:36px;border-radius:6px;background:#87CEEB;border:2px solid #e9ecef;cursor:pointer;transition:all 0.2s ease;" title="Cliquer pour choisir une couleur"></div>
+                    <div id="new-option-color-preview" class="new-option-color-preview" style="width:36px;height:36px;border-radius:6px;background:#0073ea;border:2px solid #e9ecef;cursor:pointer;transition:all 0.2s ease;" title="Cliquer pour choisir une couleur"></div>
                     <button id="add-option-btn" class="custom-popup-btn custom-popup-btn-primary">Ajouter</button>
                   </div>
                 </div>
@@ -1632,7 +1632,7 @@ $(function(){
         
         $('body').append(optionsModal);
         
-        let selectedColor = '#87CEEB';
+        let selectedColor = '#0073ea';
         
         function createColorPicker(currentColor, callback) {
           const colorModal = $(`
@@ -1644,7 +1644,7 @@ $(function(){
                 <div class="custom-popup-content">
                   <div class="section-title">Couleurs prédéfinies</div>
                   <div class="color-grid" style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:20px;">
-                    ${['#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#FF8000', '#00FFFF', '#800080', '#008000', '#FFC0CB'].map(color => `
+                    ${['#e74c3c', '#27ae60', '#3498db', '#f39c12', '#9b59b6', '#e67e22', '#1abc9c', '#8e44ad', '#2ecc71', '#f1c40f'].map(color => `
                       <div class="preset-color ${currentColor === color ? 'selected' : ''}" data-color="${color}" style="width:44px;height:44px;background:${color};border:3px solid ${currentColor === color ? '#0073ea' : '#e9ecef'};cursor:pointer;border-radius:8px;transition:all 0.2s ease;"></div>
                     `).join('')}
                   </div>
