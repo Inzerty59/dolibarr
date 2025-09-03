@@ -30,7 +30,7 @@ $(function(){
         }
       })
       .then(data => {
-        const newItem = `<li class="workspace-item" data-id="${data.id}" style="padding:8px;cursor:pointer;">${data.label}</li>`;
+        const newItem = `<li class="workspace-item" data-id="${data.id}">${data.label}</li>`;
         $('#workspace-list').append(newItem);
         
         newWorkspaceInput.val('');
@@ -40,7 +40,7 @@ $(function(){
       .catch(error => {
         console.error('Erreur lors de l\'ajout de l\'espace:', error);
         const newId = Date.now();
-        const newItem = `<li class="workspace-item" data-id="${newId}" style="padding:8px;cursor:pointer;">${workspaceName}</li>`;
+        const newItem = `<li class="workspace-item" data-id="${newId}">${workspaceName}</li>`;
         $('#workspace-list').append(newItem);
         newWorkspaceInput.val('');
         
@@ -1008,16 +1008,8 @@ $(function(){
     const wsId    = this.dataset.id;
     const wsLabel = this.textContent;
     
-    $('.workspace-item').css({
-      'background-color': 'transparent',
-      'color': 'black',
-      'font-weight': 'normal'
-    });
-    $(this).css({
-      'background-color': '#007cba',
-      'color': 'white',
-      'font-weight': 'bold'
-    });
+    $('.workspace-item').removeClass('active');
+    $(this).addClass('active');
     
     $('#main-content').html(`
       <div style="display:flex;align-items:center;gap:10px;">

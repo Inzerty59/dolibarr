@@ -1193,3 +1193,52 @@ form[method="POST"] input[name="new_workspace"]:focus {
   border-color: #0073ea;
   box-shadow: 0 0 0 2px rgba(0, 115, 234, 0.1);
 }
+
+/* Style pour les éléments de la liste des espaces de travail */
+.workspace-item {
+  background: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 6px;
+  margin-bottom: 4px;
+  padding: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.workspace-item:hover {
+  background: #e3f2fd;
+  border-color: #0073ea;
+  color: #0073ea;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 115, 234, 0.15);
+}
+
+.workspace-item.active {
+  background: linear-gradient(135deg, #0073ea 0%, #005bb5 100%);
+  border-color: #0073ea;
+  color: white;
+  box-shadow: 0 2px 4px rgba(0, 115, 234, 0.3);
+}
+
+.workspace-item.active:hover {
+  background: linear-gradient(135deg, #005bb5 0%, #0073ea 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(0, 115, 234, 0.4);
+}
+
+.workspace-item:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(0, 115, 234, 0.2);
+}
+
+/* Style pour la liste des espaces de travail */
+#workspace-list {
+  padding: 0;
+  margin: 0;
+}
+
+#workspace-list li {
+  user-select: none;
+}

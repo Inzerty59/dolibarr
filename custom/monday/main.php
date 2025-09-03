@@ -644,8 +644,7 @@ $leftmenu = '<h3>Espaces de travail</h3>'
     . '</form>'
     . '<ul id="workspace-list" style="list-style:none;padding:0;">';
 foreach ($workspaces as $w) {
-    $leftmenu .= '<li class="workspace-item" data-id="'.$w->rowid.'" '
-               . 'style="padding:8px;cursor:pointer;">'
+    $leftmenu .= '<li class="workspace-item" data-id="'.$w->rowid.'">'
                . dol_escape_htmltag($w->label)
                . '</li>';
 }
