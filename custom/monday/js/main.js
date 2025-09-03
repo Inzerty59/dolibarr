@@ -2084,7 +2084,7 @@ $(function(){
     
     confirm: function(message, callback, title = 'Confirmation') {
       this.show({
-        type: 'warning',
+        type: 'info',
         title: title,
         message: message,
         buttons: [
