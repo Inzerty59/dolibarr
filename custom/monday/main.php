@@ -640,7 +640,7 @@ $leftmenu = '<h3>Espaces de travail</h3>'
     . '<form method="POST" style="margin:10px 0;">'
     . '<input name="new_workspace" placeholder="Nouvel espace" required style="width:70%;cursor:pointer;">'
     . "<input type=\"hidden\" name=\"token\" value=\"$formtoken\">"
-    . '<button style="padding:2px 8px;cursor:pointer;">+</button>'
+    . '<button type="submit" class="add-workspace-btn">+</button>'
     . '</form>'
     . '<ul id="workspace-list" style="list-style:none;padding:0;">';
 foreach ($workspaces as $w) {
