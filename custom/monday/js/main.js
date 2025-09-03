@@ -188,27 +188,30 @@ $(function(){
         console.log('Tags actuellement sélectionnés:', selectedTags);
         
         const modal = $(`
-          <div id="tags-modal" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1000;display:flex;align-items:center;justify-content:center;">
-            <div style="background:white;padding:20px;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.3);min-width:400px;max-height:80vh;overflow-y:auto;">
-              <h3>Sélectionner des étiquettes</h3>
-              
-              <div id="available-tags" style="margin:15px 0;">
-                ${options.map(opt => {
-                  const isSelected = selectedTags.includes(parseInt(opt.id));
-                  console.log(`Option ${opt.label} (ID: ${opt.id}) - Sélectionnée: ${isSelected}`); // Debug
-                  return `
-                    <div class="tag-option ${isSelected ? 'selected' : ''}" data-tag-id="${opt.id}" style="display:inline-block;margin:5px;padding:6px 12px;background:${opt.color || '#87CEEB'};color:white;border-radius:15px;cursor:pointer;border:2px solid ${isSelected ? '#000' : 'transparent'};">
-                      ${opt.label}
-                    </div>
-                  `;
-                }).join('')}
+          <div id="tags-modal" class="custom-popup-overlay show">
+            <div class="custom-popup">
+              <div class="custom-popup-header">
+                <h3 class="custom-popup-title">Sélectionner des étiquettes</h3>
               </div>
-              
-              ${options.length === 0 ? '<p style="text-align:center;color:#666;font-style:italic;">Aucune étiquette disponible. Utilisez "Gérer options" dans le menu de la colonne pour en créer.</p>' : ''}
-              
-              <div style="margin-top:20px;text-align:right;display:flex;gap:10px;justify-content:flex-end;">
-                <button id="save-tags" style="padding:8px 16px;background:#007cba;color:white;border:none;cursor:pointer;border-radius:4px;">Sauvegarder</button>
-                <button id="cancel-tags" style="padding:8px 16px;background:#ccc;border:none;cursor:pointer;border-radius:4px;">Annuler</button>
+              <div class="custom-popup-content">
+                <div id="available-tags" style="margin:15px 0;">
+                  ${options.map(opt => {
+                    const isSelected = selectedTags.includes(parseInt(opt.id));
+                    console.log(`Option ${opt.label} (ID: ${opt.id}) - Sélectionnée: ${isSelected}`); // Debug
+                    return `
+                      <div class="tag-option ${isSelected ? 'selected' : ''}" data-tag-id="${opt.id}" style="display:inline-block;margin:5px;padding:8px 16px;background:${opt.color || '#87CEEB'};color:white;border-radius:20px;cursor:pointer;border:3px solid ${isSelected ? '#0073ea' : 'transparent'};font-weight:500;font-size:14px;transition:all 0.2s ease;">
+                        ${opt.label}
+                      </div>
+                    `;
+                  }).join('')}
+                </div>
+                
+                ${options.length === 0 ? '<p style="text-align:center;color:#666;font-style:italic;margin:20px 0;">Aucune étiquette disponible. Utilisez "Gérer options" dans le menu de la colonne pour en créer.</p>' : ''}
+                
+                <div class="custom-popup-buttons">
+                  <button id="save-tags" class="custom-popup-btn custom-popup-btn-primary">Sauvegarder</button>
+                  <button id="cancel-tags" class="custom-popup-btn custom-popup-btn-secondary">Annuler</button>
+                </div>
               </div>
             </div>
           </div>
@@ -219,9 +222,11 @@ $(function(){
         $('.tag-option').click(function(){
           $(this).toggleClass('selected');
           if($(this).hasClass('selected')) {
-            $(this).css('border', '2px solid #000');
+            $(this).css('border', '3px solid #0073ea');
+            $(this).css('transform', 'scale(1.05)');
           } else {
-            $(this).css('border', '2px solid transparent');
+            $(this).css('border', '3px solid transparent');
+            $(this).css('transform', 'scale(1)');
           }
         });
         

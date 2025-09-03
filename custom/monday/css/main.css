@@ -1340,6 +1340,49 @@ form[method="POST"] input[name="new_workspace"]:focus {
   margin: 0;
 }
 
-#workspace-list li {
+/* Styles pour le modal de sélection d'étiquettes */
+#tags-modal .custom-popup {
+  max-width: 500px;
+  width: 90%;
+}
+
+#tags-modal #available-tags {
+  max-height: 300px;
+  overflow-y: auto;
+  padding: 10px;
+  border-radius: 6px;
+  background: #f8f9fa;
+}
+
+#tags-modal .tag-option {
+  transition: all 0.2s cubic-bezier(0.23, 1, 0.32, 1) !important;
   user-select: none;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+#tags-modal .tag-option:hover {
+  transform: translateY(-1px) scale(1.02) !important;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+#tags-modal .tag-option.selected {
+  box-shadow: 0 0 0 3px rgba(0, 115, 234, 0.3) !important;
+}
+
+#tags-modal #available-tags::-webkit-scrollbar {
+  width: 6px;
+}
+
+#tags-modal #available-tags::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 3px;
+}
+
+#tags-modal #available-tags::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 3px;
+}
+
+#tags-modal #available-tags::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
 }
