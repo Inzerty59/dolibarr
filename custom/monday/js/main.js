@@ -773,20 +773,27 @@ $(function(){
       
       fetch('', {method: 'POST', body: fd})
         .then(() => {
+          // Fermer le panneau de détail
           closeTaskDetail();
           
+          // Suppression dynamique de la ligne de tâche dans le tableau
+          $(`tr[data-id="${currentTaskId}"]`).fadeOut(300, function() {
+            $(this).remove();
+          });
+          
+          // Recharger l'espace de travail pour s'assurer que tout est synchronisé
           const $activeWorkspace = $('.workspace-item').filter(function() {
-            const $this = $(this);
-            return $this.css('background-color') === 'rgb(0, 124, 186)' || 
-                   $this.css('font-weight') === 'bold' ||
-                   $this.css('font-weight') === '700';
+            return $(this).css('background-color') === 'rgb(0, 124, 186)' ||
+                   $(this).css('font-weight') === 'bold' ||
+                   $(this).css('font-weight') === '700';
           });
           
           if ($activeWorkspace.length > 0) {
             const wsId = $activeWorkspace.data('id');
             if (wsId) {
-              console.log('Rechargement des groupes après suppression de la tâche:', wsId);
-              loadGroups(wsId);
+              setTimeout(() => {
+                loadGroups(wsId);
+              }, 400); // Délai pour laisser l'animation se terminer
             }
           }
         })
@@ -1013,8 +1020,16 @@ $(function(){
     const wsId    = this.dataset.id;
     const wsLabel = this.textContent;
     
-    $('.workspace-item').removeClass('active');
-    $(this).addClass('active');
+    $('.workspace-item').removeClass('active').css({
+      'background-color': '',
+      'color': '',
+      'font-weight': ''
+    });
+    $(this).addClass('active').css({
+      'background-color': '#007cba',
+      'color': 'white',
+      'font-weight': 'bold'
+    });
     
     $('#main-content').html(`
       <div style="display:flex;align-items:center;gap:10px;">
