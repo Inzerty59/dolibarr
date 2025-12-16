@@ -7,6 +7,7 @@ $sql = "
     SELECT rowid
          , label
          , collapsed
+         , task_column_label
       FROM llx_myworkspace_group
      WHERE fk_workspace = ".$wid."
   ORDER BY position ASC
@@ -18,7 +19,8 @@ while ($obj = $db->fetch_object($res)) {
     $groups[] = [
         'id'        => (int)$obj->rowid,
         'label'     => $obj->label,
-        'collapsed' => (int)$obj->collapsed
+        'collapsed' => (int)$obj->collapsed,
+        'task_column_label' => $obj->task_column_label ?: 'Tâche'
     ];
 }
 

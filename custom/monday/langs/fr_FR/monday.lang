@@ -1,0 +1,31 @@
+# Fichier de traduction
+
+#
+# Générique
+#
+
+# Libellé du module 'ModulePlanityName'
+ModulePlanityName = Planity
+ModuleMondayName = Planity
+# Description du module 'ModulePlanityDesc'
+ModulePlanityDesc = Planity - Outil de gestion de projets
+
+#
+# Page d'administration
+#
+PlanitySetup = Configuration Planity
+Settings = Paramètres
+PlanitySetupPage = Page de configuration Planity
+NewSection=Nouvelle section
+MONDAY_MYPARAM1 = Mon paramètre 1
+MONDAY_MYPARAM1Tooltip = Tooltip de mon paramètre 1
+MONDAY_MYPARAM2=Mon paramètre 2
+MONDAY_MYPARAM2Tooltip=Tooltip de mon paramètre 2
+
+
+#
+# Page À propos
+#
+About = À propos
+PlanityAbout = À propos de Planity
+PlanityAboutPage = Page à propos de Planity

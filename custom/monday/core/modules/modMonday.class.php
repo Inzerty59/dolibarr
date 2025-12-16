@@ -65,10 +65,10 @@ class modMonday extends DolibarrModules
 		$this->name = preg_replace('/^mod/i', '', get_class($this));
 
 		// DESCRIPTION_FLAG
-		// Module description, used if translation string 'ModuleMondayDesc' not found (Monday is name of module).
-		$this->description = "MondayDescription";
+		// Module description, used if translation string 'ModulePlanityDesc' not found (Planity is name of module).
+		$this->description = "PlanityDescription";
 		// Used only if file README.md and README-LL.md not found.
-		$this->descriptionlong = "MondayDescription";
+		$this->descriptionlong = "PlanityDescription";
 
 		// Author
 		$this->editor_name = 'florent-inzerty';
@@ -87,7 +87,7 @@ class modMonday extends DolibarrModules
 		// If file is in theme/yourtheme/img directory under name object_pictovalue.png, use this->picto='pictovalue'
 		// If file is in module/img directory under name object_pictovalue.png, use this->picto='pictovalue@module'
 		// To use a supported fa-xxx css style of font awesome, use this->picto='xxx'
-		$this->picto = 'fa-file';
+		$this->picto = 'fa-table';
 
 		// Define some features supported by module (triggers, login, substitutions, menus, css, etc...)
 		$this->module_parts = array(
@@ -321,11 +321,11 @@ class modMonday extends DolibarrModules
 		$this->menu[$r++] = array(
 			'fk_menu' => '', // Will be stored into mainmenu + leftmenu. Use '' if this is a top menu. For left menu, use 'fk_mainmenu=xxx' or 'fk_mainmenu=xxx,fk_leftmenu=yyy' where xxx is mainmenucode and yyy is a leftmenucode
 			'type' => 'top', // This is a Top menu entry
-			'titre' => 'ModuleMondayName',
+			'titre' => 'Planity',
 			'prefix' => img_picto('', $this->picto, 'class="pictofixedwidth valignmiddle"'),
 			'mainmenu' => 'monday',
 			'leftmenu' => '',
-			'url' => '/monday/mondayindex.php',
+			'url' => '/monday/main.php',
 			'langs' => 'monday@monday', // Lang file to use (without .lang) by module. File must be in langs/code_CODE/ directory.
 			'position' => 1000 + $r,
 			'enabled' => 'isModEnabled("monday")', // Define condition to show or hide menu entry. Use 'isModEnabled("monday")' if entry must be visible if module is enabled.

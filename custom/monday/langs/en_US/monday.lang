@@ -4,17 +4,18 @@
 # Generic
 #
 
-# Module label 'ModuleMondayName'
-ModuleMondayName = Monday
-# Module description 'ModuleMondayDesc'
-ModuleMondayDesc = Monday description
+# Module label 'ModulePlanityName'
+ModulePlanityName = Planity
+ModuleMondayName = Planity
+# Module description 'ModulePlanityDesc'
+ModulePlanityDesc = Planity - Project Management Tool
 
 #
 # Admin page
 #
-MondaySetup = Monday setup
+PlanitySetup = Planity setup
 Settings = Settings
-MondaySetupPage = Monday setup page
+PlanitySetupPage = Planity setup page
 NewSection=New section
 MONDAY_MYPARAM1 = My param 1
 MONDAY_MYPARAM1Tooltip = My param 1 tooltip
@@ -26,8 +27,8 @@ MONDAY_MYPARAM2Tooltip=My param 2 tooltip
 # About page
 #
 About = About
-MondayAbout = About Monday
-MondayAboutPage = Monday about page
+PlanityAbout = About Planity
+PlanityAboutPage = Planity about page
 
 #
 # Sample page

@@ -2,6 +2,33 @@ $(function(){
   $('.side-nav .vmenu').prepend(window.leftmenu || '');
   const token = window.formtoken;
   const userId = window.userId;
+  
+  // State pour gérer les tâches collapsées
+  const taskCollapseState = new Set();
+  
+  // Cache pour les données fréquemment utilisées
+  const dataCache = {
+    users: null,
+    columnOptions: {}
+  };
+  
+  // Pré-charger les utilisateurs une seule fois au démarrage
+  fetch('?users_list')
+    .then(r=>r.json())
+    .then(users => {
+      dataCache.users = users;
+      console.log('Utilisateurs pré-chargés en cache');
+    })
+    .catch(err => console.error('Erreur pré-chargement utilisateurs:', err));
+  
+  // Pré-charger TOUTES les options de colonnes au démarrage
+  fetch('?all_column_options')
+    .then(r=>r.json())
+    .then(allOptions => {
+      dataCache.columnOptions = allOptions;
+      console.log('Options colonnes pré-chargées en cache');
+    })
+    .catch(err => console.error('Erreur pré-chargement options colonnes:', err));
 
   $(document).on('submit', 'form', function(e) {
     const form = $(this);
@@ -50,6 +77,7 @@ $(function(){
   });
 
   let currentTaskId = null;
+  let currentTaskColumnLabel = 'tâche';
 
   window.saveCellValue = function(input) {
     const taskId = $(input).data('task');
@@ -83,21 +111,27 @@ $(function(){
     const taskId = $cell.data('task');
     const columnId = $cell.data('column');
     
-    fetch('?users_list')
-      .then(r=>r.json())
-      .then(users=>{
-        const currentUserId = $cell.find('select').val();
-        
-        const modal = $(`
-          <div id="user-modal" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1000;display:flex;align-items:center;justify-content:center;">
-            <div style="background:white;padding:20px;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.3);min-width:400px;max-height:80vh;overflow-y:auto;">
-              <h3>Assigner à un utilisateur</h3>
-              
-              <div id="users-list" style="margin:15px 0;">
-                <div class="user-option ${!currentUserId ? 'selected' : ''}" data-user-id="" style="display:flex;align-items:center;gap:10px;margin-bottom:8px;padding:10px;border:2px solid ${!currentUserId ? '#007cba' : 'transparent'};background:${!currentUserId ? '#f0f8ff' : '#f9f9f9'};border-radius:6px;cursor:pointer;">
-                  <div class="user-avatar" style="background:#999;">--</div>
-                  <span style="font-style:italic;color:#666;">Non assigné</span>
-                </div>
+    // Utiliser le cache ou fetcher
+    const getUsersPromise = dataCache.users 
+      ? Promise.resolve(dataCache.users)
+      : fetch('?users_list').then(r=>r.json()).then(users => {
+          dataCache.users = users;
+          return users;
+        });
+    
+    getUsersPromise.then(users=>{
+      const currentUserId = $cell.find('select').val();
+      
+      const modal = $(`
+        <div id="user-modal" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1000;display:flex;align-items:center;justify-content:center;">
+          <div style="background:white;padding:20px;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.3);min-width:400px;max-height:80vh;overflow-y:auto;">
+            <h3>Assigner à un utilisateur</h3>
+            
+            <div id="users-list" style="margin:15px 0;">
+              <div class="user-option ${!currentUserId ? 'selected' : ''}" data-user-id="" style="display:flex;align-items:center;gap:10px;margin-bottom:8px;padding:10px;border:2px solid ${!currentUserId ? '#007cba' : 'transparent'};background:${!currentUserId ? '#f0f8ff' : '#f9f9f9'};border-radius:6px;cursor:pointer;">
+                <div class="user-avatar" style="background:#999;">--</div>
+                <span style="font-style:italic;color:#666;">Non assigné</span>
+              </div>
                 ${users.map(user => {
                   const isSelected = currentUserId == user.id;
                   const initials = user.name.split(' ').map(n => n[0]).join('').substr(0, 2).toUpperCase();
@@ -174,16 +208,23 @@ $(function(){
     const taskId = $cell.data('task');
     const columnId = $cell.data('column');
     
-    fetch(`?column_options=${columnId}`)
-      .then(r=>r.json())
-      .then(options=>{
-        const selectedTags = [];
-        $cell.find('.tag-item').each(function(){
-          const tagId = parseInt($(this).data('tag-id'));
-          if(tagId && !selectedTags.includes(tagId)) {
-            selectedTags.push(tagId);
-          }
-        });
+    const getOptionsPromise = dataCache.columnOptions[columnId]
+      ? Promise.resolve(dataCache.columnOptions[columnId])
+      : fetch(`?column_options=${columnId}`)
+          .then(r=>r.json())
+          .then(options => {
+            dataCache.columnOptions[columnId] = options;
+            return options;
+          });
+    
+    getOptionsPromise.then(options=>{
+      const selectedTags = [];
+      $cell.find('.tag-item').each(function(){
+        const tagId = parseInt($(this).data('tag-id'));
+        if(tagId && !selectedTags.includes(tagId)) {
+          selectedTags.push(tagId);
+        }
+      });
         
         console.log('Tags actuellement sélectionnés:', selectedTags);
         
@@ -251,12 +292,19 @@ $(function(){
               <div class="selected-tags" style="display:flex;flex-wrap:wrap;gap:3px;margin-bottom:5px;">
             `;
             
-            fetch(`?column_options=${columnId}`)
-              .then(r=>r.json())
-              .then(allOptions=>{
-                selectedTagIds.forEach(tagId => {
-                  const tag = allOptions.find(opt => parseInt(opt.id) === tagId);
-                  if(tag) {
+            const getOptionsPromise = dataCache.columnOptions[columnId]
+              ? Promise.resolve(dataCache.columnOptions[columnId])
+              : fetch(`?column_options=${columnId}`)
+                  .then(r=>r.json())
+                  .then(allOptions => {
+                    dataCache.columnOptions[columnId] = allOptions;
+                    return allOptions;
+                  });
+            
+            getOptionsPromise.then(allOptions=>{
+              selectedTagIds.forEach(tagId => {
+                const tag = allOptions.find(opt => parseInt(opt.id) === tagId);
+                if(tag) {
                     tagsHtml += `
                       <span class="tag-item" data-tag-id="${tag.id}" style="background:${tag.color || '#87CEEB'};color:white;padding:2px 6px;border-radius:12px;font-size:11px;display:flex;align-items:center;gap:4px;">
                         ${tag.label}
@@ -268,7 +316,6 @@ $(function(){
                 
                 tagsHtml += `
                   </div>
-                  <div class="add-tag-hint" style="color:#999;font-size:10px;font-style:italic;">+ Cliquer pour ajouter des étiquettes</div>
                 `;
                 
                 $cell.html(tagsHtml);
@@ -361,14 +408,11 @@ $(function(){
       if(style) {
         const color = style.match(/background:([^;]+)/)?.[1];
         if(color) {
-          // Appliquer la couleur de fond
           $select.css('background-color', color);
           
-          // Calculer la couleur de texte appropriée (blanc ou noir) selon la luminosité
           const textColor = getContrastColor(color);
           $select.css('color', textColor);
           
-          // Améliorer l'apparence avec un padding et des bordures arrondies
           $select.css({
             'border': 'none',
             'padding': '4px 8px',
@@ -380,7 +424,6 @@ $(function(){
       }
     }
     
-    // Réinitialiser les styles si aucune valeur sélectionnée
     $select.css({
       'background-color': 'transparent',
       'color': 'inherit',
@@ -391,9 +434,7 @@ $(function(){
     });
   }
   
-  // Fonction pour calculer la couleur de texte contrastée
   function getContrastColor(hexColor) {
-    // Convertir la couleur hex en RGB
     let r, g, b;
     
     if (hexColor.startsWith('#')) {
@@ -408,10 +449,9 @@ $(function(){
         g = parseInt(matches[1]);
         b = parseInt(matches[2]);
       } else {
-        return '#000000'; // Fallback vers noir
+        return '#000000'; 
       }
     } else {
-      // Couleurs nommées courantes
       const namedColors = {
         'red': '#FF0000',
         'green': '#008000',
@@ -430,23 +470,54 @@ $(function(){
         return getContrastColor(namedColors[hexColor.toLowerCase()]);
       }
       
-      return '#000000'; // Fallback vers noir
+      return '#000000';
     }
     
-    // Calculer la luminosité relative (formule W3C)
     const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
     
-    // Retourner blanc pour les couleurs sombres, noir pour les couleurs claires
     return luminance > 0.5 ? '#000000' : '#FFFFFF';
   }
 
-  window.openTaskDetail = function(taskId, taskName, groupName) {
-    currentTaskId = taskId;
+  window.toggleTaskCompletion = function(taskId, isChecked) {
+    const fd = new FormData();
+    fd.append('toggle_task_completion', taskId);
+    fd.append('is_completed', isChecked ? 1 : 0);
+    fd.append('token', token);
     
-    $('#task-detail-title').text('Détail de la tâche');
+    fetch('', {method: 'POST', body: fd})
+      .then(r => r.text())
+      .then(response => {
+        if (response === 'OK') {
+          // Mettre à jour l'affichage
+          const $checkbox = $(`.task-completion-checkbox[data-task-id="${taskId}"]`);
+          const $label = $checkbox.closest('.task-cell').find('.task-label');
+          
+          if (isChecked) {
+            $label.css({'text-decoration': 'line-through', 'color': '#999'});
+          } else {
+            $label.css({'text-decoration': 'none', 'color': 'inherit'});
+          }
+        }
+      });
+  };
+
+  window.openTaskDetail = function(taskId, taskName, groupName, taskColumnLabel) {
+    currentTaskId = taskId;
+    currentTaskColumnLabel = taskColumnLabel ? taskColumnLabel.toLowerCase() : 'tâche';
+    
+    const detailTitle = 'Détail';
+    const labelText = taskColumnLabel ? `${taskColumnLabel} :` : 'Tâche :';
+    
+    $('#task-detail-title').text(detailTitle);
+    $('#task-label-text').text(labelText);
     $('#task-name-display').text(taskName);
     $('#task-group-display').text(groupName);
     $('#task-created-display').text('Chargement...');
+    
+    setTimeout(() => {
+      $('#task-detail-title').text(detailTitle);
+      $('#task-label-text').text(labelText);
+    }, 50);
     
     $('#task-detail-panel').addClass('open');
     
@@ -483,6 +554,7 @@ $(function(){
   window.closeTaskDetail = function() {
     $('#task-detail-panel').removeClass('open');
     currentTaskId = null;
+    currentTaskColumnLabel = 'tâche';
   };
 
   function loadComments(taskId) {
@@ -495,7 +567,7 @@ $(function(){
         if (comments.length === 0) {
           $commentsList.append(`
             <div class="no-comments" style="text-align:center;color:#666;font-style:italic;padding:20px;">
-              Aucun commentaire pour cette tâche
+              Aucun commentaire
             </div>
           `);
           return;
@@ -511,13 +583,19 @@ $(function(){
             minute: '2-digit'
           });
           
+          const fontFamily = comment.font_family || 'Arial';
+          const fontSize = comment.font_size || 14;
+          const fontWeight = comment.font_weight || 400;
+          const fontColor = comment.font_color || '#000000';
+          const commentStyle = `font-family: ${fontFamily}; font-size: ${fontSize}px; font-weight: ${fontWeight}; color: ${fontColor};`;
+          
           const $comment = $(`
             <div class="comment-item" data-comment-id="${comment.id}">
               <div class="comment-header">
                 <span class="comment-author">${comment.user_name}</span>
                 <span class="comment-date">${formattedDate}</span>
               </div>
-              <div class="comment-text">${comment.comment}</div>
+              <div class="comment-text" style="${commentStyle}">${comment.comment}</div>
               <div class="comment-actions">
                 <button class="comment-action-btn edit-comment-btn" data-comment-id="${comment.id}">Modifier</button>
                 <button class="comment-action-btn delete-comment-btn" data-comment-id="${comment.id}">Supprimer</button>
@@ -548,7 +626,7 @@ $(function(){
         if (files.length === 0) {
           $filesList.append(`
             <div class="no-files" style="text-align:center;color:#666;font-style:italic;padding:20px;">
-              Aucun fichier pour cette tâche
+              Aucun fichier
             </div>
           `);
         } else {
@@ -693,7 +771,9 @@ $(function(){
   };
 
   function addComment() {
-    const commentText = $('#new-comment-text').val().trim();
+    const editor = document.getElementById('new-comment-text');
+    const commentText = editor.textContent.trim();
+    const commentHTML = editor.innerHTML.trim();
     
     if (!commentText) {
       CustomPopup.error('Veuillez saisir un commentaire', 'Champ obligatoire');
@@ -707,7 +787,7 @@ $(function(){
     
     const fd = new FormData();
     fd.append('add_comment_task', currentTaskId);
-    fd.append('comment_text', commentText);
+    fd.append('comment_text', commentHTML);
     fd.append('token', token);
     
     fetch('', {method: 'POST', body: fd})
@@ -740,7 +820,7 @@ $(function(){
       })
       .then(comment => {
         console.log('Commentaire ajouté avec succès:', comment);
-        $('#new-comment-text').val('');
+        document.getElementById('new-comment-text').innerHTML = '';
         loadComments(currentTaskId);
       })
       .catch(err => {
@@ -751,6 +831,26 @@ $(function(){
 
   $('#close-panel').click(closeTaskDetail);
   $('#add-comment-btn').click(addComment);
+
+  $('#comment-bold-toggle').click(function(e) {
+    e.preventDefault();
+    $(this).toggleClass('active');
+    document.execCommand('bold', false, null);
+    $('#new-comment-text').focus();
+  });
+
+  $('#comment-italic-toggle').click(function(e) {
+    e.preventDefault();
+    $(this).toggleClass('active');
+    document.execCommand('italic', false, null);
+    $('#new-comment-text').focus();
+  });
+
+  $('#comment-color').change(function() {
+    const color = $(this).val();
+    document.execCommand('foreColor', false, color);
+    $('#new-comment-text').focus();
+  });
 
   $('#new-comment-text').keydown(function(e) {
     if (e.ctrlKey && e.key === 'Enter') {
@@ -773,15 +873,12 @@ $(function(){
       
       fetch('', {method: 'POST', body: fd})
         .then(() => {
-          // Fermer le panneau de détail
           closeTaskDetail();
           
-          // Suppression dynamique de la ligne de tâche dans le tableau
           $(`tr[data-id="${currentTaskId}"]`).fadeOut(300, function() {
             $(this).remove();
           });
           
-          // Recharger l'espace de travail pour s'assurer que tout est synchronisé
           const $activeWorkspace = $('.workspace-item').filter(function() {
             return $(this).css('background-color') === 'rgb(0, 124, 186)' ||
                    $(this).css('font-weight') === 'bold' ||
@@ -793,7 +890,7 @@ $(function(){
             if (wsId) {
               setTimeout(() => {
                 loadGroups(wsId);
-              }, 400); // Délai pour laisser l'animation se terminer
+              }, 400);
             }
           }
         })
@@ -823,7 +920,7 @@ $(function(){
           
           const $activeWorkspace = $('.workspace-item').filter(function() {
             const $this = $(this);
-            return $this.css('background-color') === 'rgb(0, 124, 186)' || // #007cba en RGB
+            return $this.css('background-color') === 'rgb(0, 124, 186)' || 
                    $this.css('font-weight') === 'bold' ||
                    $this.css('font-weight') === '700';
           });
@@ -856,10 +953,20 @@ $(function(){
     const $commentItem = $(this).closest('.comment-item');
     const $commentText = $commentItem.find('.comment-text');
     const currentText = $commentText.text();
+    const currentHTML = $commentText.html();
     
     const $editForm = $(`
       <div class="edit-comment-form">
-        <textarea class="edit-comment-textarea">${currentText}</textarea>
+        <div class="comment-formatting-toolbar">
+          <button class="format-btn edit-bold-toggle" title="Gras">
+            <strong>G</strong>
+          </button>
+          <button class="format-btn edit-italic-toggle" title="Italique">
+            <em>I</em>
+          </button>
+          <input type="color" class="edit-comment-color" value="#000000" title="Couleur">
+        </div>
+        <div class="edit-comment-textarea-wrapper" contenteditable="true" class="comment-editor edit-comment-textarea" style="border:1px solid #ccc;padding:10px;min-height:80px;border-radius:4px;">${currentHTML}</div>
         <div class="edit-comment-actions">
           <button class="save-edit-btn" data-comment-id="${commentId}">Sauver</button>
           <button class="cancel-edit-btn">Annuler</button>
@@ -870,12 +977,37 @@ $(function(){
     $commentText.hide();
     $commentItem.find('.comment-actions').hide();
     $commentItem.append($editForm);
+    
+    // Event handlers pour la barre d'outils d'édition
+    $editForm.find('.edit-bold-toggle').click(function(e) {
+      e.preventDefault();
+      $(this).toggleClass('active');
+      document.execCommand('bold', false, null);
+      $editForm.find('.edit-comment-textarea').focus();
+    });
+    
+    $editForm.find('.edit-italic-toggle').click(function(e) {
+      e.preventDefault();
+      $(this).toggleClass('active');
+      document.execCommand('italic', false, null);
+      $editForm.find('.edit-comment-textarea').focus();
+    });
+    
+    $editForm.find('.edit-comment-color').change(function() {
+      const color = $(this).val();
+      document.execCommand('foreColor', false, color);
+      $editForm.find('.edit-comment-textarea').focus();
+    });
   });
 
   $(document).on('click', '.save-edit-btn', function() {
     const commentId = $(this).data('comment-id');
     const $commentItem = $(this).closest('.comment-item');
-    const newText = $commentItem.find('.edit-comment-textarea').val().trim();
+    const $editForm = $commentItem.find('.edit-comment-form');
+    const $editTextarea = $editForm.find('[contenteditable="true"]');
+    
+    // Récupérer le contenu HTML du contenteditable
+    const newText = $editTextarea.html().trim();
     
     if (!newText) {
       CustomPopup.error('Le commentaire ne peut pas être vide', 'Champ obligatoire');
@@ -1016,6 +1148,66 @@ $(function(){
     }).disableSelection();
   }
 
+  function initColumnSortable(){
+    $('.group-body thead tr').each(function(){
+      const $tr = $(this);
+      const $group = $tr.closest('.group');
+      const groupId = $group.data('id');
+      
+      $tr.sortable({
+        items: 'th:not(:first-child):not(:last-child)',
+        cursor: 'move',
+        axis: 'x',
+        helper: 'clone',
+        placeholder: 'ui-sortable-placeholder',
+        tolerance: 'pointer',
+        distance: 10,
+        cancel: '.column-menu-btn, .column-menu',
+        start: function(event, ui) {
+          ui.placeholder.height(ui.item.height());
+          ui.placeholder.css({
+            'background': '#e3f2fd',
+            'border': '2px dashed #2196f3',
+            'opacity': '0.7'
+          });
+          
+          $('.column-menu').removeClass('show').hide();
+        },
+        update: function(event, ui) {
+          const columnOrder = [];
+          $tr.find('th:not(:first-child):not(:last-child)').each(function() {
+            const $span = $(this).find('.column-label');
+            if ($span.length > 0) {
+              const columnId = $span.data('cid');
+              if (columnId) {
+                columnOrder.push(parseInt(columnId));
+              }
+            }
+          });
+          
+          if (columnOrder.length > 0) {
+            fetch('', {
+              method: 'POST',
+              body: new URLSearchParams({
+                reorder_columns: JSON.stringify(columnOrder),
+                token: token
+              })
+            }).then(() => {
+              setTimeout(() => {
+                const workspaceId = $('.workspace-item.active').data('id');
+                if (workspaceId) {
+                  loadGroups(workspaceId);
+                }
+              }, 200);
+            }).catch(error => {
+              console.error('Erreur lors de la réorganisation des colonnes:', error);
+            });
+          }
+        }
+      }).disableSelection();
+    });
+  }
+
   $(document).on('click','.workspace-item', function(){
     const wsId    = this.dataset.id;
     const wsLabel = this.textContent;
@@ -1111,7 +1303,6 @@ $(function(){
       }, '', 'Ajouter un groupe');
     });
 
-    // Réinitialiser la recherche quand on change d'espace
     if ($('#workspace-search').length) {
       $('#workspace-search').val('');
       $('#search-info').hide();
@@ -1129,10 +1320,12 @@ $(function(){
               .then(r=>r.json())
               .then(cols=>{
                 let ths = `
-                  <th style="border:1px solid #ddd;padding:4px;">Tâche</th>
+                  <th style="border:1px solid #ddd;padding:4px;position:relative;">
+                    <span class="task-column-label" data-gid="${g.id}" style="cursor:pointer;" title="Cliquer pour modifier">${g.task_column_label || 'Tâche'}</span>
+                  </th>
                 `;
                 cols.forEach(c=>{
-                  ths += `<th style="border:1px solid #ddd;padding:4px;position:relative;">
+                  ths += `<th style="border:1px solid #ddd;padding:4px;position:relative;cursor:move;" title="Glisser pour réorganiser">
                             <span class="column-label" data-cid="${c.id}" style="cursor:pointer;">${c.label}<span class="column-sort-indicator" data-cid="${c.id}"></span></span>
                             <button class="column-menu-btn" data-cid="${c.id}">⋮</button>
                             <div class="column-menu" style="display:none;position:absolute;right:0;top:22px;z-index:10;">
@@ -1157,6 +1350,7 @@ $(function(){
                       </div>
                       <div>
                         <button class="rename-group">✎</button>
+                        <button class="duplicate-group">⧉</button>
                         <button class="delete-group">✖</button>
                       </div>
                     </div>
@@ -1169,7 +1363,7 @@ $(function(){
                         </thead>
                         <tbody></tbody>
                       </table>
-                      <button class="add-row-btn" style="padding:4px 8px;">+ Ajouter tâche</button>
+                      <button class="add-row-btn" style="padding:4px 8px;">+ Ajouter ${g.task_column_label || 'tâche'}</button>
                     </div>
                   </div>
                 `);
@@ -1181,24 +1375,68 @@ $(function(){
 
                 $('#group-list').append($grp);
 
-                fetch(`?tasks_group_id=${g.id}`)
+                // Pré-charger les options des colonnes select/tags en parallèle
+                const optionFetches = cols
+                  .filter(c => (c.type === 'select' || c.type === 'tags') && !dataCache.columnOptions[c.id])
+                  .map(c => 
+                    fetch(`?column_options=${c.id}`)
+                      .then(r=>r.json())
+                      .then(options => {
+                        dataCache.columnOptions[c.id] = options;
+                        return options;
+                      })
+                  );
+
+                fetch(`?tasks_group_id_with_cells=${g.id}`)
                   .then(r=>r.json())
                   .then(tasks=>{
-                    tasks.forEach(t=>{
-                      let tds = `
-                        <td style="border:1px solid #ddd;padding:4px;">${t.label}</td>
-                      `;
-                      
-                      fetch(`?task_cells=${t.id}`)
-                        .then(r=>r.json())
-                        .then(cells=>{
-                          let cellPromises = [];
-                          cols.forEach(c=>{
-                            const cellValue = cells[c.id] || '';
-                            
-                            if(c.type === 'select') {
-                              const promise = fetch(`?column_options=${c.id}`)
-                                .then(r=>r.json())
+                    // Trier les tâches de manière hiérarchique (parent suivi de ses enfants)
+                    const sortedTasks = sortTasksHierarchically(tasks);
+                    
+                    const taskPromises = sortedTasks.map(t=>{
+                      return new Promise((resolve) => {
+                        const indentPx = (t.level_depth || 0) * 20;
+                        const indentStyle = `padding-left: ${4 + indentPx}px;`;
+                        
+                        // Vérifier si cette tâche a des enfants
+                        const hasChildren = sortedTasks.some(task => task.parent_task_id === t.id);
+                        const isCollapsed = taskCollapseState.has(t.id);
+                        const collapseBtn = hasChildren 
+                          ? `<button class="collapse-toggle" data-task-id="${t.id}" onclick="window.toggleCollapse(${t.id})" style="width:16px;background:none;border:none;cursor:pointer;padding:0;font-size:12px;">${isCollapsed ? '▶' : '▼'}</button>`
+                          : `<span style="width:16px;display:inline-block;"></span>`;
+                        
+                        const subtaskIndicator = t.level_depth > 0 ? '└─ ' : '';
+                        const isCompleted = t.is_completed ? 'checked' : '';
+                        const completedStyle = t.is_completed ? 'text-decoration: line-through; color: #999;' : '';
+                        const checkboxHtml = t.level_depth > 0 ? `<input type="checkbox" class="task-completion-checkbox" data-task-id="${t.id}" ${isCompleted} style="cursor:pointer;width:16px;height:16px;" onchange="window.toggleTaskCompletion(${t.id}, this.checked)">` : '';
+                        
+                        let tds = `
+                          <td style="border:1px solid #ddd;${indentStyle}" class="task-cell" data-level="${t.level_depth || 0}">
+                            <div style="display: flex; align-items: center; gap: 5px;">
+                              ${collapseBtn}
+                              <span style="color: #999; font-family: monospace;">${subtaskIndicator}</span>
+                              ${checkboxHtml}
+                              <span class="task-label" style="${completedStyle}">${t.label}</span>
+                              <button class="add-subtask-btn" data-task-id="${t.id}" style="opacity: 0; transition: opacity 0.2s; background: none; border: none; cursor: pointer; color: #007cba; font-size: 12px;" title="Ajouter une sous-tâche">+</button>
+                            </div>
+                          </td>
+                        `;
+                        
+                        // Les cellules sont déjà incluses dans la réponse du nouvel endpoint
+                        const cells = t.cells || {};
+                        let cellPromises = [];
+                        cols.forEach(c=>{
+                          const cellValue = cells[c.id] || '';
+                          
+                          if(c.type === 'select') {
+                              const promise = (dataCache.columnOptions[c.id]
+                                ? Promise.resolve(dataCache.columnOptions[c.id])
+                                : fetch(`?column_options=${c.id}`)
+                                    .then(r=>r.json())
+                                    .then(options => {
+                                      dataCache.columnOptions[c.id] = options;
+                                      return options;
+                                    }))
                                 .then(options=>{
                                   let selectHtml = `<select class="cell-select" data-task="${t.id}" data-column="${c.id}" 
                                                            style="border:none;background:transparent;width:100%;padding:2px;"
@@ -1225,8 +1463,14 @@ $(function(){
                                 oninput="validateNumberInput(this)">`;
                               cellPromises.push(Promise.resolve(inputHtml));
                             } else if(c.type === 'tags') {
-                              const promise = fetch(`?column_options=${c.id}`)
-                                .then(r=>r.json())
+                              const promise = (dataCache.columnOptions[c.id]
+                                ? Promise.resolve(dataCache.columnOptions[c.id])
+                                : fetch(`?column_options=${c.id}`)
+                                    .then(r=>r.json())
+                                    .then(options => {
+                                      dataCache.columnOptions[c.id] = options;
+                                      return options;
+                                    }))
                                 .then(options=>{
                                   const selectedTags = cellValue ? JSON.parse(cellValue) : [];
                                   
@@ -1249,7 +1493,6 @@ $(function(){
                                   
                                   tagsHtml += `
                                       </div>
-                                      <div class="add-tag-hint" style="color:#999;font-size:10px;font-style:italic;">+ Cliquer pour ajouter des étiquettes</div>
                                     </div>
                                   `;
                                   
@@ -1298,8 +1541,12 @@ $(function(){
                               `;
                               cellPromises.push(Promise.resolve(inputHtml));
                             } else if(c.type === 'user') {
-                              const promise = fetch('?users_list')
-                                .then(r=>r.json())
+                              const promise = (dataCache.users 
+                                ? Promise.resolve(dataCache.users)
+                                : fetch('?users_list').then(r=>r.json()).then(users => {
+                                    dataCache.users = users;
+                                    return users;
+                                  }))
                                 .then(users=>{
                                   let selectHtml = `<select class="cell-select user-select" data-task="${t.id}" data-column="${c.id}" 
                                                            style="border:none;background:transparent;width:100%;padding:2px;"
@@ -1348,30 +1595,41 @@ $(function(){
                               cellPromises.push(Promise.resolve(inputHtml));
                             }
                           });
-                          
-                          Promise.all(cellPromises).then(cellsHtml=>{
-                            cellsHtml.forEach(cellHtml=>{
-                              tds += `<td style="border:1px solid #ddd;padding:4px;">${cellHtml}</td>`;
-                            });
-                            tds += `<td style="border:1px solid #ddd;padding:4px;"></td>`;
-                            const $taskRow = $(`<tr data-id="${t.id}" style="cursor:pointer;">${tds}</tr>`);
-                            $grp.find('tbody').append($taskRow);
-                            
-                            $taskRow.find('td:nth-child(1)').click(function(e) {
-                              if ($(e.target).is('button')) return;
-                              
-                              const taskName = $(this).text();
-                              const groupName = $grp.find('.group-label').text();
-                              openTaskDetail(t.id, taskName, groupName);
-                            });
-                            
-                            $grp.find('select.cell-select').each(function(){
-                              applySelectColor($(this));
-                            });
+                        
+                        Promise.all(cellPromises).then(cellsHtml=>{
+                          cellsHtml.forEach(cellHtml=>{
+                            tds += `<td style="border:1px solid #ddd;padding:4px;">${cellHtml}</td>`;
                           });
+                          tds += `<td style="border:1px solid #ddd;padding:4px;"></td>`;
+                          const $taskRow = $(`<tr class="task-row" data-id="${t.id}" data-parent-id="${t.parent_task_id || ''}" style="cursor:pointer;">${tds}</tr>`);
+                          
+                          $taskRow.find('td:nth-child(1)').click(function(e) {
+                            if ($(e.target).is('button')) return;
+                            
+                            const taskName = $(this).text();
+                            const groupName = $grp.find('.group-label').text();
+                            const taskColumnLabel = $grp.find('.task-column-label').text();
+                            openTaskDetail(t.id, taskName, groupName, taskColumnLabel);
+                          });
+                          
+                          resolve($taskRow);
                         });
+                      });
                     });
-                    initTaskSortable();
+                    
+                    Promise.all(taskPromises).then((taskRows) => {
+                      taskRows.forEach($row => {
+                        $grp.find('tbody').append($row);
+                      });
+                      
+                      $grp.find('select.cell-select').each(function(){
+                        applySelectColor($(this));
+                      });
+                      
+                      initTaskSortable();
+                      initColumnSortable();
+                      updateCollapsedRows(); // Appliquer l'état collapse après le rendu
+                    });
                   });
               });
           });
@@ -1534,6 +1792,19 @@ $(function(){
           fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
         }, old, 'Renommer le groupe');
       })
+      .off('click','.duplicate-group').on('click','.duplicate-group',function(){
+        const $g=$(this).closest('.group');
+        const gid=$g.data('id');
+        const old=$g.find('.group-label').text();
+        CustomPopup.prompt('Nom du nouveau groupe :', function(nw) {
+          if(!nw) return;
+          const fd=new FormData();
+          fd.append('duplicate_group_id',gid);
+          fd.append('new_group_label',nw);
+          fd.append('token',token);
+          fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
+        }, old+' (copie)', 'Dupliquer le groupe');
+      })
       .off('click','.delete-group').on('click','.delete-group',function(){
         const $g=$(this).closest('.group');
         const gid=$g.data('id');
@@ -1547,14 +1818,53 @@ $(function(){
       })
       .off('click','.add-row-btn').on('click','.add-row-btn',function(){
         const gid=$(this).closest('.group').data('id');
-        CustomPopup.prompt('Nom de la tâche :', function(lbl) {
+        const taskColumnLabel = $(this).closest('.group').find('.task-column-label').text().toLowerCase();
+        CustomPopup.prompt(`Nom de ${taskColumnLabel} :`, function(lbl) {
           if(!lbl) return;
           const fd=new FormData();
           fd.append('add_task_group_id',gid);
           fd.append('task_label',lbl);
           fd.append('token',token);
           fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
-        }, '', 'Ajouter une tâche');
+        }, '', `Ajouter une ${taskColumnLabel}`);
+      })
+      .off('click','.add-subtask-btn').on('click','.add-subtask-btn',function(e){
+        e.stopPropagation();
+        const parentTaskId = $(this).data('task-id');
+        const gid = $(this).closest('.group').data('id');
+        const $row = $(this).closest('tr');
+        
+        CustomPopup.prompt('Nom de la sous-tâche :', function(lbl) {
+          if(!lbl) return;
+          const fd = new FormData();
+          fd.append('add_task_group_id', gid);
+          fd.append('task_label', lbl);
+          fd.append('parent_task_id', parentTaskId);
+          fd.append('token', token);
+          fetch('', {method:'POST', body:fd}).then(() => {
+            loadGroups(wid);
+          });
+        }, '', 'Ajouter une sous-tâche');
+      })
+      .off('click','.task-column-label').on('click','.task-column-label',function(e){
+        e.stopPropagation();
+        const gid = $(this).data('gid');
+        const $group = $(this).closest('.group');
+        const currentLabel = $(this).text();
+        
+        CustomPopup.prompt('Nom de la colonne :', function(newLabel) {
+          if(!newLabel || newLabel === currentLabel) return;
+          
+          const fd = new FormData();
+          fd.append('update_task_column_label', gid);
+          fd.append('task_column_label', newLabel);
+          fd.append('token', token);
+          
+          fetch('', {method: 'POST', body: fd}).then(() => {
+            $group.find('.task-column-label').text(newLabel);
+            $group.find('.add-row-btn').text(`+ Ajouter ${newLabel.toLowerCase()}`);
+          });
+        }, currentLabel, 'Modifier le nom de la colonne');
       })
       .off('click','.rename-column-btn').on('click','.rename-column-btn',function(e){
         e.stopPropagation();
@@ -1593,7 +1903,6 @@ $(function(){
         const $group = $(this).closest('.group');
         sortColumn($group, cid, type, 'asc');
         
-        // Mettre à jour l'indicateur visuel
         $group.find('.column-sort-indicator').text('').removeClass('asc desc');
         $group.find(`[data-cid="${cid}"].column-sort-indicator`).text('↑').addClass('asc');
         
@@ -1607,7 +1916,6 @@ $(function(){
         const $group = $(this).closest('.group');
         sortColumn($group, cid, type, 'desc');
         
-        // Mettre à jour l'indicateur visuel
         $group.find('.column-sort-indicator').text('').removeClass('asc desc');
         $group.find(`[data-cid="${cid}"].column-sort-indicator`).text('↓').addClass('desc');
         
@@ -1627,7 +1935,6 @@ $(function(){
         e.stopPropagation();
       });
       
-    // Fermer les menus contextuels quand on clique ailleurs
     $(document).on('click', function(e) {
       if (!$(e.target).closest('.column-menu, .column-menu-btn').length) {
         $('.column-menu').removeClass('show');
@@ -1640,7 +1947,6 @@ $(function(){
     const $tbody = $group.find('tbody');
     const $rows = $tbody.find('tr').toArray();
     
-    // Trouver l'index de la colonne à trier (en tenant compte de la colonne "Tâche" en première position)
     const $headers = $group.find('th');
     let columnIndex = -1;
     
@@ -1655,7 +1961,6 @@ $(function(){
     
     if (columnIndex === -1) return;
     
-    // Trier les lignes
     $rows.sort(function(a, b) {
       const $cellA = $(a).find('td').eq(columnIndex);
       const $cellB = $(b).find('td').eq(columnIndex);
@@ -1724,25 +2029,22 @@ $(function(){
       return direction === 'desc' ? -result : result;
     });
     
-    // Réinsérer les lignes triées
     $tbody.empty().append($rows);
     
-    // Ré-attacher les gestionnaires d'événements après le tri
     $rows.forEach(row => {
       const $row = $(row);
       const taskId = $row.data('id');
       const $group = $row.closest('.group');
       
-      // Ré-attacher le clic sur la première colonne (nom de la tâche)
       $row.find('td:nth-child(1)').off('click').on('click', function(e) {
         if ($(e.target).is('button')) return;
         
         const taskName = $(this).text();
         const groupName = $group.find('.group-label').text();
-        openTaskDetail(taskId, taskName, groupName);
+        const taskColumnLabel = $group.find('.task-column-label').text();
+        openTaskDetail(taskId, taskName, groupName, taskColumnLabel);
       });
       
-      // Ré-appliquer les couleurs des select
       $row.find('select.cell-select').each(function(){
         applySelectColor($(this));
       });
@@ -1995,6 +2297,68 @@ $(function(){
       });
   }
 
+  // Fonctions pour gérer le collapse/expand des sous-tâches
+  window.toggleCollapse = function(taskId) {
+    if (taskCollapseState.has(taskId)) {
+      taskCollapseState.delete(taskId);
+    } else {
+      taskCollapseState.add(taskId);
+    }
+    updateCollapsedRows();
+  };
+
+  function updateCollapsedRows() {
+    document.querySelectorAll('.task-row').forEach(row => {
+      const taskId = row.dataset.id;
+      const parentId = row.dataset.parentId;
+      
+      // Si le parent de cette tâche est collapsed, on la masque
+      if (parentId && taskCollapseState.has(parseInt(parentId))) {
+        row.classList.add('collapsed-children');
+      } else {
+        row.classList.remove('collapsed-children');
+      }
+      
+      // Mettre à jour le bouton collapse
+      const collapseBtn = row.querySelector('.collapse-toggle');
+      if (collapseBtn) {
+        const isCollapsed = taskCollapseState.has(parseInt(taskId));
+        collapseBtn.textContent = isCollapsed ? '▶' : '▼';
+      }
+    });
+  }
+
+  // Trier les tâches de manière hiérarchique (parent suivi de ses enfants)
+  function sortTasksHierarchically(tasks) {
+    const result = [];
+    const taskMap = new Map(tasks.map(t => [t.id, t]));
+    const processed = new Set();
+    
+    function addTaskAndChildren(taskId) {
+      if (processed.has(taskId)) return;
+      
+      const task = taskMap.get(taskId);
+      if (!task) return;
+      
+      processed.add(taskId);
+      result.push(task);
+      
+      // Ajouter tous les enfants de cette tâche
+      tasks
+        .filter(t => t.parent_task_id === taskId)
+        .sort((a, b) => (a.position || 0) - (b.position || 0))
+        .forEach(t => addTaskAndChildren(t.id));
+    }
+    
+    // Commencer par les tâches sans parent (triées par position)
+    tasks
+      .filter(t => !t.parent_task_id)
+      .sort((a, b) => (a.position || 0) - (b.position || 0))
+      .forEach(t => addTaskAndChildren(t.id));
+    
+    return result;
+  }
+
   let searchTimeout;
 
   function initWorkspaceSearch() {
@@ -2203,7 +2567,6 @@ $(function(){
   $(document).ready(function() {
   });
 
-  // Système de popup stylisé pour remplacer les alertes natives - Version simplifiée
   window.CustomPopup = {
     show: function(options) {
       const defaults = {
@@ -2224,7 +2587,6 @@ $(function(){
       
       const config = Object.assign({}, defaults, options);
       
-      // Supprimer le popup existant
       $('.custom-popup-overlay').remove();
       
       const headerClass = config.type === 'info' ? '' : config.type;
@@ -2258,22 +2620,18 @@ $(function(){
       
       $('body').append(popupHtml);
       
-      // Afficher avec animation
       setTimeout(() => {
         $('.custom-popup-overlay').addClass('show');
       }, 10);
       
-      // Gérer les clics sur les boutons
       $('.custom-popup-overlay').on('click', '.custom-popup-btn', function(e) {
         const action = $(this).data('action');
         const inputValue = $('.custom-popup-input').val();
         
-        // Trouver le bouton correspondant dans la configuration
         const button = config.buttons.find(b => b.text.toLowerCase() === action);
         
         if (button && button.callback) {
           const result = button.callback(inputValue);
-          // Si le callback retourne false, ne pas fermer le popup
           if (result === false) {
             return;
           }
@@ -2282,21 +2640,18 @@ $(function(){
         CustomPopup.hide();
       });
       
-      // Fermer en cliquant sur l'overlay
       $('.custom-popup-overlay').on('click', function(e) {
         if (e.target === this) {
           CustomPopup.hide();
         }
       });
       
-      // Fermer avec la touche Échap
       $(document).on('keydown.popup', function(e) {
         if (e.keyCode === 27) {
           CustomPopup.hide();
         }
       });
       
-      // Focus sur l'input s'il existe
       if (config.showInput) {
         setTimeout(() => {
           $('.custom-popup-input').focus();
@@ -2379,7 +2734,6 @@ $(function(){
     }
   };
   
-  // Remplacer les fonctions natives pour une utilisation transparente
   window.customAlert = window.CustomPopup.alert.bind(window.CustomPopup);
   window.customConfirm = window.CustomPopup.confirm.bind(window.CustomPopup);
   window.customPrompt = window.CustomPopup.prompt.bind(window.CustomPopup);
