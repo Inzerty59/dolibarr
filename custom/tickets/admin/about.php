@@ -1,19 +1,5 @@
 <?php
-/* Copyright (C) 2025 Florent
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 3 of the License, or
- * (at your option) any later version.
- */
 
-/**
- * \file        htdocs/custom/tickets/admin/about.php
- * \ingroup     tickets
- * \brief       À propos du module Tickets
- */
-
-// Load Dolibarr environment
 $res = 0;
 if (!$res) {
 	@set_include_path(dirname(__FILE__) . '/../../');
@@ -23,11 +9,9 @@ if (!$res) {
 }
 require_once 'main.inc.php';
 
-// Load Dolibarr libraries
 require_once DOL_DOCUMENT_ROOT.'/core/lib/admin.lib.php';
 require_once DOL_DOCUMENT_ROOT.'/custom/tickets/lib/tickets.lib.php';
 
-// Security check
 if (!$user->admin) {
 	accessforbidden();
 }

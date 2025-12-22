@@ -1,26 +1,11 @@
 <?php
-/* Copyright (C) 2025 Florent
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 3 of the License, or
- * (at your option) any later version.
- */
-
-/**
- * \file        htdocs/custom/tickets/core/hooks/main.inc.php
- * \ingroup     tickets
- * \brief       Hooks HTML du module Tickets
- */
 
 global $conf, $langs;
 
-// Charger les traductions
 if (is_object($langs)) {
 	$langs->load('tickets@tickets');
 }
 
-// Ajouter le JavaScript de redirection
 $GLOBALS['_JS_INLINE']['tickets_redirect'] = '
 <script type="text/javascript">
 (function() {

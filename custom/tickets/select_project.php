@@ -1,5 +1,4 @@
 <?php
-/* Simple redirect if needed - test version */
 
 $res = 0;
 if (!$res && file_exists(dirname(__FILE__) . '/../../main.inc.php')) {
@@ -19,9 +18,8 @@ if (!$user->rights->ticket->read) {
 	accessforbidden();
 }
 
-// Get projects - Show all active projects for now
 $sql = "SELECT p.rowid, p.ref, p.title, p.datec FROM " . MAIN_DB_PREFIX . "projet as p";
-$sql .= " WHERE p.rowid > 0"; // All projects
+$sql .= " WHERE p.rowid > 0";
 $sql .= " ORDER BY p.datec DESC";
 
 $resql = $db->query($sql);
