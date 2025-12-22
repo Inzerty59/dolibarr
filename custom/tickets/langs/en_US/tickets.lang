@@ -1,0 +1,21 @@
+<?php
+// English translations
+$GLOBALS['TRANSLATIONS']['ENGLISH'] = array(
+	'ModuleTicketsName' => 'Custom Tickets',
+	'ModuleTicketsDesc' => 'Custom Tickets module',
+	'SelectProject' => 'Select a Project',
+	'SelectProjectToCreateTicket' => 'Please select a project to create a ticket',
+	'NoActiveProjectAssignedToUser' => 'No active project assigned to you',
+	'CreateTicket' => 'Create Ticket',
+	'Ref' => 'Ref',
+	'Label' => 'Label',
+	'TicketsDescription' => 'Custom Tickets module',
+	'TicketsSetup' => 'Setup',
+	'TicketsAbout' => 'About',
+);
+
+foreach ($GLOBALS['TRANSLATIONS']['ENGLISH'] as $key => $value) {
+	if (!isset($langs->tab_translate[$key])) {
+		$langs->tab_translate[$key] = $value;
+	}
+}

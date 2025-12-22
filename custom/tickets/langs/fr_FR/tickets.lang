@@ -1,0 +1,21 @@
+<?php
+// Traductions françaises
+$GLOBALS['TRANSLATIONS']['FRENCH'] = array(
+	'ModuleTicketsName' => 'Tickets Personnalisé',
+	'ModuleTicketsDesc' => 'Module Tickets personnalisé',
+	'SelectProject' => 'Sélectionner un Projet',
+	'SelectProjectToCreateTicket' => 'Veuillez sélectionner un projet pour créer un ticket',
+	'NoActiveProjectAssignedToUser' => 'Aucun projet actif ne vous est assigné',
+	'CreateTicket' => 'Créer un Ticket',
+	'Ref' => 'Réf.',
+	'Label' => 'Libellé',
+	'TicketsDescription' => 'Module Tickets personnalisé',
+	'TicketsSetup' => 'Configuration',
+	'TicketsAbout' => 'À propos',
+);
+
+foreach ($GLOBALS['TRANSLATIONS']['FRENCH'] as $key => $value) {
+	if (!isset($langs->tab_translate[$key])) {
+		$langs->tab_translate[$key] = $value;
+	}
+}

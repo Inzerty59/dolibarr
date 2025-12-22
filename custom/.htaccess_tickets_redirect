@@ -1,0 +1,26 @@
+<?php
+/**
+ * Hook d'interception pour redirection création ticket
+ * Ce fichier est auto-inclus par Dolibarr pour tous les modules custom
+ */
+
+// Vérifier le contexte
+if (function_exists('dol_getprefix') && !function_exists('__tickets_redirect_loaded')) {
+	define('__tickets_redirect_loaded', true);
+	
+	// S'exécuter seulement si on est sur ticket/card.php
+	if (basename($_SERVER['SCRIPT_NAME'] ?? '') === 'card.php' && 
+	    strpos($_SERVER['SCRIPT_NAME'] ?? '', 'ticket/') !== false) {
+		
+		// Récupérer les paramètres
+		$action = GETPOST('action', 'alpha');
+		$fk_project = GETPOST('fk_project', 'int');
+		
+		// Si création sans projet
+		if ($action === 'create' && empty($fk_project)) {
+			// Rediriger
+			header('Location: '.DOL_URL_ROOT.'/custom/tickets/select_project.php', true, 302);
+			exit(0);
+		}
+	}
+}
