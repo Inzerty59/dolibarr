@@ -42,7 +42,7 @@ llxHeader("", $langs->trans("SelectProject"), "");
 				<tr class="oddeven">
 					<td><?php echo $obj->ref; ?></td>
 					<td><?php echo $obj->title; ?></td>
-					<td><a href="<?php echo DOL_URL_ROOT; ?>/custom/tickets/create_with_project.php?fk_project=<?php echo (int)$obj->rowid; ?>" class="butAction"><?php echo $langs->trans("CreateTicket"); ?></a></td>
+					<td><a href="<?php echo DOL_URL_ROOT; ?>/ticket/card.php?action=create&projectid=<?php echo (int)$obj->rowid; ?>" class="butAction"><?php echo $langs->trans("CreateTicket"); ?></a></td>
 				</tr>
 				<?php } ?>
 			</table>

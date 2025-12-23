@@ -6,96 +6,77 @@ if (!$res && file_exists(dirname(__FILE__) . '/../../main.inc.php')) {
 	$res = 1;
 }
 
+$forced_project_id = 0;
+
 if (!empty($conf->tickets->enabled)) {
 	$action = GETPOST('action', 'alpha');
-	$fk_project = GETPOST('fk_project', 'int');
+	$projectid = GETPOST('projectid', 'int');
 	
-	if ($action === 'create' && empty($fk_project)) {
+	if ($action === 'create' && empty($projectid)) {
 		header('Location: '.DOL_URL_ROOT.'/custom/tickets/select_project.php', true, 302);
 		exit;
 	}
 	
-	if ($action === 'create' && !empty($fk_project)) {
-		$_SESSION['ticket_forced_project'] = $fk_project;
+	if ($action === 'create' && !empty($projectid)) {
+		$_SESSION['ticket_forced_project'] = $projectid;
+		$forced_project_id = $projectid;
 	}
+	
+	if (!empty($_SESSION['ticket_forced_project'])) {
+		$forced_project_id = (int)$_SESSION['ticket_forced_project'];
+		$_GET['projectid'] = $forced_project_id;
+		$_REQUEST['projectid'] = $forced_project_id;
+		$_POST['projectid'] = $forced_project_id;
+		$projectid = $forced_project_id;
+	}
+}
+
+$GLOBALS['forced_project_id'] = $forced_project_id;
+
+if (!empty($conf->tickets->enabled) && !empty($forced_project_id)) {
+	require_once dirname(__FILE__) . '/../tickets/force_project_on_submission.php';
+	
+	echo '<style type="text/css">
+		select[name="projectid"],
+		#select2-projectid,
+		.select2-container[aria-labelledby*="projectid"],
+		.form-group:has(select[name="projectid"]),
+		tr:has(select[name="projectid"]),
+		tr:has(input[name="projectid"]) {
+			display: none !important;
+		}
+	</style>';
+	
+	echo '<script type="text/javascript">
+	(function() {
+		var forcedId = ' . (int)$forced_project_id . ';
+		
+		// Chercher et forcer le select
+		var selectEl = document.querySelector("select[name=\"projectid\"]");
+		if (selectEl) {
+			selectEl.value = forcedId;
+			selectEl.disabled = true;
+		}
+		
+		// S\'assurer qu\'il y a un input hidden
+		var forms = document.querySelectorAll("form");
+		forms.forEach(function(form) {
+			if (!form.querySelector("input[name=\"projectid\"][type=\"hidden\"]")) {
+				var hidden = document.createElement("input");
+				hidden.type = "hidden";
+				hidden.name = "projectid";
+				hidden.value = forcedId;
+				form.appendChild(hidden);
+			}
+		});
+	})();
+	</script>';
 }
 
 require_once DOL_DOCUMENT_ROOT.'/ticket/card.php';
 
+// Nettoyage session
 if (!empty($conf->tickets->enabled) && !empty($_SESSION['ticket_forced_project'])) {
-	$forced_project_id = (int)$_SESSION['ticket_forced_project'];
-	?>
-	<script type="text/javascript">
-	(function() {
-		function lockProjectField() {
-			var projectSelect = document.querySelector('select[name*="fk_project"]');
-			
-			if (!projectSelect) {
-				setTimeout(lockProjectField, 100);
-				return;
-			}
-			
-			projectSelect.value = <?php echo $forced_project_id; ?>;
-			projectSelect.setAttribute('data-forced-project', <?php echo $forced_project_id; ?>);
-			
-			projectSelect.disabled = true;
-			projectSelect.style.display = 'none';
-			
-			var selectedOption = projectSelect.options[projectSelect.selectedIndex];
-			var projectText = selectedOption ? selectedOption.text : 'Projet sélectionné';
-			
-			var select2Container = projectSelect.parentElement.querySelector('.select2-container');
-			
-			if (select2Container) {
-				var projectDisplay = document.createElement('div');
-				projectDisplay.style.padding = '8px 12px';
-				projectDisplay.style.border = '1px solid #ddd';
-				projectDisplay.style.backgroundColor = '#f5f5f5';
-				projectDisplay.style.borderRadius = '4px';
-				projectDisplay.style.fontFamily = 'sans-serif';
-				projectDisplay.style.fontSize = '14px';
-				projectDisplay.style.color = '#333';
-				projectDisplay.style.cursor = 'not-allowed';
-				projectDisplay.style.userSelect = 'none';
-				projectDisplay.style.webkitUserSelect = 'none';
-				projectDisplay.style.minHeight = '36px';
-				projectDisplay.style.display = 'flex';
-				projectDisplay.style.alignItems = 'center';
-				projectDisplay.style.width = '100%';
-				projectDisplay.textContent = projectText;
-				
-				select2Container.style.display = 'none';
-				select2Container.parentElement.insertBefore(projectDisplay, select2Container);
-				
-				select2Container.style.pointerEvents = 'none';
-			}
-			
-			var form = projectSelect.closest('form');
-			if (form) {
-				form.addEventListener('submit', function(e) {
-					projectSelect.disabled = false;
-					projectSelect.value = <?php echo $forced_project_id; ?>;
-					projectSelect.disabled = true;
-				});
-			}
-			
-			document.addEventListener('click', function(e) {
-				if (projectSelect.contains(e.target) || (select2Container && select2Container.contains(e.target))) {
-					e.preventDefault();
-					e.stopPropagation();
-					return false;
-				}
-			}, true);
-		}
-		
-		if (document.readyState === 'loading') {
-			document.addEventListener('DOMContentLoaded', lockProjectField);
-		} else {
-			setTimeout(lockProjectField, 100);
-		}
-	})();
-	</script>
-	<?php
 	unset($_SESSION['ticket_forced_project']);
 }
 
