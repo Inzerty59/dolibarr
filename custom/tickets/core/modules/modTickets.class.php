@@ -40,7 +40,12 @@ class modTickets extends DolibarrModules
 			'css' => 0,
 			'js' => 1,
 			'hooks' => array(
-				'pageheader' => 'pageHeader',
+				'data' => array(
+					'ticketcard',
+					'ticket',
+					'all'
+				),
+				'entity' => '0',
 			),
 			'models' => 0,
 		);

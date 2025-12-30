@@ -45,7 +45,7 @@ llxHeader("", "Sélectionner un Projet", "");
 				<tr class="oddeven">
 					<td><?php echo $obj->ref; ?></td>
 					<td><?php echo $obj->title; ?></td>
-					<td><a href="<?php echo DOL_URL_ROOT; ?>/ticket/card.php?action=create&projectid=<?php echo (int)$obj->rowid; ?>" class="butAction"><?php echo $langs->trans("CreateTicket"); ?></a></td>
+					<td><a href="<?php echo DOL_URL_ROOT; ?>/custom/ticket/card.php?action=create&projectid=<?php echo (int)$obj->rowid; ?>" class="butAction"><?php echo $langs->trans("CreateTicket"); ?></a></td>
 				</tr>
 				<?php } ?>
 			</table>
