@@ -10,6 +10,16 @@
 		return;
 	}
 	
+	// Vérifier si on est en mode création
+	var urlParams = new URLSearchParams(window.location.search);
+	var action = urlParams.get('action');
+	var projectidFromUrl = urlParams.get('projectid');
+	
+	// Ne verrouiller que si on est en création avec un projet
+	if (action !== 'create' || !projectidFromUrl) {
+		return;
+	}
+	
 	// Fonction pour lire un cookie
 	function getCookie(name) {
 		var value = "; " + document.cookie;
@@ -20,29 +30,22 @@
 		return null;
 	}
 	
-	// Fonction pour supprimer un cookie
-	function deleteCookie(name) {
-		document.cookie = name + '=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
-	}
-	
 	// Récupérer les infos du projet depuis le cookie
 	var cookieData = getCookie('ticket_lock_project');
-	if (!cookieData) {
-		console.log('LockProject: Aucun cookie de verrouillage trouvé');
-		return;
+	var project = null;
+	
+	if (cookieData) {
+		try {
+			project = JSON.parse(cookieData);
+		} catch (e) {
+			console.log('LockProject: Erreur parsing cookie', e);
+		}
 	}
 	
-	var project;
-	try {
-		project = JSON.parse(cookieData);
-	} catch (e) {
-		console.log('LockProject: Erreur parsing cookie', e);
-		return;
-	}
-	
+	// Si pas de cookie mais projectid dans l'URL, utiliser les infos du Select
 	if (!project || !project.id) {
-		console.log('LockProject: Données projet invalides');
-		return;
+		console.log('LockProject: Pas de cookie, utilisation du projectid URL:', projectidFromUrl);
+		project = { id: projectidFromUrl, ref: '', title: '' };
 	}
 	
 	console.log('LockProject: Verrouillage du projet', project);
@@ -58,6 +61,22 @@
 		if (document.getElementById('locked-project-display')) {
 			return true;
 		}
+		
+		// Si on n'a pas les infos du projet, les récupérer du select
+		var projectRef = project.ref;
+		var projectTitle = project.title;
+		
+		if (!projectRef || !projectTitle) {
+			// Chercher l'option sélectionnée
+			var selectedOption = projectSelect.options[projectSelect.selectedIndex];
+			if (selectedOption && selectedOption.text) {
+				var fullText = selectedOption.text.trim();
+				projectRef = fullText;
+				projectTitle = '';
+			}
+		}
+		
+		var displayText = projectRef + (projectTitle ? ' - ' + projectTitle : '');
 		
 		// Trouver TOUS les éléments Select2 liés au projet
 		var select2Containers = document.querySelectorAll(
@@ -79,11 +98,12 @@
 		// Forcer la valeur du select
 		projectSelect.value = project.id;
 		
-		// Créer l'affichage verrouillé
+		// Créer l'affichage verrouillé style Dolibarr natif
 		var lockedDisplay = document.createElement('span');
 		lockedDisplay.id = 'locked-project-display';
-		lockedDisplay.innerHTML = '🔒 <strong>' + project.ref + ' - ' + project.title + '</strong>';
-		lockedDisplay.style.cssText = 'padding: 6px 12px; background: #e8f5e9; border: 2px solid #4caf50; border-radius: 4px; display: inline-block; color: #2e7d32; font-size: 14px;';
+		lockedDisplay.className = 'valeur inline-block';
+		lockedDisplay.innerHTML = '<span class="classfortooltip" title="Projet lié au ticket">' + displayText + '</span>' +
+			' <span class="fas fa-lock opacitymedium" title="Projet verrouillé" style="margin-left: 5px;"></span>';
 		
 		// Masquer le select original
 		projectSelect.style.display = 'none';
@@ -112,9 +132,6 @@
 		document.head.appendChild(style);
 		
 		console.log('LockProject: ✅ Projet verrouillé!');
-		
-		// Supprimer le cookie après utilisation
-		deleteCookie('ticket_lock_project');
 		
 		return true;
 	}
