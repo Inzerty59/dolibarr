@@ -18,6 +18,9 @@ if (!$user->rights->ticket->read) {
 	accessforbidden();
 }
 
+$langs->load('projects');
+$langs->load('tickets');
+
 $sql = "SELECT p.rowid, p.ref, p.title, p.datec FROM " . MAIN_DB_PREFIX . "projet as p";
 $sql .= " WHERE p.rowid > 0";
 $sql .= " ORDER BY p.datec DESC";
@@ -25,12 +28,12 @@ $sql .= " ORDER BY p.datec DESC";
 $resql = $db->query($sql);
 $num = $db->num_rows($resql);
 
-llxHeader("", $langs->trans("SelectProject"), "");
+llxHeader("", "Sélectionner un Projet", "");
 ?>
 <div class="fichecenter">
 	<div class="fichehalfdis">
 		<div class="boxol">
-			<h2><?php echo $langs->trans("SelectProject"); ?></h2>
+			<h2>Sélectionner un Projet</h2>
 			<?php if ($num > 0) { ?>
 			<table class="liste">
 				<tr class="liste_titre">
