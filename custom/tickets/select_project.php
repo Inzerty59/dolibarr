@@ -21,8 +21,13 @@ if (!$user->rights->ticket->read) {
 $langs->load('projects');
 $langs->load('tickets');
 
-$sql = "SELECT p.rowid, p.ref, p.title, p.datec FROM " . MAIN_DB_PREFIX . "projet as p";
-$sql .= " WHERE p.rowid > 0";
+// Afficher uniquement les projets auxquels l'utilisateur est rattaché
+// La table llx_element_contact avec fk_c_type_contact 44,45,46,47 = contacts projet
+$sql = "SELECT DISTINCT p.rowid, p.ref, p.title, p.datec FROM " . MAIN_DB_PREFIX . "projet as p";
+$sql .= " INNER JOIN " . MAIN_DB_PREFIX . "element_contact as ec ON ec.element_id = p.rowid";
+$sql .= " WHERE ec.fk_socpeople = " . (int)$user->id;
+$sql .= " AND ec.fk_c_type_contact IN (44, 45, 46, 47)"; // Types contacts projet (internal/external leader/contributor)
+$sql .= " AND ec.statut = 4"; // Statut actif
 $sql .= " ORDER BY p.datec DESC";
 
 $resql = $db->query($sql);
