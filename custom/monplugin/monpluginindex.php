@@ -2,7 +2,7 @@
 
 $res = 0;
 if (!$res && file_exists(dirname(__FILE__).'/../../main.inc.php')) {
-	require_once dirname(__FILE__).'/../../main.inc.php'; #chargemeent  de fichier  qui initialise  dolibarr
+	require_once dirname(__FILE__).'/../../main.inc.php'; 
 	$res = 1;
 }
 
@@ -15,7 +15,7 @@ if (!$user->id) {     #user nest  pas connecté
 }
 
 $todosByStatus = array (
-			0 => array(),  #chaque todo est une liste pour stocker lensemble des todos aux il pourra contenir 
+			0 => array(), 
 			1 => array(), 
 			3 => array(),
 			2 => array() 
@@ -25,9 +25,9 @@ if (!$user->rights->monplugin->read) {
 }
 
 
-$action = GETPOST('action', 'alpha');  // récupère 'setstatus'
-$id     = GETPOSTINT('id');        // récupère 5
-$status = GETPOSTINT('status');    // récupère 2
+$action = GETPOST('action', 'alpha');  
+$id     = GETPOSTINT('id');       
+$status = GETPOSTINT('status');    
 
 if ($action == 'setstatus' && $id > 0) {
 
@@ -55,15 +55,14 @@ if ($action == 'setstatus' && $id > 0) {
 }
 	
 
-#prefix  MAIN_DB_PREFIX pour les tables de données dolibarr
 $sql = "SELECT rowid, titre, description, status, date_creation";
 $sql .= " FROM ".MAIN_DB_PREFIX."monplugin_todo";
 $sql .= " ORDER BY rowid DESC";
-# cette  requette  recupere  toutes la  table
+
 
 
 $resql = $db->query($sql);
-#resql recuppere  toutes  les lignes de  la table
+
 
 if ($resql) {
 	while ($obj = $db->fetch_object($resql)) {
@@ -76,20 +75,6 @@ if ($resql) {
 } else {
 	setEventMessages($db->lasterror(), null, 'errors');
 } 
-###############################################################################
-
-// quand on commence à glisser la carte
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -126,8 +111,7 @@ foreach ($todosByStatus[0] as $todo) {
 	print '<div class="carte" draggable="true" data-id="'.((int) $todo->rowid).'" style="border-radius: 8px; border: 1px solid #868383; margin-bottom: 10px;padding:10px; text-align: left;">';
 	print '<strong>'.dol_escape_htmltag($todo->titre).'</strong>';
 	print '<p>'.dol_escape_htmltag($todo->description).'</p>';
-	print '<small>Créé le : '.dol_print_date($db->jdate($todo->date_creation), 'dayhour').'</small>'; # quand  on clique sur  terminé   cette  update  est envoyé monpluginindex.php?action=setstatus&id=5&status=2 ce qui permettera  de  mettre  a  joure  la  bdd  avec update  
-# on affiche tous  les  elements  de  tab dan  status  egale  a  zero
+	print '<small>Créé le : '.dol_print_date($db->jdate($todo->date_creation), 'dayhour').'</small>'; 
 	print '</div>';
 }
 print '</div>';
