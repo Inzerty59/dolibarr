@@ -1460,16 +1460,21 @@ $(function(){
                                 });
                               cellPromises.push(promise);
                             } else if(c.type === 'number') {
-                              const inputHtml = `<input type="text" class="cell-input cell-number" 
-                                data-task="${t.id}" 
-                                data-column="${c.id}" 
-                                value="${cellValue}" 
-                                style="border:none;background:transparent;width:100%;padding:2px;text-align:right;"
-                                pattern="[0-9€$.,\\s-]*"
-                                onblur="saveCellValue(this)"
-                                onkeydown="if(event.key==='Enter') saveCellValue(this)"
-                                oninput="validateNumberInput(this)">`;
-                              cellPromises.push(Promise.resolve(inputHtml));
+                                const value = String(cellValue || '')
+                                  .replace(/&/g, '&amp;')
+                                  .replace(/</g, '&lt;')
+                                  .replace(/>/g, '&gt;');
+
+                                const inputHtml = `<textarea class="cell-input cell-number cell-number-textarea"
+                                  data-task="${t.id}"
+                                  data-column="${c.id}"
+                                  rows="1"
+                                  inputmode="numeric"
+                                  style="border:none;background:transparent;width:100%;padding:2px;text-align:right;resize:none;overflow:hidden;white-space:pre-wrap;word-break:break-all;box-sizing:border-box;line-height:1.4;"
+                                  oninput="validateNumberInput(this);autoResizeTextarea(this)"
+                                  onkeydown="if(event.key==='Enter'){event.preventDefault();saveCellValue(this)}"
+                                  onblur="saveCellValue(this)">${value}</textarea>`;
+                                cellPromises.push(Promise.resolve(inputHtml));
                             } else if(c.type === 'tags') {
                               const promise = (dataCache.columnOptions[c.id]
                                 ? Promise.resolve(dataCache.columnOptions[c.id])
@@ -1635,9 +1640,9 @@ $(function(){
                       taskRows.forEach($row => {
                         $grp.find('tbody').append($row);
                       });
-                      $grp.find('textarea.cell-textarea').each(function() {
-                        autoResizeTextarea(this);
-                      });
+                        $grp.find('textarea.cell-textarea').each(function() {
+                          autoResizeTextarea(this);
+                        });
                       
                       $grp.find('select.cell-select').each(function(){
                         applySelectColor($(this));
@@ -1986,16 +1991,16 @@ $(function(){
       
       switch(columnType) {
         case 'text':
-          valueA = $cellA.find('input').val() || $cellA.text() || '';
-          valueB = $cellB.find('input').val() || $cellB.text() || '';
+          valueA = $cellA.find('input,  textarea').val() || $cellA.text() || '';
+          valueB = $cellB.find('input,  textarea').val() || $cellB.text() || '';
           valueA = valueA.toLowerCase();
           valueB = valueB.toLowerCase();
           break;
           
         case 'number':
-          valueA = parseFloat($cellA.find('input').val() || '0') || 0;
-          valueB = parseFloat($cellB.find('input').val() || '0') || 0;
-          break;
+            valueA = parseFloat(($cellA.find('input, textarea').val() || '0').replace(/\s+/g, '').replace(',', '.')) || 0;
+            valueB = parseFloat(($cellB.find('input, textarea').val() || '0').replace(/\s+/g, '').replace(',', '.')) || 0;
+            break;
           
         case 'date':
         case 'deadline':

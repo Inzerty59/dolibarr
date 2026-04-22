@@ -1740,3 +1740,22 @@ th[title="Glisser pour réorganiser"]:hover {
   word-break: break-word;
   box-sizing: border-box;
 }
+#group-list .cell-number-textarea {
+  display: block;
+  width: 100%;
+  min-height: 24px;
+  resize: none;
+  overflow: hidden;
+  white-space: pre-wrap;
+  word-break: break-all;
+  box-sizing: border-box;
+  line-height: 1.4;
+  text-align: right;
+  border: none;
+  background: transparent;
+  padding: 2px;
+}
+
+#group-list .group-body table td {
+  vertical-align: top;
+}
