@@ -11,7 +11,170 @@ $(function(){
     users: null,
     columnOptions: {}
   };
-  
+    const groupSplitState = new Map();
+
+  function getSplitableColumns(cols) {
+    return cols.filter(c => c.type === 'select');
+  }
+
+  function escapeSplitHtml(value) {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function buildGroupTableHtml(headerCells, extraClass = '') {
+    return `
+      <table class="planity-group-table ${extraClass}" style="width:100%;border-collapse:collapse;margin-bottom:8px;">
+        <thead>
+          <tr style="background:#fafafa;">
+            ${headerCells}
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    `;
+  }
+
+  function buildSplitToolbarHtml(g, cols) {
+    const splitableColumns = getSplitableColumns(cols);
+
+    if (!splitableColumns.length) {
+      return '';
+    }
+
+    const activeSplitId = String(groupSplitState.get(g.id) || '');
+    const optionsHtml = [
+      `<option value="">—</option>`,
+      ...splitableColumns.map(c => `
+        <option value="${c.id}" ${String(c.id) === activeSplitId ? 'selected' : ''}>
+          ${escapeSplitHtml(c.label)}
+        </option>
+      `)
+    ].join('');
+
+    return `
+      <div class="group-split-toolbar">
+        <span class="group-split-label">Trier par :</span>
+        <select class="group-split-select" data-gid="${g.id}">
+          ${optionsHtml}
+        </select>
+        ${activeSplitId ? `<button type="button" class="group-split-reset" data-gid="${g.id}">Vue initiale</button>` : ''}
+      </div>
+    `;
+  }
+
+  function buildSplitSections(taskRows, splitColumnId, splitOptions) {
+    const sections = splitOptions.map(opt => ({
+      key: String(opt.id),
+      label: opt.label,
+      color: opt.color || '#c8c8c8',
+      rows: []
+    }));
+
+    const sectionsByKey = new Map(sections.map(section => [section.key, section]));
+
+    const emptySection = {
+      key: '__empty__',
+      label: 'Sans valeur',
+      color: '#c8c8c8',
+      rows: []
+    };
+
+    taskRows.forEach($row => {
+      const cellValues = $row.data('cellValues') || {};
+      const key = String(cellValues[splitColumnId] || '');
+
+      if (sectionsByKey.has(key)) {
+        sectionsByKey.get(key).rows.push($row);
+      } else {
+        emptySection.rows.push($row);
+      }
+    });
+
+    if (emptySection.rows.length) {
+      sections.push(emptySection);
+    }
+
+    return sections;
+  }
+
+  function renderGroupTables($grp, g, cols, headerCells, taskRows) {
+    const $toolbarHost = $grp.find('.group-body-toolbar');
+    const $tablesContainer = $grp.find('.group-tables-container');
+    const splitableColumns = getSplitableColumns(cols);
+    const activeSplitId = groupSplitState.get(g.id);
+
+    $toolbarHost.find('.group-split-toolbar').remove();
+
+    if (splitableColumns.length) {
+      $toolbarHost.append(buildSplitToolbarHtml(g, cols));
+    }
+
+    $tablesContainer.empty();
+
+    if (!activeSplitId) {
+      const $table = $(buildGroupTableHtml(headerCells, 'group-base-table'));
+      taskRows.forEach($row => {
+        $table.find('tbody').append($row);
+      });
+      $tablesContainer.append($table);
+      return;
+    }
+
+    const splitColumn = splitableColumns.find(c => String(c.id) === String(activeSplitId));
+    if (!splitColumn) {
+      groupSplitState.delete(g.id);
+
+      const $table = $(buildGroupTableHtml(headerCells, 'group-base-table'));
+      taskRows.forEach($row => {
+        $table.find('tbody').append($row);
+      });
+      $tablesContainer.append($table);
+      return;
+    }
+
+    const splitOptions = dataCache.columnOptions[splitColumn.id] || [];
+
+    if (!splitOptions.length) {
+      const $table = $(buildGroupTableHtml(headerCells, 'group-base-table'));
+      taskRows.forEach($row => {
+        $table.find('tbody').append($row);
+      });
+      $tablesContainer.append($table);
+      return;
+    }
+
+    const splitSections = buildSplitSections(taskRows, splitColumn.id, splitOptions);
+    const taskLabel = (g.task_column_label || 'élément').toLowerCase();
+
+    splitSections.forEach(section => {
+      const countLabel = `${section.rows.length} ${taskLabel}${section.rows.length > 1 ? 's' : ''}`;
+
+      const $section = $(`
+        <div class="group-split-section">
+          <div class="group-split-section-header">
+            <span class="group-split-dot" style="background:${section.color};"></span>
+            <span class="group-split-section-title">${escapeSplitHtml(section.label)}</span>
+            <span class="group-split-section-count">${countLabel}</span>
+          </div>
+        </div>
+      `);
+
+      const $table = $(buildGroupTableHtml(headerCells, 'split-view-table'));
+
+      section.rows.forEach($row => {
+        $table.find('tbody').append($row);
+      });
+
+      $section.append($table);
+      $tablesContainer.append($section);
+    });
+  }
+
   // Pré-charger les utilisateurs une seule fois au démarrage
   fetch('?users_list')
     .then(r=>r.json())
@@ -110,53 +273,39 @@ $(function(){
     el.style.height = 'auto';
     el.style.height = el.scrollHeight + 'px';
   };
-  /* ce  bloc pour la logique de voir plus/moins  */
-  const CELL_PREVIEW_LIMIT = 128; /*nombre de caractères affichés avant d'afficher voir plus*/
-  /* mesurer la hauteur d'un texterea en fonction de son contenue pour pouvoir limiter la hauteur du texterea en mode preview */
-  window.measureTextareaHeight = function(textarea, value) {
+
+  const CELL_COLLAPSED_LINES = 4;
+
+  window.getCollapsedTextareaHeight = function(textarea) {
     const computed = window.getComputedStyle(textarea);
-    const mirror = document.createElement('div');
+    let lineHeight = parseFloat(computed.lineHeight);
 
-    mirror.style.position = 'absolute';
-    mirror.style.visibility = 'hidden';
-    mirror.style.pointerEvents = 'none';
-    mirror.style.zIndex = '-1';
-    mirror.style.boxSizing = 'border-box';
-    mirror.style.whiteSpace = 'pre-wrap';
-    mirror.style.overflowWrap = 'anywhere';
-    mirror.style.wordBreak = computed.wordBreak;
-    mirror.style.width = `${textarea.clientWidth || textarea.offsetWidth}px`;
-    mirror.style.padding = computed.padding;
-    mirror.style.border = computed.border;
-    mirror.style.fontFamily = computed.fontFamily;
-    mirror.style.fontSize = computed.fontSize;
-    mirror.style.fontWeight = computed.fontWeight;
-    mirror.style.fontStyle = computed.fontStyle;
-    mirror.style.letterSpacing = computed.letterSpacing;
-    mirror.style.lineHeight = computed.lineHeight;
-    mirror.textContent = value || ' ';
+    if (Number.isNaN(lineHeight)) {
+      lineHeight = parseFloat(computed.fontSize) * 1.4;
+    }
 
-    document.body.appendChild(mirror);
-    const height = mirror.scrollHeight;
-    mirror.remove();
+    const paddingTop = parseFloat(computed.paddingTop) || 0;
+    const paddingBottom = parseFloat(computed.paddingBottom) || 0;
+    const borderTop = parseFloat(computed.borderTopWidth) || 0;
+    const borderBottom = parseFloat(computed.borderBottomWidth) || 0;
 
-    return height;
+    return Math.ceil((lineHeight * CELL_COLLAPSED_LINES) + paddingTop + paddingBottom + borderTop + borderBottom);
   };
-  /*decider*/  
+
   window.updateExpandableTextarea = function(textarea) {
     const $wrapper = $(textarea).closest('.cell-expandable');
     const $toggle = $wrapper.find('.cell-expandable-toggle');
-    const value = textarea.value || '';
-    const hasOverflow = value.length > CELL_PREVIEW_LIMIT;
     const expanded = $wrapper.attr('data-expanded') === '1';
 
+    textarea.style.height = 'auto';
+    const fullHeight = textarea.scrollHeight;
+    const collapsedHeight = getCollapsedTextareaHeight(textarea);
+    const hasOverflow = fullHeight > collapsedHeight + 1;
+
     if (expanded || !hasOverflow) {
-      autoResizeTextarea(textarea);
+      textarea.style.height = `${fullHeight}px`;
     } else {
-      const previewValue = value.slice(0, CELL_PREVIEW_LIMIT);
-      const previewHeight = measureTextareaHeight(textarea, previewValue);
-      textarea.style.height = 'auto';
-      textarea.style.height = `${Math.min(textarea.scrollHeight, previewHeight)}px`;
+      textarea.style.height = `${collapsedHeight}px`;
       textarea.scrollTop = 0;
     }
 
@@ -171,7 +320,8 @@ $(function(){
     if (isNumber) {
       validateNumberInput(textarea);
     }
-
+    const $wrapper = $(textarea).closest('.cell-expandable');
+    $wrapper.attr('data-expanded', '1');
     saveCellValue(textarea);
     updateExpandableTextarea(textarea);
   };
@@ -181,16 +331,12 @@ $(function(){
     event.stopPropagation();
 
     const $wrapper = $(toggle).closest('.cell-expandable');
-    const $textarea = $wrapper.find('textarea');
+    const textarea = $wrapper.find('textarea')[0];
     const expanded = $wrapper.attr('data-expanded') === '1';
 
     $wrapper.attr('data-expanded', expanded ? '0' : '1');
-    updateExpandableTextarea($textarea[0]);
-    $textarea.trigger('focus');
+    updateExpandableTextarea(textarea);
   };
-/* */
-
-
 
   window.openUserSelector = function(cell) {
     const $cell = $(cell);
@@ -1222,7 +1368,7 @@ $(function(){
   }
   
   function initTaskSortable(){
-    $('.group-body tbody').sortable({
+    $('.group-body .group-base-table tbody').sortable({
       cursor:'pointer',
       update(){
         const order = $(this).children().map((_,tr)=>tr.dataset.id).get();
@@ -1441,15 +1587,10 @@ $(function(){
                       </div>
                     </div>
                     <div class="group-body" style="padding:10px;">
-                      <button class="add-row-btn" style="padding:4px 8px; margin-bottom: 8px;">+ Ajouter ${g.task_column_label || 'tâche'}</button>
-                      <table style="width:100%;border-collapse:collapse;margin-bottom:8px;">
-                        <thead>
-                          <tr style="background:#fafafa;">
-                            ${ths}
-                          </tr>
-                        </thead>
-                        <tbody></tbody>
-                      </table>
+                      <div class="group-body-toolbar">
+                        <button class="add-row-btn" style="padding:4px 8px;">+ Ajouter ${g.task_column_label || 'tâche'}</button>
+                      </div>
+                      <div class="group-tables-container"></div>
                     </div>
                   </div>
                 `);
@@ -1511,9 +1652,10 @@ $(function(){
                         // Les cellules sont déjà incluses dans la réponse du nouvel endpoint
                         const cells = t.cells || {};
                         let cellPromises = [];
+                        const rowCellValues = {};
                         cols.forEach(c=>{
                           const cellValue = cells[c.id] || '';
-                          
+                          rowCellValues[c.id] = String(cellValue || '');
                           if(c.type === 'select') {
                               const promise = (dataCache.columnOptions[c.id]
                                 ? Promise.resolve(dataCache.columnOptions[c.id])
@@ -1550,7 +1692,6 @@ $(function(){
                                       data-column="${c.id}"
                                       rows="1"
                                       inputmode="numeric"
-                                      style="border:none;background:transparent;width:100%;padding:2px;resize:none;overflow:hidden;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-all;box-sizing:border-box;line-height:1.4;"
                                       oninput="handleExpandableTextareaInput(this, true)"
                                       onkeydown="if(event.key==='Enter'){event.preventDefault();saveCellValue(this)}"
                                       onblur="saveCellValue(this)">${value}</textarea>
@@ -1691,7 +1832,6 @@ $(function(){
                                     data-task="${t.id}"
                                     data-column="${c.id}"
                                     rows="1"
-                                    style="border:none;background:transparent;width:100%;padding:2px;resize:none;overflow:hidden;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;box-sizing:border-box;line-height:1.4;"
                                     oninput="handleExpandableTextareaInput(this, false)"
                                     onblur="saveCellValue(this)">${value}</textarea>
                                   <span class="cell-expandable-toggle" onclick="toggleCellPreview(this, event)" style="display:none;"></span>
@@ -1707,7 +1847,7 @@ $(function(){
                           });
                           tds += `<td style="border:1px solid #ddd;padding:4px;"></td>`;
                           const $taskRow = $(`<tr class="task-row" data-id="${t.id}" data-parent-id="${t.parent_task_id || ''}" style="cursor:pointer;">${tds}</tr>`);
-                          
+                          $taskRow.data('cellValues', rowCellValues);
                           $taskRow.find('td:nth-child(1)').click(function(e) {
                             if ($(e.target).is('button')) return;
                             
@@ -1721,23 +1861,20 @@ $(function(){
                         });
                       });
                     });
-                    
                     Promise.all(taskPromises).then((taskRows) => {
-                      taskRows.forEach($row => {
-                        $grp.find('tbody').append($row);
-                      });
-                        $grp.find('textarea.cell-textarea, textarea.cell-number-textarea').each(function() {
-                          updateExpandableTextarea(this);
-                     });
+                      renderGroupTables($grp, g, cols, ths, taskRows);
 
-                      
-                      $grp.find('select.cell-select').each(function(){
+                      $grp.find('textarea.cell-textarea, textarea.cell-number-textarea').each(function() {
+                        updateExpandableTextarea(this);
+                      });
+
+                      $grp.find('select.cell-select').each(function() {
                         applySelectColor($(this));
                       });
-                      
+
                       initTaskSortable();
                       initColumnSortable();
-                      updateCollapsedRows(); // Appliquer l'état collapse après le rendu
+                      updateCollapsedRows();
                     });
                   });
               });
@@ -1758,6 +1895,23 @@ $(function(){
   }
 
   function attachEventHandlers(wid) {
+    $('#group-list').off('change','.group-split-select').on('change','.group-split-select',function(){
+      const gid = $(this).data('gid');
+      const columnId = $(this).val();
+
+      if (columnId) {
+        groupSplitState.set(gid, columnId);
+      } else {
+        groupSplitState.delete(gid);
+      }
+
+      loadGroups(wid);
+    })
+    .off('click','.group-split-reset').on('click','.group-split-reset',function(){
+      const gid = $(this).data('gid');
+      groupSplitState.delete(gid);
+      loadGroups(wid);
+    });
     $('#group-list').off('click','.add-column-btn').on('click','.add-column-btn',function(e){
       e.stopPropagation();
       const gid = $(this).data('gid');
