@@ -1730,7 +1730,6 @@ th[title="Glisser pour réorganiser"]:hover {
   vertical-align: top;
 }
 
-
 #group-list .group-body table {
   width: 100%;
   table-layout: fixed;
@@ -1766,6 +1765,10 @@ th[title="Glisser pour réorganiser"]:hover {
   overflow-wrap: anywhere;
   word-break: break-word;
   box-sizing: border-box;
+  line-height: 1.4;
+  border: none;
+  background: transparent;
+  padding: 2px;
 }
 
 #group-list .cell-number-textarea {
