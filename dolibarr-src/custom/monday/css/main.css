@@ -1730,7 +1730,6 @@ th[title="Glisser pour réorganiser"]:hover {
   vertical-align: top;
 }
 
-
 #group-list .group-body table {
   width: 100%;
   table-layout: fixed;
@@ -1782,8 +1781,93 @@ th[title="Glisser pour réorganiser"]:hover {
   word-break: break-all;
   box-sizing: border-box;
   line-height: 1.4;
-  text-align: left;
+  /* text-align: left; */
   border: none;
   background: transparent;
   padding: 2px;
+}
+#group-list .group-body-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 48px;
+}
+
+#group-list .group-split-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+#group-list .group-split-label {
+  font-weight: 600;
+  color: #5b5248;
+}
+
+#group-list .group-split-select {
+  height: 32px;   
+  border: 1px dashed #cfc3ab;
+  background: #fffdf7;
+  color: #4c4338;
+  border-radius: 4px;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+#group-list .group-split-reset {
+  border: 1px solid #d9d0bf;
+  background: #fff;
+  color: #4c4338;
+  border-radius: 999px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+#group-list .group-tables-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+#group-list .group-split-section {
+  border: 1px solid #e8decb;
+  border-radius: 16px;
+  background: #fffdf7;
+  padding: 12px 12px 0;
+}
+
+#group-list .group-split-section-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 4px 12px;
+}
+
+#group-list .group-split-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  flex: 0 0 14px;
+}
+
+#group-list .group-split-section-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #453c32;
+}
+
+#group-list .group-split-section {
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  border-radius: 0;
+}
+
+
+#group-list .split-view-table {
+  margin-bottom: 0 !important;
 }
