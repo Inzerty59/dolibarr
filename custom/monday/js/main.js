@@ -11,7 +11,170 @@ $(function(){
     users: null,
     columnOptions: {}
   };
-  
+    const groupSplitState = new Map();
+
+  function getSplitableColumns(cols) {
+    return cols.filter(c => c.type === 'select');
+  }
+
+  function escapeSplitHtml(value) {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function buildGroupTableHtml(headerCells, extraClass = '') {
+    return `
+      <table class="planity-group-table ${extraClass}" style="width:100%;border-collapse:collapse;margin-bottom:8px;">
+        <thead>
+          <tr style="background:#fafafa;">
+            ${headerCells}
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    `;
+  }
+
+  function buildSplitToolbarHtml(g, cols) {
+    const splitableColumns = getSplitableColumns(cols);
+
+    if (!splitableColumns.length) {
+      return '';
+    }
+
+    const activeSplitId = String(groupSplitState.get(g.id) || '__base__');
+    const optionsHtml = [
+      `<option value="__base__" ${activeSplitId === '__base__' ? 'selected' : ''}>Vue initiale</option>`,
+      ...splitableColumns.map(c => `
+        <option value="${c.id}" ${String(c.id) === activeSplitId ? 'selected' : ''}>
+          ${escapeSplitHtml(c.label)}
+        </option>
+      `)
+    ].join('');
+
+
+    return `
+      <div class="group-split-toolbar">
+        <span class="group-split-label">Trier par :</span>
+        <select class="group-split-select" data-gid="${g.id}">
+          ${optionsHtml}
+        </select>
+      </div>
+    `;
+  }
+
+  function buildSplitSections(taskRows, splitColumnId, splitOptions) {
+    const sections = splitOptions.map(opt => ({
+      key: String(opt.id),
+      label: opt.label,
+      color: opt.color || '#c8c8c8',
+      rows: []
+    }));
+
+    const sectionsByKey = new Map(sections.map(section => [section.key, section]));
+
+    const emptySection = {
+      key: '__empty__',
+      label: 'Sans valeur',
+      color: '#c8c8c8',
+      rows: []
+    };
+
+    taskRows.forEach($row => {
+      const cellValues = $row.data('cellValues') || {};
+      const key = String(cellValues[splitColumnId] || '');
+
+      if (sectionsByKey.has(key)) {
+        sectionsByKey.get(key).rows.push($row);
+      } else {
+        emptySection.rows.push($row);
+      }
+    });
+
+    if (emptySection.rows.length) {
+      sections.push(emptySection);
+    }
+
+    return sections;
+  }
+
+  function renderGroupTables($grp, g, cols, headerCells, taskRows) {
+    const $toolbarHost = $grp.find('.group-body-toolbar');
+    const $tablesContainer = $grp.find('.group-tables-container');
+    const splitableColumns = getSplitableColumns(cols);
+    const activeSplitId = String(groupSplitState.get(g.id) || '__base__');
+
+    $toolbarHost.find('.group-split-toolbar').remove();
+
+    if (splitableColumns.length) {
+      $toolbarHost.append(buildSplitToolbarHtml(g, cols));
+    }
+
+    $tablesContainer.empty();
+
+    if (activeSplitId === '__base__') {
+      const $table = $(buildGroupTableHtml(headerCells, 'group-base-table'));
+      taskRows.forEach($row => {
+        $table.find('tbody').append($row);
+      });
+      $tablesContainer.append($table);
+      return;
+    }
+
+    const splitColumn = splitableColumns.find(c => String(c.id) === String(activeSplitId));
+    if (!splitColumn) {
+      groupSplitState.delete(g.id);
+
+      const $table = $(buildGroupTableHtml(headerCells, 'group-base-table'));
+      taskRows.forEach($row => {
+        $table.find('tbody').append($row);
+      });
+      $tablesContainer.append($table);
+      return;
+    }
+
+    const splitOptions = dataCache.columnOptions[splitColumn.id] || [];
+
+    if (!splitOptions.length) {
+      const $table = $(buildGroupTableHtml(headerCells, 'group-base-table'));
+      taskRows.forEach($row => {
+        $table.find('tbody').append($row);
+      });
+      $tablesContainer.append($table);
+      return;
+    }
+
+    const splitSections = buildSplitSections(taskRows, splitColumn.id, splitOptions);
+    const taskLabel = (g.task_column_label || 'élément').toLowerCase();
+
+    splitSections.forEach(section => {
+      const countLabel = `${section.rows.length} ${taskLabel}${section.rows.length > 1 ? 's' : ''}`;
+
+      const $section = $(`
+        <div class="group-split-section">
+          <div class="group-split-section-header">
+            <span class="group-split-dot" style="background:${section.color};"></span>
+            <span class="group-split-section-title">${escapeSplitHtml(section.label)}</span>
+            <span class="group-split-section-count">${countLabel}</span>
+          </div>
+        </div>
+      `);
+
+      const $table = $(buildGroupTableHtml(headerCells, 'split-view-table'));
+
+      section.rows.forEach($row => {
+        $table.find('tbody').append($row);
+      });
+
+      $section.append($table);
+      $tablesContainer.append($section);
+    });
+  }
+
   // Pré-charger les utilisateurs une seule fois au démarrage
   fetch('?users_list')
     .then(r=>r.json())
@@ -78,24 +241,64 @@ $(function(){
 
   let currentTaskId = null;
   let currentTaskColumnLabel = 'tâche';
+  function getActiveWorkspaceId() {
+    const $activeWorkspace = $('.workspace-item.active');
 
-  window.saveCellValue = function(input) {
-    const taskId = $(input).data('task');
-    const columnId = $(input).data('column');
-    const value = $(input).val();
-    
-    if($(input).is('select')) {
-      applySelectColor($(input));
+    if ($activeWorkspace.length > 0) {
+      return $activeWorkspace.data('id');
     }
-    
+
+    const $fallbackWorkspace = $('.workspace-item').filter(function() {
+      const $this = $(this);
+      return $this.css('background-color') === 'rgb(0, 124, 186)' ||
+             $this.css('font-weight') === 'bold' ||
+             $this.css('font-weight') === '700';
+    }).first();
+
+    return $fallbackWorkspace.length ? $fallbackWorkspace.data('id') : null;
+  }
+  window.saveCellValue = function(input) {
+    const $input = $(input);
+    const taskId = $input.data('task');
+    const columnId = String($input.data('column'));
+    const value = $input.val();
+
+    if ($input.is('select')) {
+      applySelectColor($input);
+    }
+
+    const $group = $input.closest('.group');
+    const groupId = $group.data('id');
+    const activeSplitId = String(groupSplitState.get(groupId) || '');
+
     const fd = new FormData();
     fd.append('save_cell_task', taskId);
     fd.append('save_cell_column', columnId);
     fd.append('save_cell_value', value);
     fd.append('token', token);
-    
-    fetch('', {method: 'POST', body: fd});
+
+    fetch('', { method: 'POST', body: fd })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        return response.text();
+      })
+      .then(() => {
+        if (!$input.is('select')) return;
+        if (!activeSplitId) return;
+        if (activeSplitId !== columnId) return;
+
+        const wsId = getActiveWorkspaceId();
+        if (wsId) {
+          loadGroups(wsId);
+        }
+      })
+      .catch(error => {
+        console.error('Erreur saveCellValue:', error);
+      });
   };
+
 
   window.validateNumberInput = function(input) {
     const value = input.value;
@@ -104,6 +307,75 @@ $(function(){
     if (!allowedPattern.test(value)) {
       input.value = value.replace(/[^0-9€$.,\s-]/g, '');
     }
+  };
+  /*le comportement de textera : s’agrandit en hauteur selon son contenu */
+  window.autoResizeTextarea = function(el) {
+    el.style.height = 'auto';
+    el.style.height = el.scrollHeight + 'px';
+  };
+
+  const CELL_COLLAPSED_LINES = 4;
+
+  window.getCollapsedTextareaHeight = function(textarea) {
+    const computed = window.getComputedStyle(textarea);
+    let lineHeight = parseFloat(computed.lineHeight);
+
+    if (Number.isNaN(lineHeight)) {
+      lineHeight = parseFloat(computed.fontSize) * 1.4;
+    }
+
+    const paddingTop = parseFloat(computed.paddingTop) || 0;
+    const paddingBottom = parseFloat(computed.paddingBottom) || 0;
+    const borderTop = parseFloat(computed.borderTopWidth) || 0;
+    const borderBottom = parseFloat(computed.borderBottomWidth) || 0;
+
+    return Math.ceil((lineHeight * CELL_COLLAPSED_LINES) + paddingTop + paddingBottom + borderTop + borderBottom);
+  };
+
+  window.updateExpandableTextarea = function(textarea) {
+    const $wrapper = $(textarea).closest('.cell-expandable');
+    const $toggle = $wrapper.find('.cell-expandable-toggle');
+    const expanded = $wrapper.attr('data-expanded') === '1';
+
+    textarea.style.height = 'auto';
+    const fullHeight = textarea.scrollHeight;
+    const collapsedHeight = getCollapsedTextareaHeight(textarea);
+    const hasOverflow = fullHeight > collapsedHeight + 1;
+
+    if (expanded || !hasOverflow) {
+      textarea.style.height = `${fullHeight}px`;
+    } else {
+      textarea.style.height = `${collapsedHeight}px`;
+      textarea.scrollTop = 0;
+    }
+
+    if (hasOverflow) {
+      $toggle.text(expanded ? 'voir moins' : 'voir plus').show();
+    } else {
+      $toggle.hide();
+    }
+  };
+
+  window.handleExpandableTextareaInput = function(textarea, isNumber) {
+    if (isNumber) {
+      validateNumberInput(textarea);
+    }
+    const $wrapper = $(textarea).closest('.cell-expandable');
+    $wrapper.attr('data-expanded', '1');
+    saveCellValue(textarea);
+    updateExpandableTextarea(textarea);
+  };
+
+  window.toggleCellPreview = function(toggle, event) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const $wrapper = $(toggle).closest('.cell-expandable');
+    const textarea = $wrapper.find('textarea')[0];
+    const expanded = $wrapper.attr('data-expanded') === '1';
+
+    $wrapper.attr('data-expanded', expanded ? '0' : '1');
+    updateExpandableTextarea(textarea);
   };
 
   window.openUserSelector = function(cell) {
@@ -1136,7 +1408,7 @@ $(function(){
   }
   
   function initTaskSortable(){
-    $('.group-body tbody').sortable({
+    $('.group-body .group-base-table tbody').sortable({
       cursor:'pointer',
       update(){
         const order = $(this).children().map((_,tr)=>tr.dataset.id).get();
@@ -1355,15 +1627,10 @@ $(function(){
                       </div>
                     </div>
                     <div class="group-body" style="padding:10px;">
-                      <table style="width:100%;border-collapse:collapse;margin-bottom:8px;">
-                        <thead>
-                          <tr style="background:#fafafa;">
-                            ${ths}
-                          </tr>
-                        </thead>
-                        <tbody></tbody>
-                      </table>
-                      <button class="add-row-btn" style="padding:4px 8px;">+ Ajouter ${g.task_column_label || 'tâche'}</button>
+                      <div class="group-body-toolbar">
+                        <button class="add-row-btn" style="padding:4px 8px;">+ Ajouter ${g.task_column_label || 'tâche'}</button>
+                      </div>
+                      <div class="group-tables-container"></div>
                     </div>
                   </div>
                 `);
@@ -1411,7 +1678,7 @@ $(function(){
                         const checkboxHtml = t.level_depth > 0 ? `<input type="checkbox" class="task-completion-checkbox" data-task-id="${t.id}" ${isCompleted} style="cursor:pointer;width:16px;height:16px;" onchange="window.toggleTaskCompletion(${t.id}, this.checked)">` : '';
                         
                         let tds = `
-                          <td style="border:1px solid #ddd;${indentStyle}" class="task-cell" data-level="${t.level_depth || 0}">
+                          <td style="border:1px solid #ddd;${indentStyle}" class="task-cell task-name-cell" data-level="${t.level_depth || 0}">
                             <div style="display: flex; align-items: center; gap: 5px;">
                               ${collapseBtn}
                               <span style="color: #999; font-family: monospace;">${subtaskIndicator}</span>
@@ -1425,9 +1692,10 @@ $(function(){
                         // Les cellules sont déjà incluses dans la réponse du nouvel endpoint
                         const cells = t.cells || {};
                         let cellPromises = [];
+                        const rowCellValues = {};
                         cols.forEach(c=>{
                           const cellValue = cells[c.id] || '';
-                          
+                          rowCellValues[c.id] = String(cellValue || '');
                           if(c.type === 'select') {
                               const promise = (dataCache.columnOptions[c.id]
                                 ? Promise.resolve(dataCache.columnOptions[c.id])
@@ -1452,16 +1720,24 @@ $(function(){
                                 });
                               cellPromises.push(promise);
                             } else if(c.type === 'number') {
-                              const inputHtml = `<input type="text" class="cell-input cell-number" 
-                                data-task="${t.id}" 
-                                data-column="${c.id}" 
-                                value="${cellValue}" 
-                                style="border:none;background:transparent;width:100%;padding:2px;text-align:right;"
-                                pattern="[0-9€$.,\\s-]*"
-                                onblur="saveCellValue(this)"
-                                onkeydown="if(event.key==='Enter') saveCellValue(this)"
-                                oninput="validateNumberInput(this)">`;
-                              cellPromises.push(Promise.resolve(inputHtml));
+                                const value = String(cellValue || '')
+                                  .replace(/&/g, '&amp;')
+                                  .replace(/</g, '&lt;')
+                                  .replace(/>/g, '&gt;');
+
+                                const inputHtml = `
+                                  <div class="cell-expandable" data-expanded="0">
+                                    <textarea class="cell-input cell-number cell-number-textarea"
+                                      data-task="${t.id}"
+                                      data-column="${c.id}"
+                                      rows="1"
+                                      inputmode="numeric"
+                                      oninput="handleExpandableTextareaInput(this, true)"
+                                      onkeydown="if(event.key==='Enter'){event.preventDefault();saveCellValue(this)}"
+                                      onblur="saveCellValue(this)">${value}</textarea>
+                                    <span class="cell-expandable-toggle" onclick="toggleCellPreview(this, event)" style="display:none;"></span>
+                                  </div>`;
+                                cellPromises.push(Promise.resolve(inputHtml));
                             } else if(c.type === 'tags') {
                               const promise = (dataCache.columnOptions[c.id]
                                 ? Promise.resolve(dataCache.columnOptions[c.id])
@@ -1584,16 +1860,25 @@ $(function(){
                                                         onblur="saveCellValue(this)"
                                                         onchange="saveCellValue(this)">`;
                               cellPromises.push(Promise.resolve(inputHtml));
-                            } else {
-                              const inputHtml = `<input type="text" class="cell-input" 
-                                                        data-task="${t.id}" 
-                                                        data-column="${c.id}" 
-                                                        value="${cellValue}" 
-                                                        style="border:none;background:transparent;width:100%;padding:2px;"
-                                                        onblur="saveCellValue(this)"
-                                                        onkeydown="if(event.key==='Enter') saveCellValue(this)">`;
+                            }else {
+                              const value = String(cellValue || '')
+                                .replace(/&/g, '&amp;')
+                                .replace(/</g, '&lt;')
+                                .replace(/>/g, '&gt;');
+
+                              const inputHtml = `
+                                <div class="cell-expandable" data-expanded="0">
+                                  <textarea class="cell-input cell-textarea"
+                                    data-task="${t.id}"
+                                    data-column="${c.id}"
+                                    rows="1"
+                                    oninput="handleExpandableTextareaInput(this, false)"
+                                    onblur="saveCellValue(this)">${value}</textarea>
+                                  <span class="cell-expandable-toggle" onclick="toggleCellPreview(this, event)" style="display:none;"></span>
+                                </div>`;
                               cellPromises.push(Promise.resolve(inputHtml));
                             }
+
                           });
                         
                         Promise.all(cellPromises).then(cellsHtml=>{
@@ -1602,7 +1887,7 @@ $(function(){
                           });
                           tds += `<td style="border:1px solid #ddd;padding:4px;"></td>`;
                           const $taskRow = $(`<tr class="task-row" data-id="${t.id}" data-parent-id="${t.parent_task_id || ''}" style="cursor:pointer;">${tds}</tr>`);
-                          
+                          $taskRow.data('cellValues', rowCellValues);
                           $taskRow.find('td:nth-child(1)').click(function(e) {
                             if ($(e.target).is('button')) return;
                             
@@ -1616,19 +1901,20 @@ $(function(){
                         });
                       });
                     });
-                    
                     Promise.all(taskPromises).then((taskRows) => {
-                      taskRows.forEach($row => {
-                        $grp.find('tbody').append($row);
+                      renderGroupTables($grp, g, cols, ths, taskRows);
+
+                      $grp.find('textarea.cell-textarea, textarea.cell-number-textarea').each(function() {
+                        updateExpandableTextarea(this);
                       });
-                      
-                      $grp.find('select.cell-select').each(function(){
+
+                      $grp.find('select.cell-select').each(function() {
                         applySelectColor($(this));
                       });
-                      
+
                       initTaskSortable();
                       initColumnSortable();
-                      updateCollapsedRows(); // Appliquer l'état collapse après le rendu
+                      updateCollapsedRows();
                     });
                   });
               });
@@ -1649,6 +1935,14 @@ $(function(){
   }
 
   function attachEventHandlers(wid) {
+    $('#group-list').off('change','.group-split-select').on('change','.group-split-select',function(){
+      const gid = $(this).data('gid');
+      const columnId = String($(this).val() || '__base__');
+
+      groupSplitState.set(gid, columnId);
+      loadGroups(wid);
+    })
+
     $('#group-list').off('click','.add-column-btn').on('click','.add-column-btn',function(e){
       e.stopPropagation();
       const gid = $(this).data('gid');
@@ -1969,16 +2263,16 @@ $(function(){
       
       switch(columnType) {
         case 'text':
-          valueA = $cellA.find('input').val() || $cellA.text() || '';
-          valueB = $cellB.find('input').val() || $cellB.text() || '';
+          valueA = $cellA.find('input,  textarea').val() || $cellA.text() || '';
+          valueB = $cellB.find('input,  textarea').val() || $cellB.text() || '';
           valueA = valueA.toLowerCase();
           valueB = valueB.toLowerCase();
           break;
           
         case 'number':
-          valueA = parseFloat($cellA.find('input').val() || '0') || 0;
-          valueB = parseFloat($cellB.find('input').val() || '0') || 0;
-          break;
+            valueA = parseFloat(($cellA.find('input, textarea').val() || '0').replace(/\s+/g, '').replace(',', '.')) || 0;
+            valueB = parseFloat(($cellB.find('input, textarea').val() || '0').replace(/\s+/g, '').replace(',', '.')) || 0;
+            break;
           
         case 'date':
         case 'deadline':
