@@ -1768,6 +1768,9 @@ th[title="Glisser pour réorganiser"]:hover {
   overflow-wrap: anywhere;
   word-break: break-word;
   box-sizing: border-box;
+  border: none;
+  background: transparent;
+  padding: 2px;
 }
 
 #group-list .cell-number-textarea {
