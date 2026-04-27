@@ -1804,6 +1804,7 @@ th[title="Glisser pour réorganiser"]:hover {
 #group-list .group-split-label {
   font-weight: 600;
   color: #5b5248;
+  margin-left: 10px;
 }
 
 #group-list .group-split-select {
@@ -1817,19 +1818,11 @@ th[title="Glisser pour réorganiser"]:hover {
   font-weight: 500;
 }
 
-#group-list .group-split-reset {
-  border: 1px solid #d9d0bf;
-  background: #fff;
-  color: #4c4338;
-  border-radius: 999px;
-  padding: 8px 12px;
-  cursor: pointer;
-}
 
 #group-list .group-tables-container {
   display: flex;
   flex-direction: column;
-  gap: 32px;
+  gap:  feux  px;
 }
 
 #group-list .group-split-section {
@@ -1844,6 +1837,7 @@ th[title="Glisser pour réorganiser"]:hover {
   align-items: center;
   gap: 10px;
   padding: 2px 4px 12px;
+  
 }
 
 #group-list .group-split-dot {
