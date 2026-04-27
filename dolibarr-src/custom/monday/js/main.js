@@ -46,9 +46,9 @@ $(function(){
       return '';
     }
 
-    const activeSplitId = String(groupSplitState.get(g.id) || '');
+    const activeSplitId = String(groupSplitState.get(g.id) || '__base__');
     const optionsHtml = [
-      `<option value="">—</option>`,
+      `<option value="__base__" ${activeSplitId === '__base__' ? 'selected' : ''}>Vue initiale</option>`,
       ...splitableColumns.map(c => `
         <option value="${c.id}" ${String(c.id) === activeSplitId ? 'selected' : ''}>
           ${escapeSplitHtml(c.label)}
@@ -56,13 +56,13 @@ $(function(){
       `)
     ].join('');
 
+
     return `
       <div class="group-split-toolbar">
         <span class="group-split-label">Trier par :</span>
         <select class="group-split-select" data-gid="${g.id}">
           ${optionsHtml}
         </select>
-        ${activeSplitId ? `<button type="button" class="group-split-reset" data-gid="${g.id}">Vue initiale</button>` : ''}
       </div>
     `;
   }
@@ -106,7 +106,7 @@ $(function(){
     const $toolbarHost = $grp.find('.group-body-toolbar');
     const $tablesContainer = $grp.find('.group-tables-container');
     const splitableColumns = getSplitableColumns(cols);
-    const activeSplitId = groupSplitState.get(g.id);
+    const activeSplitId = String(groupSplitState.get(g.id) || '__base__');
 
     $toolbarHost.find('.group-split-toolbar').remove();
 
@@ -116,7 +116,7 @@ $(function(){
 
     $tablesContainer.empty();
 
-    if (!activeSplitId) {
+    if (activeSplitId === '__base__') {
       const $table = $(buildGroupTableHtml(headerCells, 'group-base-table'));
       taskRows.forEach($row => {
         $table.find('tbody').append($row);
@@ -241,24 +241,64 @@ $(function(){
 
   let currentTaskId = null;
   let currentTaskColumnLabel = 'tâche';
+  function getActiveWorkspaceId() {
+    const $activeWorkspace = $('.workspace-item.active');
 
-  window.saveCellValue = function(input) {
-    const taskId = $(input).data('task');
-    const columnId = $(input).data('column');
-    const value = $(input).val();
-    
-    if($(input).is('select')) {
-      applySelectColor($(input));
+    if ($activeWorkspace.length > 0) {
+      return $activeWorkspace.data('id');
     }
-    
+
+    const $fallbackWorkspace = $('.workspace-item').filter(function() {
+      const $this = $(this);
+      return $this.css('background-color') === 'rgb(0, 124, 186)' ||
+             $this.css('font-weight') === 'bold' ||
+             $this.css('font-weight') === '700';
+    }).first();
+
+    return $fallbackWorkspace.length ? $fallbackWorkspace.data('id') : null;
+  }
+  window.saveCellValue = function(input) {
+    const $input = $(input);
+    const taskId = $input.data('task');
+    const columnId = String($input.data('column'));
+    const value = $input.val();
+
+    if ($input.is('select')) {
+      applySelectColor($input);
+    }
+
+    const $group = $input.closest('.group');
+    const groupId = $group.data('id');
+    const activeSplitId = String(groupSplitState.get(groupId) || '');
+
     const fd = new FormData();
     fd.append('save_cell_task', taskId);
     fd.append('save_cell_column', columnId);
     fd.append('save_cell_value', value);
     fd.append('token', token);
-    
-    fetch('', {method: 'POST', body: fd});
+
+    fetch('', { method: 'POST', body: fd })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        return response.text();
+      })
+      .then(() => {
+        if (!$input.is('select')) return;
+        if (!activeSplitId) return;
+        if (activeSplitId !== columnId) return;
+
+        const wsId = getActiveWorkspaceId();
+        if (wsId) {
+          loadGroups(wsId);
+        }
+      })
+      .catch(error => {
+        console.error('Erreur saveCellValue:', error);
+      });
   };
+
 
   window.validateNumberInput = function(input) {
     const value = input.value;
@@ -1897,21 +1937,12 @@ $(function(){
   function attachEventHandlers(wid) {
     $('#group-list').off('change','.group-split-select').on('change','.group-split-select',function(){
       const gid = $(this).data('gid');
-      const columnId = $(this).val();
+      const columnId = String($(this).val() || '__base__');
 
-      if (columnId) {
-        groupSplitState.set(gid, columnId);
-      } else {
-        groupSplitState.delete(gid);
-      }
-
+      groupSplitState.set(gid, columnId);
       loadGroups(wid);
     })
-    .off('click','.group-split-reset').on('click','.group-split-reset',function(){
-      const gid = $(this).data('gid');
-      groupSplitState.delete(gid);
-      loadGroups(wid);
-    });
+
     $('#group-list').off('click','.add-column-btn').on('click','.add-column-btn',function(e){
       e.stopPropagation();
       const gid = $(this).data('gid');
