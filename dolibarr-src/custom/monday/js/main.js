@@ -1893,7 +1893,7 @@ $(function(){
                             
                             const taskName = $(this).text();
                             const groupName = $grp.find('.group-label').text();
-                            const taskColumnLabel = $grp.find('.task-column-label').text();
+                            const taskColumnLabel = $grp.find('.task-column-label').first().text();
                             openTaskDetail(t.id, taskName, groupName, taskColumnLabel);
                           });
                           
@@ -2112,7 +2112,7 @@ $(function(){
       })
       .off('click','.add-row-btn').on('click','.add-row-btn',function(){
         const gid=$(this).closest('.group').data('id');
-        const taskColumnLabel = $(this).closest('.group').find('.task-column-label').text().toLowerCase();
+        const taskColumnLabel = $(this).closest('.group').find('.task-column-label').first().text().toLowerCase();
         CustomPopup.prompt(`Nom de ${taskColumnLabel} :`, function(lbl) {
           if(!lbl) return;
           const fd=new FormData();
@@ -2335,7 +2335,7 @@ $(function(){
         
         const taskName = $(this).text();
         const groupName = $group.find('.group-label').text();
-        const taskColumnLabel = $group.find('.task-column-label').text();
+        const taskColumnLabel = $group.find('.task-column-label').first().text();
         openTaskDetail(taskId, taskName, groupName, taskColumnLabel);
       });
       
