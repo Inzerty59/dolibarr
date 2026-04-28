@@ -3,6 +3,24 @@ $(function(){
   const token = window.formtoken;
   const userId = window.userId;
   
+  function showPlanityMessage(message, type = 'ok') {
+  $('#planity-event-message').remove();
+
+  const $message = $(`
+    <div id="planity-event-message" class="planity-event-message ${type}">
+      ${message}
+    </div>
+  `);
+
+  $('#main-content').prepend($message);
+
+  setTimeout(() => {
+    $message.fadeOut(250, function() {
+      $(this).remove();
+    });
+  }, 3500);
+}
+
   // State pour gérer les tâches collapsées
   const taskCollapseState = new Set();
   
@@ -1635,7 +1653,11 @@ $(function(){
                     </div>
                     <div class="group-body" style="padding:10px;">
                       <div class="group-body-toolbar">
-                        <button class="add-row-btn" style="padding:4px 8px;">+ Ajouter ${g.task_column_label || 'tâche'}</button>
+                        <button class="duplicate-table-btn" data-gid="${g.id}" type="button">
+                          <span class="duplicate-table-icon">▦</span>
+                          Dupliquer ce tableau
+                        </button>
+                        <button class="add-row-btn" type="button">+ Ajouter ${g.task_column_label || 'tâche'}</button>
                       </div>
                       <div class="group-tables-container"></div>
                     </div>
@@ -2080,7 +2102,7 @@ $(function(){
     });
 
     $('#group-list')
-      .off('click','.rename-group').on('click','.rename-group',function(){
+     .off('click','.rename-group').on('click','.rename-group',function(){
         const $g=$(this).closest('.group');
         const gid=$g.data('id');
         const old=$g.find('.group-label').text();
@@ -2106,6 +2128,94 @@ $(function(){
           fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
         }, old+' (copie)', 'Dupliquer le groupe');
       })
+      /* */
+      .off('click', '.duplicate-table-btn').on('click', '.duplicate-table-btn', function() {
+        const $group = $(this).closest('.group');
+        const gid = $group.data('id');
+        const groupLabel = $group.find('.group-label').text().trim();
+        const activeWorkspaceId = String($('.workspace-item.active').data('id') || '');
+        let selectedWorkspaceId = '';
+
+        const choices = $('.workspace-item').map(function() {
+          const workspaceId = String($(this).data('id'));
+          const workspaceName = $(this).text().trim();
+
+          if (workspaceId === activeWorkspaceId) {
+            return '';
+          }
+
+          return `
+            <button class="duplicate-workspace-choice"
+                    data-workspace-id="${workspaceId}"
+                    type="button">
+              ${workspaceName}
+            </button>
+          `;
+        }).get().join('');
+
+        CustomPopup.show({
+          popupClass: 'duplicate-table-popup',
+          title: 'Dupliquer le tableau',
+          message: `
+            <strong>${groupLabel}</strong>
+            <div class="duplicate-workspace-list">
+              ${choices || '<span class="duplicate-workspace-empty">Aucun autre espace disponible</span>'}
+            </div>
+          `,
+          buttons: [
+            {
+              text: 'Annuler',
+              class: 'custom-popup-btn-secondary'
+            },
+            {
+              text: 'Dupliquer',
+              class: 'custom-popup-btn-primary',
+              callback: function() {
+                if (!selectedWorkspaceId) {
+                  $('.duplicate-workspace-list').addClass('needs-selection');
+                  return false;
+                }
+
+                const fd = new FormData();
+                fd.append('duplicate_group_id', gid);
+                fd.append('target_workspace_id', selectedWorkspaceId);
+                fd.append('token', token);
+
+                fetch('', { method: 'POST', body: fd })
+                  .then(r => {
+                    if (!r.ok) throw new Error('Erreur duplication');
+                    return r.text();
+                  })
+                  .then(() => {
+                    CustomPopup.hide();
+                    showPlanityMessage('La duplication du tableau a réussi.', 'ok');
+                  })
+                  .catch(() => {
+                    CustomPopup.hide();
+                    showPlanityMessage('Impossible de dupliquer ce tableau.', 'error');
+                  });
+
+                return false;
+              }
+            }
+          ]
+        });
+
+        $('.duplicate-table-popup .custom-popup-btn-primary').prop('disabled', true);
+
+        $('.custom-popup-overlay')
+          .off('click', '.duplicate-workspace-choice')
+          .on('click', '.duplicate-workspace-choice', function() {
+            selectedWorkspaceId = String($(this).data('workspace-id') || '');
+
+            $('.duplicate-workspace-choice').removeClass('is-selected');
+            $(this).addClass('is-selected');
+
+            $('.duplicate-workspace-list').removeClass('needs-selection');
+            $('.duplicate-table-popup .custom-popup-btn-primary').prop('disabled', false);
+          });
+      })
+
       .off('click','.delete-group').on('click','.delete-group',function(){
         const $g=$(this).closest('.group');
         const gid=$g.data('id');
@@ -2884,6 +2994,7 @@ $(function(){
         showInput: false,
         inputPlaceholder: '',
         inputValue: '',
+        popupClass: '',
         buttons: [
           {
             text: 'OK',
@@ -2911,12 +3022,12 @@ $(function(){
       
       const popupHtml = `
         <div class="custom-popup-overlay">
-          <div class="custom-popup">
+          <div class="custom-popup ${config.popupClass}">
             <div class="custom-popup-header ${headerClass}">
               <h3 class="custom-popup-title">${config.title}</h3>
             </div>
             <div class="custom-popup-content">
-              <p class="custom-popup-message">${config.message}</p>
+              <div class="custom-popup-message">${config.message}</div>
               ${inputHtml}
               <div class="custom-popup-buttons">
                 ${buttonsHtml}
