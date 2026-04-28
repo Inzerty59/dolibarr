@@ -2154,13 +2154,13 @@ $(function(){
         }).get().join('');
 
         CustomPopup.show({
-          popupClass: 'duplicate-table-popup',
-          title: 'Dupliquer le tableau',
-          message: `
-            <strong>${groupLabel}</strong>
-            <div class="duplicate-workspace-list">
-              ${choices || '<span class="duplicate-workspace-empty">Aucun autre espace disponible</span>'}
-            </div>
+            popupClass: 'duplicate-table-popup',
+            title: `<strong>Dupliquer le tableau : ${groupLabel}</strong>`,
+            message: `
+              <strong class="duplicate-popup-help">Sélectionnez l'espace de travail destination</strong>
+              <div class="duplicate-workspace-list">
+                ${choices || '<span class="duplicate-workspace-empty">Aucun autre espace disponible</span>'}
+              </div>
           `,
           buttons: [
             {

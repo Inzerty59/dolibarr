@@ -1035,7 +1035,7 @@ td[style*="background-color: rgb(255, 243, 205)"] {
 }
 
 .custom-popup-title {
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 500;
   margin: 0;
 }
@@ -1882,13 +1882,15 @@ th[title="Glisser pour réorganiser"]:hover {
   flex-direction: column;
   gap: 11px;
   margin-top: 16px;
+  margin-left: 16px;
+  padding-left: 4px;
   background: #fff;
 }
 
 .duplicate-workspace-choice {
   display: block;
   width: 100%;
-  padding: 2px 0;
+  padding: 2px 8px;
   border: 0;
   background: transparent;
   color: #222;
@@ -1968,4 +1970,10 @@ th[title="Glisser pour réorganiser"]:hover {
   background: #fdecec;
   border: 1px solid #f5b5b5;
   color: #9f2a2a;
+}
+.duplicate-popup-help {
+  display: block;
+  color: #444;
+  font-size: 14px;
+  margin-bottom: 14px;
 }
