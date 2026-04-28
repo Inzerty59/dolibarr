@@ -120,6 +120,18 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['add_task_group_id'], $_
     } else {
         $db->query("INSERT INTO llx_myworkspace_task (fk_group,label,position,datec,level_depth) VALUES ($gid,'$label',$p,'$datec',$level_depth)");
     }
+
+    $newTaskId = (int) $db->last_insert_id('llx_myworkspace_task');
+
+    if ($newTaskId > 0 && !empty($_POST['split_column_id']) && !empty($_POST['split_option_id'])) {
+        $splitColumnId = (int) $_POST['split_column_id'];
+        $splitOptionId = (int) $_POST['split_option_id'];
+
+
+        $db->query("INSERT INTO llx_myworkspace_cell (fk_task, fk_column, value)
+                    VALUES ($newTaskId, $splitColumnId, '$splitOptionId')
+                    ON DUPLICATE KEY UPDATE value = '$splitOptionId'");
+    }
     exit;
 }
 if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['rename_task_id'], $_POST['rename_task_label'])) {

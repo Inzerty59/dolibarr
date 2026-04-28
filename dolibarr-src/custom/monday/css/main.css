@@ -1730,6 +1730,9 @@ th[title="Glisser pour réorganiser"]:hover {
   vertical-align: top;
   box-sizing: border-box;
   overflow-wrap: anywhere;
+  max-width: 0;
+  word-break: break-word;
+  white-space: normal;
 }
 
 
@@ -1797,7 +1800,7 @@ th[title="Glisser pour réorganiser"]:hover {
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-  margin-bottom: 48px;
+  margin-bottom: 8px;
 }
 
 #group-list .group-split-toolbar {
@@ -1828,7 +1831,9 @@ th[title="Glisser pour réorganiser"]:hover {
 #group-list .group-tables-container {
   display: flex;
   flex-direction: column;
-  gap:  feux  px;
+  gap: 8px;
+  max-width: 100%;
+  overflow-x: auto;
 }
 
 #group-list .group-split-section {
@@ -1837,13 +1842,15 @@ th[title="Glisser pour réorganiser"]:hover {
   background: transparent;
   box-shadow: none;
   border-radius: 0;
+  
 }
 
 #group-list .group-split-section-header {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 2px 4px 12px;
+  gap: 8px;
+  padding: 2px 4px 8px;
+  margin-top: 24px;
   
 }
 
@@ -1859,5 +1866,3 @@ th[title="Glisser pour réorganiser"]:hover {
   font-weight: 700;
   color: #453c32;
 }
-
-

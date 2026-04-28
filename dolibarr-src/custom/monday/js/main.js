@@ -107,7 +107,7 @@ $(function(){
     const $tablesContainer = $grp.find('.group-tables-container');
     const splitableColumns = getSplitableColumns(cols);
     const activeSplitId = String(groupSplitState.get(g.id) || '__base__');
-
+    $grp.find('.group-body-toolbar > .add-row-btn').toggle(activeSplitId === '__base__');
     $toolbarHost.find('.group-split-toolbar').remove();
 
     if (splitableColumns.length) {
@@ -160,6 +160,13 @@ $(function(){
             <span class="group-split-dot" style="background:${section.color};"></span>
             <span class="group-split-section-title">${escapeSplitHtml(section.label)}</span>
             <span class="group-split-section-count">${countLabel}</span>
+            <button
+              class="add-row-btn"
+              data-split-column-id="${splitColumn.id}"
+              data-split-option-id="${section.key === '__empty__' ? '' : escapeSplitHtml(section.key)}"
+              type="button">
+              + Ajouter ${g.task_column_label || 'tâche'}
+            </button>
           </div>
         </div>
       `);
@@ -2111,7 +2118,10 @@ $(function(){
         });
       })
       .off('click','.add-row-btn').on('click','.add-row-btn',function(){
-        const gid=$(this).closest('.group').data('id');
+        const $button = $(this);
+        const gid = $button.closest('.group').data('id');
+        const splitColumnId = $button.data('split-column-id');
+        const splitOptionId = String($button.attr('data-split-option-id') || '');
         const taskColumnLabel = $(this).closest('.group').find('.task-column-label').first().text().toLowerCase();
         CustomPopup.prompt(`Nom de ${taskColumnLabel} :`, function(lbl) {
           if(!lbl) return;
@@ -2119,6 +2129,10 @@ $(function(){
           fd.append('add_task_group_id',gid);
           fd.append('task_label',lbl);
           fd.append('token',token);
+          if (splitColumnId && splitOptionId) {
+            fd.append('split_column_id', splitColumnId);
+            fd.append('split_option_id', splitOptionId);
+          }
           fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
         }, '', `Ajouter une ${taskColumnLabel}`);
       })
