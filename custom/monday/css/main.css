@@ -246,9 +246,13 @@
   overflow: hidden;
 }
 
+
 .main-content {
-  flex: 1;
+  flex: 1 1 0;
   overflow-y: auto;
+  overflow-x: hidden;
+  min-width: 0;
+  width: 0;
   transition: width 0.3s ease;
 }
 
@@ -1123,6 +1127,7 @@ td[style*="background-color: rgb(255, 243, 205)"] {
 .cell-select {
   transition: all 0.2s ease;
   min-width: 100px;
+  background-color: #00c875;
 }
 
 .cell-select:focus {
@@ -1725,15 +1730,29 @@ th[title="Glisser pour réorganiser"]:hover {
   color: #999;
 }
 
-#group-list .group-body table th,
-#group-list .group-body table td {
-  vertical-align: top;
+/**/ 
+#group-list,
+#group-list .group,
+#group-list .group-body {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
 
-#group-list .group-body table {
-  width: 100%;
+#group-list .planity-group-table {
+  width: max-content ;
+  min-width: 100%;
   table-layout: auto;
 }
+
+#group-list .planity-group-table th,
+#group-list .planity-group-table td {
+  min-width: 120px;
+  white-space: nowrap;
+  word-break: normal;
+  overflow-wrap: normal;
+}
+/**/
 
 #group-list .cell-expandable {
   width: 100%;
@@ -1765,6 +1784,9 @@ th[title="Glisser pour réorganiser"]:hover {
   overflow-wrap: anywhere;
   word-break: break-word;
   box-sizing: border-box;
+  border: none;
+  background: transparent;
+  padding: 2px;
 }
 
 #group-list .cell-number-textarea {
@@ -1791,7 +1813,7 @@ th[title="Glisser pour réorganiser"]:hover {
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-  margin-bottom: 48px;
+  margin-bottom: 8px;
 }
 
 #group-list .group-split-toolbar {
@@ -1800,11 +1822,10 @@ th[title="Glisser pour réorganiser"]:hover {
   gap: 8px;
   flex-wrap: wrap;
 }
-
 #group-list .group-split-label {
   font-weight: 600;
   color: #5b5248;
-  margin-left: 10px;
+  margin-left: 10px;  
 }
 
 #group-list .group-split-select {
@@ -1817,40 +1838,22 @@ th[title="Glisser pour réorganiser"]:hover {
   font-size: 13px;
   font-weight: 500;
 }
-
-
 #group-list .group-tables-container {
-  display: flex;
-  flex-direction: column;
-  gap:  feux  px;
+  display: block;
+  width: 100% ;
+  max-width: 100%;
+  min-width: 0 ;
+  overflow-x: visible ;
+  overflow-y: visible;
+}
+/* Vue initiale : un seul tableau, scroll normal */
+#group-list .group-tables-container:has(.group-base-table) {
+  overflow-x: auto;
 }
 
-#group-list .group-split-section {
-  border: 1px solid #e8decb;
-  border-radius: 16px;
-  background: #fffdf7;
-  padding: 12px 12px 0;
-}
-
-#group-list .group-split-section-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 2px 4px 12px;
-  
-}
-
-#group-list .group-split-dot {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  flex: 0 0 14px;
-}
-
-#group-list .group-split-section-title {
-  font-size: 14px;
-  font-weight: 700;
-  color: #453c32;
+/* Vue triée : pas de scroll global */
+#group-list .group-tables-container:has(.split-view-table) {
+  overflow-x: visible;
 }
 
 #group-list .group-split-section {
@@ -1859,41 +1862,150 @@ th[title="Glisser pour réorganiser"]:hover {
   background: transparent;
   box-shadow: none;
   border-radius: 0;
+  /**/
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: visible;
 }
-
-
-#group-list .split-view-table {
-  margin-bottom: 0 !important;
-}
-
-
-#group-list .task-name-wrap {
+#group-list .group-split-section-header {/*ici pour  les  points*/
   display: flex;
-  align-items: flex-start;
-  gap: 5px;
-  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 4px 8px;
+  margin-top: 24px;
+  
 }
 
-#group-list .task-name-wrap > :not(.task-label) {
-  flex: 0 0 auto;
+#group-list .group-split-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  flex: 0 0 14px;
+  margin-bottom: 2px;
+}
+#group-list .group-split-section-count ,
+#group-list .group-split-section-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #453c32;
 }
 
-#group-list .task-label {
-  display: inline-block;
-  flex: 0 1 auto;
-  min-width: 0;
-  max-width: 60ch;
-  white-space: normal;
-  overflow-wrap: break-word;
-  word-break: normal;
-  line-height: 1.35;
+/* Les tableaux peuvent dépasser pour déclencher le scroll */
+#group-list .group-base-table,
+#group-list .split-view-table {
+  width: max-content;
+  min-width: 100%;
 }
 
-#task-detail-panel #task-name-display {
-  display: inline-block;
-  max-width: 60ch;
-  white-space: normal;
-  overflow-wrap: break-word;
-  word-break: normal;
-  line-height: 1.35;
+/* */
+
+.duplicate-table-popup {
+  max-width: 410px;
 }
+
+.duplicate-table-popup .custom-popup-header {
+  background: #fff;
+  color: #1f2933;
+  border-bottom: 1px solid #eceff3;
+  padding: 18px 22px 10px;
+}
+
+.duplicate-workspace-list {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  margin-top: 16px;
+  background: #fff;
+}
+
+.duplicate-workspace-choice {
+  display: block;
+  width: 100%;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: #222;
+  font-size: 15px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.duplicate-workspace-choice:hover,
+.duplicate-workspace-choice.is-selected {
+  color: #0073ea;
+  font-weight: 600;
+}
+
+.duplicate-workspace-list.needs-selection .duplicate-workspace-choice {
+  color: #e2445c;
+}
+
+.duplicate-workspace-empty {
+  color: #777;
+  font-size: 14px;
+}
+
+.duplicate-table-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 6px 12px;
+  background: #fff;
+  border: 1px dashed #0073ea;
+  color: #0073ea;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.duplicate-table-icon {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.duplicate-table-btn:hover {
+  background: #e3f2fd;
+  border-style: solid;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 115, 234, 0.15);
+}
+
+.duplicate-table-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 1px 2px rgba(0, 115, 234, 0.1);
+}
+
+.custom-popup-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.planity-event-message {
+  margin: 0 0 12px 0;
+  padding: 10px 14px;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.planity-event-message.ok {
+  background: #e7f7ed;
+  border: 1px solid #b7e1c5;
+  color: #1f6f3f;
+}
+
+.planity-event-message.error {
+  background: #fdecec;
+  border: 1px solid #f5b5b5;
+  color: #9f2a2a;
+}
+
+
+
+
+

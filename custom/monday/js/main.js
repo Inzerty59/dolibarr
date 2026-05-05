@@ -3,6 +3,24 @@ $(function(){
   const token = window.formtoken;
   const userId = window.userId;
   
+  function showPlanityMessage(message, type = 'ok') {
+  $('#planity-event-message').remove();
+
+  const $message = $(`
+    <div id="planity-event-message" class="planity-event-message ${type}">
+      ${message}
+    </div>
+  `);
+
+  $('#main-content').prepend($message);
+
+  setTimeout(() => {
+    $message.fadeOut(250, function() {
+      $(this).remove();
+    });
+  }, 3500);
+}
+
   // State pour gérer les tâches collapsées
   const taskCollapseState = new Set();
   
@@ -28,7 +46,7 @@ $(function(){
 
   function buildGroupTableHtml(headerCells, extraClass = '') {
     return `
-      <table class="planity-group-table ${extraClass}" style="width:100%;border-collapse:collapse;margin-bottom:8px;">
+      <table class="planity-group-table ${extraClass}" style="border-collapse:collapse;margin-bottom:8px;">
         <thead>
           <tr style="background:#fafafa;">
             ${headerCells}
@@ -107,7 +125,7 @@ $(function(){
     const $tablesContainer = $grp.find('.group-tables-container');
     const splitableColumns = getSplitableColumns(cols);
     const activeSplitId = String(groupSplitState.get(g.id) || '__base__');
-
+    $grp.find('.group-body-toolbar > .add-row-btn').toggle(activeSplitId === '__base__');
     $toolbarHost.find('.group-split-toolbar').remove();
 
     if (splitableColumns.length) {
@@ -160,6 +178,13 @@ $(function(){
             <span class="group-split-dot" style="background:${section.color};"></span>
             <span class="group-split-section-title">${escapeSplitHtml(section.label)}</span>
             <span class="group-split-section-count">${countLabel}</span>
+            <button
+              class="add-row-btn"
+              data-split-column-id="${splitColumn.id}"
+              data-split-option-id="${section.key === '__empty__' ? '' : escapeSplitHtml(section.key)}"
+              type="button">
+              + Ajouter ${g.task_column_label || 'tâche'}
+            </button>
           </div>
         </div>
       `);
@@ -1628,7 +1653,11 @@ $(function(){
                     </div>
                     <div class="group-body" style="padding:10px;">
                       <div class="group-body-toolbar">
-                        <button class="add-row-btn" style="padding:4px 8px;">+ Ajouter ${g.task_column_label || 'tâche'}</button>
+                        <button class="duplicate-table-btn" data-gid="${g.id}" type="button">
+                          <span class="duplicate-table-icon">▦</span>
+                          Dupliquer ce tableau
+                        </button>
+                        <button class="add-row-btn" type="button">+ Ajouter ${g.task_column_label || 'tâche'}</button>
                       </div>
                       <div class="group-tables-container"></div>
                     </div>
@@ -1678,7 +1707,7 @@ $(function(){
                         const checkboxHtml = t.level_depth > 0 ? `<input type="checkbox" class="task-completion-checkbox" data-task-id="${t.id}" ${isCompleted} style="cursor:pointer;width:16px;height:16px;" onchange="window.toggleTaskCompletion(${t.id}, this.checked)">` : '';
                         
                         let tds = `
-                          <td style="border:1px solid #ddd;${indentStyle}" class="task-cell task-name-cell" data-level="${t.level_depth || 0}">
+                          <td style="border:1px solid #ddd;${indentStyle}" class="task-cell" data-level="${t.level_depth || 0}">
                             <div style="display: flex; align-items: center; gap: 5px;">
                               ${collapseBtn}
                               <span style="color: #999; font-family: monospace;">${subtaskIndicator}</span>
@@ -1893,7 +1922,7 @@ $(function(){
                             
                             const taskName = $(this).text();
                             const groupName = $grp.find('.group-label').text();
-                            const taskColumnLabel = $grp.find('.task-column-label').text();
+                            const taskColumnLabel = $grp.find('.task-column-label').first().text();
                             openTaskDetail(t.id, taskName, groupName, taskColumnLabel);
                           });
                           
@@ -2073,7 +2102,7 @@ $(function(){
     });
 
     $('#group-list')
-      .off('click','.rename-group').on('click','.rename-group',function(){
+     .off('click','.rename-group').on('click','.rename-group',function(){
         const $g=$(this).closest('.group');
         const gid=$g.data('id');
         const old=$g.find('.group-label').text();
@@ -2099,6 +2128,94 @@ $(function(){
           fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
         }, old+' (copie)', 'Dupliquer le groupe');
       })
+      /* */
+      .off('click', '.duplicate-table-btn').on('click', '.duplicate-table-btn', function() {
+        const $group = $(this).closest('.group');
+        const gid = $group.data('id');
+        const groupLabel = $group.find('.group-label').text().trim();
+        const activeWorkspaceId = String($('.workspace-item.active').data('id') || '');
+        let selectedWorkspaceId = '';
+
+        const choices = $('.workspace-item').map(function() {
+          const workspaceId = String($(this).data('id'));
+          const workspaceName = $(this).text().trim();
+
+          if (workspaceId === activeWorkspaceId) {
+            return '';
+          }
+
+          return `
+            <button class="duplicate-workspace-choice"
+                    data-workspace-id="${workspaceId}"
+                    type="button">
+              ${workspaceName}
+            </button>
+          `;
+        }).get().join('');
+
+        CustomPopup.show({
+            popupClass: 'duplicate-table-popup',
+            title: `<strong>Dupliquer le tableau : ${groupLabel}</strong>`,
+            message: `
+              <strong class="duplicate-popup-help">Sélectionnez l'espace de travail destination</strong>
+              <div class="duplicate-workspace-list">
+                ${choices || '<span class="duplicate-workspace-empty">Aucun autre espace disponible</span>'}
+              </div>
+          `,
+          buttons: [
+            {
+              text: 'Annuler',
+              class: 'custom-popup-btn-secondary'
+            },
+            {
+              text: 'Dupliquer',
+              class: 'custom-popup-btn-primary',
+              callback: function() {
+                if (!selectedWorkspaceId) {
+                  $('.duplicate-workspace-list').addClass('needs-selection');
+                  return false;
+                }
+
+                const fd = new FormData();
+                fd.append('duplicate_group_id', gid);
+                fd.append('target_workspace_id', selectedWorkspaceId);
+                fd.append('token', token);
+
+                fetch('', { method: 'POST', body: fd })
+                  .then(r => {
+                    if (!r.ok) throw new Error('Erreur duplication');
+                    return r.text();
+                  })
+                  .then(() => {
+                    CustomPopup.hide();
+                    showPlanityMessage('La duplication du tableau a réussi.', 'ok');
+                  })
+                  .catch(() => {
+                    CustomPopup.hide();
+                    showPlanityMessage('Impossible de dupliquer ce tableau.', 'error');
+                  });
+
+                return false;
+              }
+            }
+          ]
+        });
+
+        $('.duplicate-table-popup .custom-popup-btn-primary').prop('disabled', true);
+
+        $('.custom-popup-overlay')
+          .off('click', '.duplicate-workspace-choice')
+          .on('click', '.duplicate-workspace-choice', function() {
+            selectedWorkspaceId = String($(this).data('workspace-id') || '');
+
+            $('.duplicate-workspace-choice').removeClass('is-selected');
+            $(this).addClass('is-selected');
+
+            $('.duplicate-workspace-list').removeClass('needs-selection');
+            $('.duplicate-table-popup .custom-popup-btn-primary').prop('disabled', false);
+          });
+      })
+
       .off('click','.delete-group').on('click','.delete-group',function(){
         const $g=$(this).closest('.group');
         const gid=$g.data('id');
@@ -2111,14 +2228,21 @@ $(function(){
         });
       })
       .off('click','.add-row-btn').on('click','.add-row-btn',function(){
-        const gid=$(this).closest('.group').data('id');
-        const taskColumnLabel = $(this).closest('.group').find('.task-column-label').text().toLowerCase();
+        const $button = $(this);
+        const gid = $button.closest('.group').data('id');
+        const splitColumnId = $button.data('split-column-id');
+        const splitOptionId = String($button.attr('data-split-option-id') || '');
+        const taskColumnLabel = $(this).closest('.group').find('.task-column-label').first().text().toLowerCase();
         CustomPopup.prompt(`Nom de ${taskColumnLabel} :`, function(lbl) {
           if(!lbl) return;
           const fd=new FormData();
           fd.append('add_task_group_id',gid);
           fd.append('task_label',lbl);
           fd.append('token',token);
+          if (splitColumnId && splitOptionId) {
+            fd.append('split_column_id', splitColumnId);
+            fd.append('split_option_id', splitOptionId);
+          }
           fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
         }, '', `Ajouter une ${taskColumnLabel}`);
       })
@@ -2335,7 +2459,7 @@ $(function(){
         
         const taskName = $(this).text();
         const groupName = $group.find('.group-label').text();
-        const taskColumnLabel = $group.find('.task-column-label').text();
+        const taskColumnLabel = $group.find('.task-column-label').first().text();
         openTaskDetail(taskId, taskName, groupName, taskColumnLabel);
       });
       
@@ -2870,6 +2994,7 @@ $(function(){
         showInput: false,
         inputPlaceholder: '',
         inputValue: '',
+        popupClass: '',
         buttons: [
           {
             text: 'OK',
@@ -2897,12 +3022,12 @@ $(function(){
       
       const popupHtml = `
         <div class="custom-popup-overlay">
-          <div class="custom-popup">
+          <div class="custom-popup ${config.popupClass}">
             <div class="custom-popup-header ${headerClass}">
               <h3 class="custom-popup-title">${config.title}</h3>
             </div>
             <div class="custom-popup-content">
-              <p class="custom-popup-message">${config.message}</p>
+              <div class="custom-popup-message">${config.message}</div>
               ${inputHtml}
               <div class="custom-popup-buttons">
                 ${buttonsHtml}
