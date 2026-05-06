@@ -1594,6 +1594,10 @@ $(function(){
       fetch(`get_groups.php?wid=${wid}`)
         .then(r=>r.json()).then(groups=>{
           $('#group-list').empty();
+          const $groupList = $('#group-list');
+          groups.forEach(function(g) {
+            $groupList.append('<div class="group-slot" data-id="' + g.id + '" style="min-height:160px;"></div>');
+          });
           groups.forEach(g=>{
             fetch(`?columns_group_id=${g.id}`)
               .then(r=>r.json())
@@ -1647,7 +1651,12 @@ $(function(){
                   $grp.find('.group-toggle').text('►');
                 }
 
-                $('#group-list').append($grp);
+                const $slot = $groupList.find('.group-slot[data-id="' + g.id + '"]');
+                if ($slot.length) {
+                  $slot.replaceWith($grp);
+                } else {
+                  $groupList.append($grp);
+                }
 
                 // Pré-charger les options des colonnes select/tags en parallèle
                 const optionFetches = cols
