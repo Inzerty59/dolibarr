@@ -1928,10 +1928,10 @@ $(function(){
           });
 
           initGroupSortable();
-
           attachEventHandlers(wid);
-          
           setTimeout(function() {
+            
+             
             if ($('#workspace-search').length && $('#workspace-search').val().trim()) {
               const searchTerm = $('#workspace-search').val();
               $('#workspace-search').trigger('input');
@@ -2065,7 +2065,7 @@ $(function(){
       }, '', 'Ajouter une colonne');
     });
 
-    $('.group-toggle').off('click').on('click',function(e){
+    $('#group-list').off('click','.group-toggle').on('click','.group-toggle',function(e){
       e.stopPropagation();
       const $g    = $(this).closest('.group');
       const $body = $g.find('.group-body');
