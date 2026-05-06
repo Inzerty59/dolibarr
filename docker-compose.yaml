@@ -12,7 +12,10 @@ services:
       - ./data/db:/var/lib/mysql
  
   dolibarr:
-    image: dolibarr/dolibarr:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: dolibarr-local:latest
     container_name: dolibarr_app
     depends_on:
       - db
@@ -28,4 +31,3 @@ services:
       DOLI_MAIN_DOCUMENTS_DIR: /var/www/html/documents
     volumes:
       - ./data/dolibarr:/var/www/html/documents
-      - ./custom:/var/www/html/custom
