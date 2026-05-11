@@ -65,6 +65,57 @@ class modTickets extends DolibarrModules
 		$this->conflictwith = array();
 		$this->langfiles = array('tickets@tickets');
 		$this->config_page_url = array('setup.php@tickets');
+		
+		$this->menu = array();
+$r = 0;
+
+$this->menu[$r++] = array(
+	'fk_menu' => 'fk_mainmenu=ticket',
+	'type' => 'left',
+	'titre' => 'Modèles des tickets',
+	'prefix' => '<span class="fas fa-briefcase paddingright pictofixedwidth em092" style="color:#18bc9c"></span>',
+	'mainmenu' => 'ticket',
+	'leftmenu' => 'tickets_templates',
+	'url' => '/custom/tickets/template_list.php',
+	'langs' => 'tickets@tickets',
+	'position' => 113,
+	'enabled' => 'isModEnabled("tickets")',
+	'perms' => '$user->admin',
+	'target' => '',
+	'user' => 0
+);
+
+$this->menu[$r++] = array(
+	'fk_menu' => 'fk_mainmenu=ticket,fk_leftmenu=tickets_templates',
+	'type' => 'left',
+	'titre' => 'Créer un modèle',
+	'mainmenu' => 'ticket',
+	'leftmenu' => 'tickets_template_new',
+	'url' => '/custom/tickets/template_card.php?action=newmodel&reset=1',
+	'langs' => 'tickets@tickets',
+	'position' => 114,
+	'enabled' => 'isModEnabled("tickets")',
+	'perms' => '$user->admin',
+	'target' => '',
+	'user' => 0
+);
+
+$this->menu[$r++] = array(
+	'fk_menu' => 'fk_mainmenu=ticket,fk_leftmenu=tickets_templates',
+	'type' => 'left',
+	'titre' => 'Liste des modèles',
+	'mainmenu' => 'ticket',
+	'leftmenu' => 'tickets_template_list',
+	'url' => '/custom/tickets/template_list.php',
+	'langs' => 'tickets@tickets',
+	'position' => 115,
+	'enabled' => 'isModEnabled("tickets")',
+	'perms' => '$user->admin',
+	'target' => '',
+	'user' => 0
+);
+
+
 		$this->hidden = 0;
 		$this->disabled = 0;
 		$this->url_models_to_document = 'sample%;model_form.tpl';
@@ -81,9 +132,9 @@ class modTickets extends DolibarrModules
 
 	public function init($langs = null)
 	{
-		$sql = array();
-
-		return $this->_init($sql, $langs);
+	   $sql = array();
+       $this->_load_tables('/tickets/sql/');
+       return $this->_init($sql, $langs);
 	}
 
 	public function remove($langs = null)
