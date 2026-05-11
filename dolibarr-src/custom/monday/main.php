@@ -266,7 +266,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
                         WHERE fk_workspace = ".$targetWorkspaceId);
     $position = ($res && $row = $db->fetch_object($res)) ? ((int) $row->m + 1) : 0;
 
-    $groupLabel = $db->escape($sourceGroup->label);
+    $groupLabel = $db->escape($sourceGroup->label . ' (copie)');
     $taskColumnLabel = $db->escape($sourceGroup->task_column_label ?: 'Tâche');
 
     $ok = $db->query("INSERT INTO llx_myworkspace_group
