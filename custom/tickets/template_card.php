@@ -132,38 +132,40 @@ if (($action == 'editmodel' || $action == 'editmode') && $id > 0) {
 
 		$sql = "SELECT * FROM ".MAIN_DB_PREFIX."tickets_template_field";
 		$sql .= " WHERE fk_template=".(int) $id;
-		$sql .= " ORDER BY position ASC, rowid ASC";
+		$sql .= " ORDER BY pos ASC, rowid ASC";
 		$resfields = $db->query($sql);
 		if ($resfields) {
 			while ($line = $db->fetch_object($resfields)) {
-				$field = json_decode($line->definition_json, true);
-				if (!is_array($field)) {
-					$field = array(
-						'label' => $line->label,
-						'type' => $line->type,
-						'size' => $line->size,
-						'default' => '',
-						'computed' => '',
-						'unique' => 0,
-						'required' => (int) $line->required,
-						'param' => '',
-						'perms' => '',
-						'list' => '1',
-						'pos' => (int) $line->position,
-						'totalizable' => 0,
-						'help' => '',
-						'printable' => 0,
-						'langfile' => '',
-						'css' => '',
-						'cssview' => '',
-						'csslist' => '',
-						'alwayseditable' => 1,
-						'emptyonclone' => 0,
-						'enabled' => 1,
-						'aiprompt' => '',
-					);
+				$options = json_decode($line->options_json, true);
+				if (!is_array($options)) {
+					$options = array();
 				}
 
+				$field = array(
+					'label' => $line->label,
+					'type' => $line->type,
+					'size' => $line->size,
+					'default' => $line->fielddefault,
+					'param' => $line->param,
+					'required' => (int) $line->fieldrequired,
+					'pos' => (int) $line->pos,
+					'enabled' => (int) $line->enabled,
+
+					'computed' => !empty($options['computed']) ? $options['computed'] : '',
+					'unique' => !empty($options['unique']) ? 1 : 0,
+					'perms' => !empty($options['perms']) ? $options['perms'] : '',
+					'list' => isset($options['list']) ? $options['list'] : '1',
+					'totalizable' => !empty($options['totalizable']) ? 1 : 0,
+					'help' => !empty($options['help']) ? $options['help'] : '',
+					'printable' => !empty($options['printable']) ? (int) $options['printable'] : 0,
+					'langfile' => !empty($options['langfile']) ? $options['langfile'] : '',
+					'css' => !empty($options['css']) ? $options['css'] : '',
+					'cssview' => !empty($options['cssview']) ? $options['cssview'] : '',
+					'csslist' => !empty($options['csslist']) ? $options['csslist'] : '',
+					'alwayseditable' => isset($options['alwayseditable']) ? (int) $options['alwayseditable'] : 1,
+					'emptyonclone' => !empty($options['emptyonclone']) ? 1 : 0,
+					'aiprompt' => !empty($options['aiprompt']) ? $options['aiprompt'] : '',
+				);
 				$_SESSION['ticket_template_fields'][$line->attrname] = $field;
 			}
 		}
@@ -253,8 +255,25 @@ if ($action == 'savefinal' && GETPOST('token', 'alphanohtml') == $_SESSION['newt
 
 
 		foreach ($_SESSION['ticket_template_fields'] as $key => $field) {
+			$options = array(
+				'computed' => $field['computed'],
+				'unique' => (int) $field['unique'],
+				'perms' => $field['perms'],
+				'list' => $field['list'],
+				'totalizable' => (int) $field['totalizable'],
+				'help' => $field['help'],
+				'printable' => (int) $field['printable'],
+				'langfile' => $field['langfile'],
+				'css' => $field['css'],
+				'cssview' => $field['cssview'],
+				'csslist' => $field['csslist'],
+				'alwayseditable' => (int) $field['alwayseditable'],
+				'emptyonclone' => (int) $field['emptyonclone'],
+				'aiprompt' => $field['aiprompt'],
+			);
+
 			$sql = "INSERT INTO ".MAIN_DB_PREFIX."tickets_template_field";
-			$sql .= " (fk_template, attrname, label, type, size, required, position, enabled, definition_json)";
+			$sql .= " (fk_template, attrname, label, type, size, fieldrequired, fielddefault, param, pos, enabled, options_json, datec)";
 			$sql .= " VALUES (";
 			$sql .= (int) $id.",";
 			$sql .= " '".$db->escape($key)."',";
@@ -262,11 +281,15 @@ if ($action == 'savefinal' && GETPOST('token', 'alphanohtml') == $_SESSION['newt
 			$sql .= " '".$db->escape($field['type'])."',";
 			$sql .= " '".$db->escape($field['size'])."',";
 			$sql .= " ".(int) $field['required'].",";
+			$sql .= " '".$db->escape($field['default'])."',";
+			$sql .= " '".$db->escape($field['param'])."',";
 			$sql .= " ".(int) $field['pos'].",";
 			$sql .= " 1,";
-			$sql .= " '".$db->escape(json_encode($field))."'";
-			$sql .= ")";
+			$sql .= " '".$db->escape(json_encode($options))."',";
+			$sql .= " '".$db->idate(dol_now())."'";
+			$sql .= ")"; 
 			$db->query($sql);
+
 		}
 
 		unset($_SESSION['ticket_template_fields']);
