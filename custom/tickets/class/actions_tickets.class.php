@@ -31,6 +31,10 @@ class ActionsTickets extends CommonHookActions
 
 		$projectid = $this->getProjectIdFromRequest();
 
+		if (in_array($action, array('create', 'add', 'add_project_template_ticket'), true)) {
+			$this->syncAllTemplateExtraFieldsForStorage();
+		}
+
 		if ($action === 'create' && $projectid <= 0) {
 			header('Location: '.DOL_URL_ROOT.'/custom/tickets/select_project.php');
 			exit;
@@ -376,6 +380,7 @@ class ActionsTickets extends CommonHookActions
 			$type = $this->normalizeType($field->type);
 			$param = $this->paramToArray($field->param);
 			$attrname = $this->getTechnicalAttrname($field);
+			$storageRequired = 0;
 			$moreparams = array(
 				'css' => !empty($options['css']) ? $options['css'] : '',
 				'cssview' => !empty($options['cssview']) ? $options['cssview'] : '',
@@ -393,10 +398,29 @@ class ActionsTickets extends CommonHookActions
 			$exists = ($resql && $this->db->num_rows($resql) > 0);
 
 			if ($exists) {
-				$extrafields->updateExtraField($attrname, $field->label, $type, (int) $field->pos, $field->size, 'ticket', !empty($options['unique']) ? 1 : 0, (int) $field->fieldrequired, $field->fielddefault, $param, isset($options['alwayseditable']) ? (int) $options['alwayseditable'] : 1, !empty($options['perms']) ? $options['perms'] : '', '0', !empty($options['help']) ? $options['help'] : '', !empty($options['computed']) ? $options['computed'] : '', $conf->entity, !empty($options['langfile']) ? $options['langfile'] : '', '1', !empty($options['totalizable']) ? 1 : 0, !empty($options['printable']) ? (int) $options['printable'] : 0, $moreparams, !empty($options['emptyonclone']) ? 1 : 0);
+				$extrafields->updateExtraField($attrname, $field->label, $type, (int) $field->pos, $field->size, 'ticket', !empty($options['unique']) ? 1 : 0, $storageRequired, $field->fielddefault, $param, isset($options['alwayseditable']) ? (int) $options['alwayseditable'] : 1, !empty($options['perms']) ? $options['perms'] : '', '0', !empty($options['help']) ? $options['help'] : '', !empty($options['computed']) ? $options['computed'] : '', $conf->entity, !empty($options['langfile']) ? $options['langfile'] : '', '1', !empty($options['totalizable']) ? 1 : 0, !empty($options['printable']) ? (int) $options['printable'] : 0, $moreparams, !empty($options['emptyonclone']) ? 1 : 0);
 			} else {
-				$extrafields->addExtraField($attrname, $field->label, $type, (int) $field->pos, $field->size, 'ticket', !empty($options['unique']) ? 1 : 0, (int) $field->fieldrequired, $field->fielddefault, $param, isset($options['alwayseditable']) ? (int) $options['alwayseditable'] : 1, !empty($options['perms']) ? $options['perms'] : '', '0', !empty($options['help']) ? $options['help'] : '', !empty($options['computed']) ? $options['computed'] : '', $conf->entity, !empty($options['langfile']) ? $options['langfile'] : '', '1', !empty($options['totalizable']) ? 1 : 0, !empty($options['printable']) ? (int) $options['printable'] : 0, $moreparams, !empty($options['aiprompt']) ? $options['aiprompt'] : '', !empty($options['emptyonclone']) ? 1 : 0);
+				$extrafields->addExtraField($attrname, $field->label, $type, (int) $field->pos, $field->size, 'ticket', !empty($options['unique']) ? 1 : 0, $storageRequired, $field->fielddefault, $param, isset($options['alwayseditable']) ? (int) $options['alwayseditable'] : 1, !empty($options['perms']) ? $options['perms'] : '', '0', !empty($options['help']) ? $options['help'] : '', !empty($options['computed']) ? $options['computed'] : '', $conf->entity, !empty($options['langfile']) ? $options['langfile'] : '', '1', !empty($options['totalizable']) ? 1 : 0, !empty($options['printable']) ? (int) $options['printable'] : 0, $moreparams, !empty($options['aiprompt']) ? $options['aiprompt'] : '', !empty($options['emptyonclone']) ? 1 : 0);
 			}
+		}
+	}
+
+	private function syncAllTemplateExtraFieldsForStorage()
+	{
+		$fields = array();
+
+		$sql = "SELECT *";
+		$sql .= " FROM ".MAIN_DB_PREFIX."tickets_template_field";
+		$sql .= " WHERE enabled = 1";
+		$sql .= " ORDER BY fk_template ASC, pos ASC, rowid ASC";
+
+		$resql = $this->db->query($sql);
+		while ($resql && ($field = $this->db->fetch_object($resql))) {
+			$fields[] = $field;
+		}
+
+		if (!empty($fields)) {
+			$this->syncDolibarrExtraFields($fields);
 		}
 	}
 
