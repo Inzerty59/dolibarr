@@ -47,20 +47,18 @@ class ActionsTickets
 		
 		$forced_project_id = isset($_SESSION['ticket_forced_project']) ? intval($_SESSION['ticket_forced_project']) : 0;
 		
-		if ($forced_project_id <= 0) {
-			return;
-		}
-		
 		// Récupérer les infos du projet
 		$forced_project_ref = '';
 		$forced_project_title = '';
 		
-		$sql = "SELECT ref, title FROM ".MAIN_DB_PREFIX."projet WHERE rowid = ".$forced_project_id;
-		$resql = $db->query($sql);
-		if ($resql && $db->num_rows($resql) > 0) {
-			$obj = $db->fetch_object($resql);
-			$forced_project_ref = addslashes($obj->ref);
-			$forced_project_title = addslashes($obj->title);
+		if ($forced_project_id > 0) {
+			$sql = "SELECT ref, title FROM ".MAIN_DB_PREFIX."projet WHERE rowid = ".$forced_project_id;
+			$resql = $db->query($sql);
+			if ($resql && $db->num_rows($resql) > 0) {
+				$obj = $db->fetch_object($resql);
+				$forced_project_ref = addslashes($obj->ref);
+				$forced_project_title = addslashes($obj->title);
+			}
 		}
 		
 		$already_injected = true;
@@ -68,6 +66,23 @@ class ActionsTickets
 		?>
 		<script type="text/javascript">
 		(function() {
+			function hideNotifyThirdpartyCheckbox() {
+				var checkbox = document.getElementById('notify_tiers_at_create');
+				if (!checkbox) {
+					return;
+				}
+
+				var row = checkbox.closest('tr');
+				if (row) {
+					row.style.display = 'none';
+				}
+				checkbox.checked = false;
+			}
+
+			hideNotifyThirdpartyCheckbox();
+			window.addEventListener('load', hideNotifyThirdpartyCheckbox);
+
+			<?php if ($forced_project_id > 0) { ?>
 			console.log('Hook Tickets: Verrouillage du projet <?php echo $forced_project_id; ?>');
 			
 			function lockProjectField() {
@@ -133,6 +148,7 @@ class ActionsTickets
 			window.addEventListener('load', function() {
 				setTimeout(lockProjectField, 500);
 			});
+			<?php } ?>
 		})();
 		</script>
 		<?php
