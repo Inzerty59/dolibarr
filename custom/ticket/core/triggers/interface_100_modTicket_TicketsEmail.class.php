@@ -86,7 +86,7 @@ class InterfaceTicketsEmail extends DolibarrTriggers
 	}
 
 	/**
-	 * Aggregate send results so a real mail failure is not hidden by skipped recipients.
+	 * Aggregate send results so a real mail failure is not hidden by skipped recipients. 
 	 */
 	private function collectMailResult($result, &$sent, &$error)
 	{
@@ -469,7 +469,7 @@ class InterfaceTicketsEmail extends DolibarrTriggers
 			$this->trans('TicketCustomFieldTicket', 'Ticket') => $object->ref,
 			$this->trans('TicketCustomFieldSubject', 'Sujet') => $object->subject,
 			$this->trans('TicketCustomFieldSeverity', 'Sévérité') => $this->getSeverityLabel($object),
-			$this->trans('TicketCustomFieldDate', 'Date') => dol_print_date(!empty($object->datec) ? $object->datec : dol_now(), 'dayhour'),
+			$this->trans('TicketCustomFieldDate', 'Date') => $this->getTicketDate($object),
 		);
 
 		if ($includeAssignedUser) {
@@ -486,6 +486,51 @@ class InterfaceTicketsEmail extends DolibarrTriggers
 		}
 
 		return $html.'</p>';
+	}
+
+	/**
+	 * Return the ticket creation date in the business timezone.
+	 */
+	private function getTicketDate($object)
+	{
+		$timestamp = !empty($object->datec) ? (int) $object->datec : dol_now();
+		$timezone = $this->getEmailTimezone();
+
+		try {
+			$date = new DateTime('@'.$timestamp);
+			$date->setTimezone(new DateTimeZone($timezone));
+			return $date->format('d/m/Y H:i');
+		} catch (Exception $e) {
+			dol_syslog('Custom ticket email date timezone invalid: '.$timezone.'. Falling back to Dolibarr date formatting.', LOG_WARNING);
+			return dol_print_date($timestamp, 'dayhour');
+		}
+	}
+
+	/**
+	 * Resolve the timezone used for email dates.
+	 */
+	private function getEmailTimezone()
+	{
+		$timezone = getDolGlobalString('TICKET_CUSTOM_EMAIL_TIMEZONE');
+		if (!empty($timezone)) {
+			return $timezone;
+		}
+
+		$timezone = getDolGlobalString('MAIN_SERVER_TZ');
+		if (!empty($timezone) && $timezone !== 'auto') {
+			return $timezone;
+		}
+
+		$timezone = getDolGlobalString('MAIN_DOLIBARR_USER_TIMEZONE');
+		if (!empty($timezone)) {
+			return $timezone;
+		}
+
+		if (!empty($_SESSION['dol_tz_string'])) {
+			return $_SESSION['dol_tz_string'];
+		}
+
+		return 'Europe/Paris';
 	}
 
 	/**
@@ -629,6 +674,40 @@ class InterfaceTicketsEmail extends DolibarrTriggers
 	{
 		global $conf, $mysoc;
 
+		$from = $this->getSenderEmail();
+
+		$trackid = 'tic'.((int) $object->id);
+		$mailfile = new CMailFile($subject, $sendto, $from, $message, array(), array(), array(), '', '', 0, self::MAIL_BODY_IS_HTML_AUTO, '', '', $trackid, '', 'ticket');
+
+		if ($mailfile->error) {
+			$this->errors = array_merge((array) $this->errors, array($mailfile->error));
+			dol_syslog('Custom ticket email not sent to '.$sendto.' for ticket '.((int) $object->id).': '.$mailfile->error, LOG_ERR);
+			return self::TRIGGER_RESULT_NONE;
+		}
+
+		$result = $mailfile->sendfile();
+		if (!$result) {
+			$mailErrors = !empty($mailfile->errors) ? $mailfile->errors : array($mailfile->error);
+			$this->errors = array_merge((array) $this->errors, (array) $mailErrors);
+			dol_syslog('Custom ticket email not sent to '.$sendto.' for ticket '.((int) $object->id).': '.implode(' | ', (array) $mailErrors), LOG_ERR);
+			return self::TRIGGER_RESULT_NONE;
+		}
+
+		return self::TRIGGER_RESULT_OK;
+	}
+
+	/**
+	 * Return a sender compatible with authenticated SMTP providers.
+	 */
+	private function getSenderEmail()
+	{
+		global $mysoc;
+
+		$smtpLogin = getDolGlobalString('MAIN_MAIL_SMTPS_ID');
+		if (!empty($smtpLogin) && filter_var($smtpLogin, FILTER_VALIDATE_EMAIL)) {
+			return $smtpLogin;
+		}
+
 		$from = getDolGlobalString('TICKET_NOTIFICATION_EMAIL_FROM');
 		if (empty($from)) {
 			$from = getDolGlobalString('MAIN_MAIL_EMAIL_FROM');
@@ -637,21 +716,7 @@ class InterfaceTicketsEmail extends DolibarrTriggers
 			$from = $mysoc->email;
 		}
 
-		$trackid = 'tic'.((int) $object->id);
-		$mailfile = new CMailFile($subject, $sendto, $from, $message, array(), array(), array(), '', '', 0, self::MAIL_BODY_IS_HTML_AUTO, '', '', $trackid, '', 'ticket');
-
-		if ($mailfile->error) {
-			$this->errors[] = $mailfile->error;
-			return self::TRIGGER_RESULT_ERROR;
-		}
-
-		$result = $mailfile->sendfile();
-		if (!$result) {
-			$this->errors = array_merge($this->errors, $mailfile->errors);
-			return self::TRIGGER_RESULT_ERROR;
-		}
-
-		return self::TRIGGER_RESULT_OK;
+		return $from;
 	}
 
 	/**
