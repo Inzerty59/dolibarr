@@ -2,18 +2,37 @@
 
 require_once DOL_DOCUMENT_ROOT.'/core/triggers/dolibarrtriggers.class.php';
 require_once DOL_DOCUMENT_ROOT.'/core/class/CMailFile.class.php';
-require_once DOL_DOCUMENT_ROOT.'/core/lib/functions2.lib.php';
 require_once DOL_DOCUMENT_ROOT.'/core/lib/functions.lib.php';
+require_once DOL_DOCUMENT_ROOT.'/core/lib/functions2.lib.php';
 require_once DOL_DOCUMENT_ROOT.'/contact/class/contact.class.php';
 
+/**
+ * Send only the custom ticket notifications that replace blocked native emails
+ * or fill missing Dolibarr behaviours.
+ */
 class InterfaceTicketsEmail extends DolibarrTriggers
 {
+	const CONTACT_CHOICE_ALL_LINKED = -2;
+	const CONTACT_CHOICE_NONE = -3;
+	const CONTACT_LINK_STATUS_ALL = -1;
+	const MAIL_BODY_IS_HTML_AUTO = -1;
+	const TICKET_STATUS_IN_PROGRESS = 3;
+	const TRIGGER_RESULT_ERROR = -1;
+	const TRIGGER_RESULT_NONE = 0;
+	const TRIGGER_RESULT_OK = 1;
+
+	/** @var Translate */
+	private $langs;
+
+	/** @var array<string,bool> */
+	private static $sentAssignmentNotifications = array();
+
 	public function __construct($db)
 	{
 		$this->db = $db;
 		$this->name = preg_replace('/^Interface/i', '', get_class($this));
 		$this->family = 'ticket';
-		$this->description = 'Custom ticket email notifications based on Dolibarr email templates.';
+		$this->description = 'Custom minimal ticket email notifications.';
 		$this->version = self::VERSIONS['prod'];
 		$this->picto = 'ticket';
 	}
@@ -21,103 +40,285 @@ class InterfaceTicketsEmail extends DolibarrTriggers
 	public function runTrigger($action, $object, User $user, Translate $langs, Conf $conf)
 	{
 		if (!isModEnabled('ticket') || empty($object->element) || $object->element !== 'ticket') {
-			return 0;
+			return self::TRIGGER_RESULT_NONE;
 		}
 
-		$events = $this->getEventsForAction($action, $object);
-		if (empty($events)) {
-			return 0;
-		}
+		$this->langs = $langs;
+		$this->langs->load('ticket');
+		$this->langs->load('ticketcustom@ticket');
 
+		$sent = 0;
 		$error = 0;
-		foreach ($events as $eventCode => $recipientType) {
-			$template = $this->fetchTemplateForEvent($eventCode, (int) $object->fk_project);
-			if (empty($template)) {
-				dol_syslog('Ticket email trigger skipped '.$eventCode.' for ticket '.((int) $object->id).': no active template', LOG_DEBUG);
-				continue;
-			}
 
-			$sendto = $this->getRecipients($recipientType, $object);
-			if ($sendto === '') {
-				dol_syslog('Ticket email trigger skipped '.$eventCode.' for ticket '.((int) $object->id).': no recipient for '.$recipientType, LOG_WARNING);
-				continue;
-			}
-
-			$result = $this->sendTemplateMail($template, $sendto, $eventCode, $object, $user, $langs);
-			if ($result < 0) {
-				$error++;
-			}
-		}
-
-        dol_syslog(
-            'TICKET EMAIL TRIGGER: '.$action,
-            LOG_DEBUG
-        );
-		return $error ? -1 : 1;
-	}
-
-	private function getEventsForAction($action, $object)
-	{
 		if ($action === 'TICKET_CREATE') {
-			$events = array(
-				'ticket_create_customer' => 'customer',
-			);
+			if (!empty($object->notify_tiers_at_create)) {
+				$this->collectMailResult($this->sendCustomerMail($object, 'create'), $sent, $error);
+			}
 
 			if (!empty($object->fk_user_assign)) {
-				$events['ticket_assigned_internal'] = 'assigned_user';
+				$this->collectMailResult($this->sendAssignedUserMail($object), $sent, $error);
 			}
-
-			return $events;
 		}
 
 		if ($action === 'TICKET_ASSIGNED') {
-			return array(
-				'ticket_assigned_customer' => 'customer',
-				'ticket_assigned_internal' => 'assigned_user',
-			);
+			$this->collectMailResult($this->sendAssignedUserMail($object), $sent, $error);
 		}
 
 		if ($action === 'TICKET_CLOSE') {
-			return array(
-				'ticket_resolved_customer' => 'customer',
-			);
+			$this->collectMailResult($this->sendCustomerMail($object, 'resolved'), $sent, $error);
 		}
 
 		if ($action === 'TICKET_MODIFY') {
-			if ($this->isInProgressStatusTransition($object)) {
-				return array(
-					'ticket_in_progress_customer' => 'customer',
-				);
+			if ($this->isAssignedUserChanged($object)) {
+				$this->collectMailResult($this->sendAssignedUserMail($object), $sent, $error);
 			}
 
-			if ($this->isClosedStatusTransition($object)) {
-				return array(
-					'ticket_resolved_customer' => 'customer',
-				);
+			if ($this->isStatusTransitionTo($object, self::TICKET_STATUS_IN_PROGRESS)) {
+				$this->collectMailResult($this->sendCustomerMail($object, 'in_progress'), $sent, $error);
 			}
 		}
 
-		return array();
-	}
-
-	private function isInProgressStatusTransition($object)
-	{
-		return $this->isStatusTransitionTo($object, 3);
-	}
-
-	private function isClosedStatusTransition($object)
-	{
-		$newStatus = $this->getNewStatus($object);
-
-		if (!in_array($newStatus, array(8, 9), true)) {
-			return false;
+		if ($error > 0) {
+			return self::TRIGGER_RESULT_ERROR;
 		}
 
-		$oldStatus = $this->getOldStatus($object);
-
-		return !in_array($oldStatus, array(8, 9), true);
+		return $sent > 0 ? self::TRIGGER_RESULT_OK : self::TRIGGER_RESULT_NONE;
 	}
 
+	/**
+	 * Aggregate send results so a real mail failure is not hidden by skipped recipients.
+	 */
+	private function collectMailResult($result, &$sent, &$error)
+	{
+		if ($result < 0) {
+			$error++;
+			return;
+		}
+
+		if ($result > 0) {
+			$sent++;
+		}
+	}
+
+	/**
+	 * Send a customer-facing ticket email to the selected/linked ticket recipients.
+	 */
+	private function sendCustomerMail($object, $event)
+	{
+		$recipients = $this->getCustomerRecipients($object);
+		if (empty($recipients)) {
+			dol_syslog('Custom ticket email skipped '.$event.' for ticket '.((int) $object->id).': no ticket contact recipient', LOG_DEBUG);
+			return self::TRIGGER_RESULT_NONE;
+		}
+
+		return $this->sendCustomerMailToRecipients($recipients, $event, $object);
+	}
+
+	/**
+	 * Send the internal assignment notification to the current assigned user.
+	 */
+	private function sendAssignedUserMail($object)
+	{
+		$assignedUser = $this->getAssignedUser($object);
+		if (empty($assignedUser) || empty($assignedUser->email)) {
+			dol_syslog('Custom ticket email skipped assignment for ticket '.((int) $object->id).': assigned user has no email', LOG_WARNING);
+			return self::TRIGGER_RESULT_NONE;
+		}
+
+		$notificationKey = $this->getAssignmentNotificationKey($object, $assignedUser);
+		if (!empty(self::$sentAssignmentNotifications[$notificationKey])) {
+			dol_syslog('Custom ticket email skipped duplicate assignment notification for ticket '.((int) $object->id).' and user '.((int) $assignedUser->id), LOG_DEBUG);
+			return self::TRIGGER_RESULT_NONE;
+		}
+
+		$template = $this->buildAssignedUserTemplate($object, $assignedUser);
+
+		$result = $this->sendMail($assignedUser->email, $template['subject'], $template['body'], $object);
+		if ($result > 0) {
+			self::$sentAssignmentNotifications[$notificationKey] = true;
+		}
+
+		return $result;
+	}
+
+	/**
+	 * Build a request-local key to avoid duplicate assignment emails.
+	 */
+	private function getAssignmentNotificationKey($object, User $assignedUser)
+	{
+		return ((int) $object->id).':'.((int) $assignedUser->id);
+	}
+
+	/**
+	 * Resolve customer recipients according to the close/create popup choice.
+	 *
+	 * @return array<string,array{email:string,name:string}> Lowercase email => recipient data
+	 */
+	private function getCustomerRecipients($object)
+	{
+		$contactId = $this->getContextContactId($object);
+
+		if ($contactId === self::CONTACT_CHOICE_NONE) {
+			return array();
+		}
+
+		if ($contactId === self::CONTACT_CHOICE_ALL_LINKED) {
+			return $this->getLinkedTicketContactEmails($object, true);
+		}
+
+		if ($contactId > 0) {
+			$emails = array();
+			$this->addContactEmail($emails, $contactId, $object);
+			return $emails;
+		}
+
+		return $this->getLinkedTicketContactEmails($object, false);
+	}
+
+	/**
+	 * Return the contact selector value posted by Dolibarr during create/close.
+	 */
+	private function getContextContactId($object)
+	{
+		if (isset($object->context['contact_id'])) {
+			return (int) $object->context['contact_id'];
+		}
+
+		return 0;
+	}
+
+	/**
+	 * Add a precise external contact if it belongs to the ticket thirdparty.
+	 */
+	private function addContactEmail(&$emails, $contactId, $object)
+	{
+		$contact = new Contact($this->db);
+		if ($contact->fetch((int) $contactId) <= 0 || empty($contact->email) || empty($contact->statut)) {
+			return;
+		}
+
+		if (!empty($object->fk_soc) && (int) $contact->socid !== (int) $object->fk_soc) {
+			dol_syslog('Custom ticket email skipped contact '.((int) $contactId).' for ticket '.((int) $object->id).': contact is not on ticket thirdparty', LOG_WARNING);
+			return;
+		}
+
+		$this->addEmail($emails, $contact->email, $this->getContactName($contact));
+	}
+
+	/**
+	 * Return contacts linked to the ticket only. When requested, include internal
+	 * linked contacts and force the assigned user as an associated recipient.
+	 *
+	 * @return array<string,array{email:string,name:string}> Lowercase email => recipient data
+	 */
+	private function getLinkedTicketContactEmails($object, $includeInternal = false)
+	{
+		$emails = array();
+		$linkedContacts = $object->listeContact(self::CONTACT_LINK_STATUS_ALL, 'external');
+
+		$this->addLinkedContactEmails($emails, $linkedContacts);
+
+		if ($includeInternal) {
+			$linkedContacts = $object->listeContact(self::CONTACT_LINK_STATUS_ALL, 'internal');
+			$this->addLinkedContactEmails($emails, $linkedContacts);
+			$this->addAssignedUserEmail($emails, $object);
+		}
+
+		return $emails;
+	}
+
+	/**
+	 * Add emails returned by Ticket::listeContact().
+	 */
+	private function addLinkedContactEmails(&$emails, $linkedContacts)
+	{
+		if (empty($linkedContacts) || !is_array($linkedContacts)) {
+			return;
+		}
+
+		foreach ($linkedContacts as $contact) {
+			if (empty($contact['email']) || empty($contact['statuscontact'])) {
+				continue;
+			}
+
+			$this->addEmail($emails, $contact['email'], $this->getLinkedContactName($contact));
+		}
+	}
+
+	/**
+	 * Add the current assigned user email, even if Dolibarr did not list it as an
+	 * internal linked contact during the close trigger.
+	 */
+	private function addAssignedUserEmail(&$emails, $object)
+	{
+		$assignedUser = $this->getAssignedUser($object);
+		if (empty($assignedUser) || empty($assignedUser->email)) {
+			return;
+		}
+
+		$this->addEmail($emails, $assignedUser->email, $assignedUser->getFullName($this->langs));
+	}
+
+	/**
+	 * Add one email to a recipient set, using lowercase keys to avoid duplicates.
+	 */
+	private function addEmail(&$emails, $email, $name = '')
+	{
+		$email = trim((string) $email);
+		if ($email === '') {
+			return;
+		}
+
+		$key = strtolower($email);
+		if (empty($emails[$key])) {
+			$emails[$key] = array(
+				'email' => $email,
+				'name' => trim((string) $name),
+			);
+			return;
+		}
+
+		if (empty($emails[$key]['name']) && trim((string) $name) !== '') {
+			$emails[$key]['name'] = trim((string) $name);
+		}
+	}
+
+	/**
+	 * Build a display name from a Ticket::listeContact() row.
+	 */
+	private function getLinkedContactName($contact)
+	{
+		$parts = array();
+
+		foreach (array('firstname', 'lastname', 'nom', 'name', 'login') as $field) {
+			if (!empty($contact[$field])) {
+				$parts[] = $contact[$field];
+			}
+		}
+
+		return trim(implode(' ', array_unique($parts)));
+	}
+
+	/**
+	 * Build a display name from a Contact object.
+	 */
+	private function getContactName(Contact $contact)
+	{
+		$parts = array();
+
+		if (!empty($contact->firstname)) {
+			$parts[] = $contact->firstname;
+		}
+		if (!empty($contact->lastname)) {
+			$parts[] = $contact->lastname;
+		}
+
+		return trim(implode(' ', $parts));
+	}
+
+	/**
+	 * Detect a status change to a target status.
+	 */
 	private function isStatusTransitionTo($object, $expectedStatus)
 	{
 		$newStatus = $this->getNewStatus($object);
@@ -130,172 +331,305 @@ class InterfaceTicketsEmail extends DolibarrTriggers
 		return $oldStatus !== (int) $expectedStatus;
 	}
 
+	/**
+	 * Detect assignment changes done through generic ticket update flows.
+	 */
+	private function isAssignedUserChanged($object)
+	{
+		if (empty($object->oldcopy) || !property_exists($object->oldcopy, 'fk_user_assign')) {
+			return false;
+		}
+
+		$oldAssignedUserId = (int) $object->oldcopy->fk_user_assign;
+		$newAssignedUserId = $this->getAssignedUserId($object);
+
+		return $newAssignedUserId > 0 && $newAssignedUserId !== $oldAssignedUserId;
+	}
+
+	/**
+	 * Read the new ticket status from context or object fields.
+	 */
 	private function getNewStatus($object)
 	{
-		$newStatus = null;
 		if (isset($object->context['newstatus'])) {
-			$newStatus = (int) $object->context['newstatus'];
-		} elseif (isset($object->status)) {
-			$newStatus = (int) $object->status;
-		} elseif (isset($object->fk_statut)) {
-			$newStatus = (int) $object->fk_statut;
+			return (int) $object->context['newstatus'];
 		}
 
-		return $newStatus;
-	}
-
-	private function getOldStatus($object)
-	{
-		$oldStatus = null;
-		if (!empty($object->oldcopy) && isset($object->oldcopy->status)) {
-			$oldStatus = (int) $object->oldcopy->status;
-		} elseif (!empty($object->oldcopy) && isset($object->oldcopy->fk_statut)) {
-			$oldStatus = (int) $object->oldcopy->fk_statut;
+		if (isset($object->status)) {
+			return (int) $object->status;
 		}
 
-		return $oldStatus;
-	}
-
-	private function fetchTemplateForEvent($eventCode, $projectId)
-	{
-		global $conf;
-
-		$sql = "SELECT cet.rowid, cet.topic, cet.content, cet.email_from, cet.email_tocc, cet.email_tobcc";
-		$sql .= " FROM ".MAIN_DB_PREFIX."tickets_email_template as tet";
-		$sql .= " INNER JOIN ".MAIN_DB_PREFIX."c_email_templates as cet ON cet.rowid = tet.fk_email_template";
-		$sql .= " WHERE tet.entity = ".((int) $conf->entity);
-		$sql .= " AND tet.active = 1";
-		$sql .= " AND cet.active = 1";
-		$sql .= " AND tet.event_code = '".$this->db->escape($eventCode)."'";
-		$sql .= " AND (tet.fk_project = ".((int) $projectId)." OR tet.fk_project IS NULL)";
-		$sql .= " ORDER BY tet.fk_project DESC";
-		$sql .= $this->db->plimit(1);
-
-		$resql = $this->db->query($sql);
-		if ($resql && $this->db->num_rows($resql) > 0) {
-			return $this->db->fetch_object($resql);
+		if (isset($object->fk_statut)) {
+			return (int) $object->fk_statut;
 		}
 
 		return null;
 	}
 
-	private function getRecipients($recipientType, $object)
+	/**
+	 * Read the previous ticket status from Dolibarr oldcopy.
+	 */
+	private function getOldStatus($object)
 	{
-		if ($recipientType === 'assigned_user') {
-			if (empty($object->fk_user_assign)) {
-				return '';
+		if (!empty($object->oldcopy) && isset($object->oldcopy->status)) {
+			return (int) $object->oldcopy->status;
+		}
+
+		if (!empty($object->oldcopy) && isset($object->oldcopy->fk_statut)) {
+			return (int) $object->oldcopy->fk_statut;
+		}
+
+		return null;
+	}
+
+	/**
+	 * Build the short customer templates for create, in progress and close.
+	 */
+	private function buildCustomerTemplate($event, $object, $recipientName = '')
+	{
+		$greeting = $this->buildCustomerGreeting($object, $recipientName);
+		$summary = $this->buildTicketSummary($object, true);
+
+		if ($event === 'create') {
+			return array(
+				'subject' => $this->trans('TicketCustomSubjectCreate', '[Inzerty] Nouveau ticket cree - Ref %s', $object->ref),
+				'body' => $greeting
+					.'<p>'.$this->trans('TicketCustomBodyCreateIntro', 'Nous avons bien recu votre demande.').'</p>'
+					.$summary
+					.'<p>'.$this->trans('TicketCustomBodyCreateFooter', 'Notre equipe reviendra vers vous des que possible.').'</p>',
+			);
+		}
+
+		if ($event === 'in_progress') {
+			return array(
+				'subject' => $this->trans('TicketCustomSubjectInProgress', '[Inzerty] Votre ticket %s est en cours de traitement', $object->ref),
+				'body' => $greeting
+					.'<p>'.$this->trans('TicketCustomBodyInProgressIntro', 'Votre ticket est maintenant en cours de traitement.').'</p>'
+					.$summary
+					.'<p>'.$this->trans('TicketCustomBodyInProgressFooter', 'Nous vous tiendrons informe de son avancement.').'</p>',
+			);
+		}
+
+		if ($event === 'resolved') {
+			$resolution = $this->getResolutionMessage($object);
+
+			return array(
+				'subject' => $this->trans('TicketCustomSubjectResolved', '[Inzerty] Ticket ferme - Ref %s', $object->ref),
+				'body' => $greeting
+					.'<p>'.$this->trans('TicketCustomBodyResolvedIntro', 'Votre ticket a ete ferme.').'</p>'
+					.$summary
+					.$resolution
+					.'<p>'.$this->trans('TicketCustomBodyResolvedFooter', 'Vous pouvez repondre a ce message si un complement est necessaire.').'</p>',
+			);
+		}
+
+		return array();
+	}
+
+	/**
+	 * Build the customer greeting with the thirdparty name when available.
+	 */
+	private function buildCustomerGreeting($object, $recipientName = '')
+	{
+		$recipientName = trim((string) $recipientName);
+		if ($recipientName !== '') {
+			return '<p>'.$this->escape($this->trans('TicketCustomGreetingThirdparty', 'Bonjour %s,', $recipientName)).'</p>';
+		}
+
+		$thirdpartyName = $this->getThirdpartyName($object);
+		if (trim($thirdpartyName) !== '') {
+			return '<p>'.$this->escape($this->trans('TicketCustomGreetingThirdparty', 'Bonjour %s,', $thirdpartyName)).'</p>';
+		}
+
+		return '<p>'.$this->trans('TicketCustomGreetingGeneric', 'Bonjour,').'</p>';
+	}
+
+	/**
+	 * Build the internal assignment template.
+	 */
+	private function buildAssignedUserTemplate($object, User $assignedUser)
+	{
+		$assignedName = $assignedUser->getFullName($this->langs);
+
+		return array(
+			'subject' => $this->trans('TicketCustomSubjectAssigned', '[Inzerty] Ticket %s assigne', $object->ref),
+			'body' => '<p>'.$this->escape($this->trans('TicketCustomGreetingThirdparty', 'Bonjour %s,', $assignedName)).'</p>'
+				.'<p>'.$this->trans('TicketCustomBodyAssignedIntro', 'Un ticket vous a ete attribue.').'</p>'
+				.$this->buildTicketSummary($object, false)
+				.'<p>'.$this->trans('TicketCustomBodyAssignedFooter', 'Merci de le prendre en charge depuis Dolibarr.').'</p>',
+		);
+	}
+
+	/**
+	 * Build the common ticket summary used in all templates.
+	 */
+	private function buildTicketSummary($object, $includeAssignedUser)
+	{
+		$rows = array(
+			$this->trans('TicketCustomFieldTicket', 'Ticket') => $object->ref,
+			$this->trans('TicketCustomFieldSubject', 'Sujet') => $object->subject,
+			$this->trans('TicketCustomFieldSeverity', 'Sévérité') => $this->getSeverityLabel($object),
+			$this->trans('TicketCustomFieldDate', 'Date') => dol_print_date(!empty($object->datec) ? $object->datec : dol_now(), 'dayhour'),
+		);
+
+		if ($includeAssignedUser) {
+			$rows[$this->trans('TicketCustomFieldAssignedTo', 'Assigne a')] = $this->getAssignedUserName($object);
+		}
+
+		$html = '<p>';
+		foreach ($rows as $label => $value) {
+			if ((string) $value === '') {
+				continue;
 			}
 
-			$assignedUser = new User($this->db);
-			if ($assignedUser->fetch((int) $object->fk_user_assign) <= 0 || empty($assignedUser->email)) {
-				dol_syslog('Ticket email trigger cannot notify assigned user '.((int) $object->fk_user_assign).' for ticket '.((int) $object->id).': user not found or empty email', LOG_WARNING);
-				return '';
-			}
-
-			return $assignedUser->email;
+			$html .= '<strong>'.$this->escape($label).' :</strong> '.$this->escape($value).'<br>';
 		}
 
-		return $this->getCustomerRecipients($object);
+		return $html.'</p>';
 	}
 
-	private function getCustomerRecipients($object)
-	{
-		$contactId = $this->getContextContactId($object);
-
-		if ($contactId === -3) {
-			return '';
-		}
-
-		if ($contactId === -2) {
-			return $this->getAllThirdpartyContactEmails($object);
-		}
-
-		if ($contactId > 0) {
-			return $this->getContactEmail($contactId, $object);
-		}
-
-		return $this->getFirstLinkedThirdpartyContactEmail($object);
-	}
-
-	private function getContextContactId($object)
-	{
-		if (isset($object->context['contact_id'])) {
-			return (int) $object->context['contact_id'];
-		}
-
-		return 0;
-	}
-
-	private function getContactEmail($contactId, $object)
-	{
-		$contact = new Contact($this->db);
-		if ($contact->fetch((int) $contactId) <= 0) {
-			return '';
-		}
-
-		if (empty($contact->email) || empty($contact->statut)) {
-			return '';
-		}
-
-		if (!empty($object->fk_soc) && (int) $contact->socid !== (int) $object->fk_soc) {
-			dol_syslog('Ticket email trigger skipped contact '.((int) $contactId).' because it does not belong to ticket thirdparty '.((int) $object->fk_soc), LOG_WARNING);
-			return '';
-		}
-
-		return $contact->email;
-	}
-
-	private function getFirstLinkedThirdpartyContactEmail($object)
-	{
-		$linkedContacts = $object->listeContact(-1, 'external');
-
-		if (!empty($linkedContacts) && is_array($linkedContacts)) {
-			foreach ($linkedContacts as $contact) {
-				if (!empty($contact['email']) && !empty($contact['statuscontact'])) {
-					return $contact['email'];
-				}
-			}
-		}
-
-		return '';
-	}
-
-	private function getAllThirdpartyContactEmails($object)
+	/**
+	 * Fetch the ticket thirdparty name for customer greetings.
+	 */
+	private function getThirdpartyName($object)
 	{
 		if (empty($object->fk_soc)) {
 			return '';
 		}
 
-		$emails = array();
+		if (empty($object->thirdparty)) {
+			$object->fetch_thirdparty();
+		}
 
-		$sql = "SELECT DISTINCT email";
-		$sql .= " FROM ".MAIN_DB_PREFIX."socpeople";
-		$sql .= " WHERE fk_soc = ".((int) $object->fk_soc);
-		$sql .= " AND statut = 1";
-		$sql .= " AND email IS NOT NULL AND email <> ''";
+		return !empty($object->thirdparty->name) ? $object->thirdparty->name : '';
+	}
 
+	/**
+	 * Fetch the assigned user display name.
+	 */
+	private function getAssignedUserName($object)
+	{
+		$assignedUser = $this->getAssignedUser($object);
+		if (empty($assignedUser)) {
+			return '';
+		}
+
+		return $assignedUser->getFullName($this->langs);
+	}
+
+	/**
+	 * Fetch the assigned user, falling back to a fresh DB lookup when the close
+	 * trigger object does not carry fk_user_assign.
+	 */
+	private function getAssignedUser($object)
+	{
+		$assignedUserId = $this->getAssignedUserId($object);
+		if (empty($assignedUserId)) {
+			return null;
+		}
+
+		$assignedUser = new User($this->db);
+		if ($assignedUser->fetch($assignedUserId) <= 0) {
+			return null;
+		}
+
+		return $assignedUser;
+	}
+
+	/**
+	 * Resolve the current assigned user id from object fields or directly from DB.
+	 */
+	private function getAssignedUserId($object)
+	{
+		if (!empty($object->fk_user_assign)) {
+			return (int) $object->fk_user_assign;
+		}
+
+		if (empty($object->id)) {
+			return 0;
+		}
+
+		$sql = "SELECT fk_user_assign FROM ".MAIN_DB_PREFIX."ticket WHERE rowid = ".((int) $object->id);
 		$resql = $this->db->query($sql);
-		if ($resql) {
-			while ($obj = $this->db->fetch_object($resql)) {
-				$emails[] = $obj->email;
+		if (!$resql || !$this->db->num_rows($resql)) {
+			return 0;
+		}
+
+		$row = $this->db->fetch_object($resql);
+
+		return !empty($row->fk_user_assign) ? (int) $row->fk_user_assign : 0;
+	}
+
+	/**
+	 * Return the translated severity label when possible.
+	 */
+	private function getSeverityLabel($object)
+	{
+		if (!empty($object->severity_label)) {
+			return $object->severity_label;
+		}
+
+		if (!empty($object->severity_code)) {
+			$translated = $this->langs->trans('TicketSeverityShort'.$object->severity_code);
+			if ($translated !== 'TicketSeverityShort'.$object->severity_code) {
+				return $translated;
+			}
+
+			return $object->severity_code;
+		}
+
+		return '';
+	}
+
+	/**
+	 * Return the optional resolution block.
+	 */
+	private function getResolutionMessage($object)
+	{
+		if (empty($object->resolution)) {
+			return '';
+		}
+
+		return '<p><strong>'.$this->escape($this->trans('TicketCustomFieldResolution', 'Resolution')).' :</strong><br>'.nl2br($this->escape($object->resolution)).'</p>';
+	}
+
+	/**
+	 * Send one email per recipient so every resolved recipient is explicit.
+	 */
+	private function sendCustomerMailToRecipients($recipients, $event, $object)
+	{
+		$sent = 0;
+		$error = 0;
+
+		foreach ($recipients as $recipient) {
+			$template = $this->buildCustomerTemplate($event, $object, $recipient['name']);
+			if (empty($template)) {
+				continue;
+			}
+
+			$result = $this->sendMail($recipient['email'], $template['subject'], $template['body'], $object);
+			if ($result < 0) {
+				$error++;
+			} elseif ($result > 0) {
+				$sent++;
 			}
 		}
 
-		return implode(', ', $emails);
+		if ($error > 0) {
+			return self::TRIGGER_RESULT_ERROR;
+		}
+
+		return $sent > 0 ? self::TRIGGER_RESULT_OK : self::TRIGGER_RESULT_NONE;
 	}
 
-	private function sendTemplateMail($template, $sendto, $eventCode, $object, User $user, Translate $langs)
+	/**
+	 * Send a single HTML email through Dolibarr mailer.
+	 */
+	private function sendMail($sendto, $subject, $message, $object)
 	{
 		global $conf, $mysoc;
 
-		$substitutionarray = getCommonSubstitutionArray($langs, 0, null, $object);
-		$this->completeTicketSubstitutions($substitutionarray, $object, $eventCode, $user);
-		complete_substitutions_array($substitutionarray, $langs, $object);
-
-		$subject = make_substitutions((string) $template->topic, $substitutionarray, $langs);
-		$message = make_substitutions((string) $template->content, $substitutionarray, $langs);
-
-		$from = !empty($template->email_from) ? $template->email_from : getDolGlobalString('TICKET_NOTIFICATION_EMAIL_FROM');
+		$from = getDolGlobalString('TICKET_NOTIFICATION_EMAIL_FROM');
 		if (empty($from)) {
 			$from = getDolGlobalString('MAIN_MAIL_EMAIL_FROM');
 		}
@@ -304,68 +638,53 @@ class InterfaceTicketsEmail extends DolibarrTriggers
 		}
 
 		$trackid = 'tic'.((int) $object->id);
-		$mailfile = new CMailFile($subject, $sendto, $from, $message, array(), array(), array(), !empty($template->email_tocc) ? $template->email_tocc : '', !empty($template->email_tobcc) ? $template->email_tobcc : '', 0, -1, '', '', $trackid, '', 'ticket');
+		$mailfile = new CMailFile($subject, $sendto, $from, $message, array(), array(), array(), '', '', 0, self::MAIL_BODY_IS_HTML_AUTO, '', '', $trackid, '', 'ticket');
 
 		if ($mailfile->error) {
 			$this->errors[] = $mailfile->error;
-			return -1;
+			return self::TRIGGER_RESULT_ERROR;
 		}
 
 		$result = $mailfile->sendfile();
 		if (!$result) {
 			$this->errors = array_merge($this->errors, $mailfile->errors);
-			return -1;
+			return self::TRIGGER_RESULT_ERROR;
 		}
 
-		return 1;
+		return self::TRIGGER_RESULT_OK;
 	}
 
-	private function completeTicketSubstitutions(&$substitutionarray, $object, $eventCode, User $user)
+	/**
+	 * Translate a custom key with a hardcoded fallback.
+	 */
+	private function trans($key, $fallback)
 	{
-		global $langs;
+		$args = func_get_args();
+		$args = array_slice($args, 2);
 
-		$assignedName = '';
-		if (!empty($object->fk_user_assign)) {
-			$assignedUser = new User($this->db);
-			if ($assignedUser->fetch((int) $object->fk_user_assign) > 0) {
-				$assignedName = $assignedUser->getFullName($langs);
+		if (!empty($args)) {
+			$translated = call_user_func_array(array($this->langs, 'transnoentitiesnoconv'), array_merge(array($key), $args));
+			if ($translated === $key) {
+				return vsprintf($fallback, $args);
 			}
+
+			return $translated;
 		}
 
-		$clientName = '';
-		if (!empty($object->fk_soc)) {
-			$object->fetch_thirdparty();
-			$clientName = $object->thirdparty->name;
+		$translated = $this->langs->transnoentitiesnoconv($key);
+
+		if ($translated === $key) {
+			$translated = $fallback;
 		}
 
-		$resolution = '';
-		if (isset($object->resolution)) {
-			$resolution = (string) $object->resolution;
-		}
+		return $translated;
+	}
 
-		$ticketDate = dol_print_date($object->datec ?: dol_now(), 'dayhour');
-		$ticketUrl = dol_buildpath('/ticket/card.php', 2).'?track_id='.urlencode($object->track_id);
-
-		$substitutionarray['__TICKET_REF__'] = $object->ref;
-		$substitutionarray['__TICKET_TRACK_ID__'] = $object->track_id;
-		$substitutionarray['__TICKET_SUBJECT__'] = $object->subject;
-		$substitutionarray['__TICKET_CLIENT__'] = $clientName;
-		$substitutionarray['__TICKET_DATE__'] = $ticketDate;
-		$substitutionarray['__TICKET_ASSIGNED__'] = $assignedName;
-		$substitutionarray['__TICKET_RESOLUTION__'] = $resolution;
-		$substitutionarray['__TICKET_EVENT__'] = $eventCode;
-		$substitutionarray['__TICKET_URL__'] = $ticketUrl;
-		$substitutionarray['__SENDER_FULLNAME__'] = $user->getFullName($langs);
-
-		$substitutionarray['{ref}'] = $object->ref;
-		$substitutionarray['{track_id}'] = $object->track_id;
-		$substitutionarray['{label}'] = $object->subject;
-		$substitutionarray['{subject}'] = $object->subject;
-		$substitutionarray['{thirdparty_name}'] = $clientName;
-		$substitutionarray['{client}'] = $clientName;
-		$substitutionarray['{date}'] = $ticketDate;
-		$substitutionarray['{assigned}'] = $assignedName;
-		$substitutionarray['{resolution}'] = $resolution;
-		$substitutionarray['{url}'] = $ticketUrl;
+	/**
+	 * Escape dynamic values before injecting them into HTML bodies.
+	 */
+	private function escape($value)
+	{
+		return dol_escape_htmltag((string) $value);
 	}
 }

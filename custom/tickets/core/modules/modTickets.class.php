@@ -81,14 +81,14 @@ class modTickets extends DolibarrModules
 
 	public function init($langs = null)
 	{
-		$sql = array("custom/tickets/sql");
+		$sql = array();
 
 		return $this->_init($sql, $langs);
 	}
 
 	public function remove($langs = null)
 	{
-		$sql = array("custom/tickets/sql");
+		$sql = array();
 
 		return $this->_remove($sql, $langs);
 	}
