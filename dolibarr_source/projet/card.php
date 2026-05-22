@@ -280,17 +280,6 @@ if (empty($reshook)) {
 					$error++;
 				}
 			}
-			 
-			// Save ticket template association
-			if (!$error && !empty($object->id) && GETPOSTINT('fk_ticket_template') > 0) {
-				$sql = "INSERT INTO ".MAIN_DB_PREFIX."tickets_project_template (entity, fk_project, fk_template, datec, fk_user_create) ";
-				$sql .= "VALUES (".(int)$conf->entity.", ".(int)$object->id.", ".GETPOSTINT('fk_ticket_template').", NOW(), ".(int)$user->id.")";
-				$result = $db->query($sql);
-				if (!$result) {
-					setEventMessages("Error saving ticket template association", null, 'errors');
-					$error++;
-				}
-			}
 
 			if (!$error) {
 				$db->commit();
@@ -404,19 +393,7 @@ if (empty($reshook)) {
 					$error++;
 					setEventMessages($object->error, $object->errors, 'errors');
 				}
-				// Update ticket template association
-				if (GETPOSTISSET('fk_ticket_template')) {
-					$sqlDelete = "DELETE FROM ".MAIN_DB_PREFIX."tickets_project_template WHERE fk_project = ".(int)$object->id;
-					$db->query($sqlDelete);
-					
-					if (GETPOSTINT('fk_ticket_template') > 0) {
-						$sql = "INSERT INTO ".MAIN_DB_PREFIX."tickets_project_template (entity, fk_project, fk_template, datec, fk_user_create) ";
-						$sql .= "VALUES (".(int)$conf->entity.", ".(int)$object->id.", ".GETPOSTINT('fk_ticket_template').", NOW(), ".(int)$user->id.")";
-						$db->query($sql);
-					}
-		    	} 
 			}
-			
 		}
 
 		if (!$error) {
@@ -980,23 +957,6 @@ if ($action == 'create' && $user->hasRight('projet', 'creer')) {
 	}
 	print '</td></tr>';
 
-	// Ticket Template
-	print '<tr><td>'.$langs->trans("TicketTemplate").'</td><td class="maxwidthonsmartphone">';
-	print '<select class="flat minwidth200" name="fk_ticket_template" id="fk_ticket_template">';
-	print '<option value="0">-- '.$langs->trans("Choose").' --</option>';
-	
-	// Load ticket templates
-	$sql = "SELECT rowid, label FROM ".MAIN_DB_PREFIX."tickets_template WHERE entity = ".(int)$conf->entity." ORDER BY label";
-	$resql = $db->query($sql);
-	if ($resql) {
-		while ($obj = $db->fetch_object($resql)) {
-			$selected = (GETPOSTISSET('fk_ticket_template') && GETPOSTINT('fk_ticket_template') == $obj->rowid) ? ' selected' : '';
-			print '<option value="'.(int)$obj->rowid.'"'.$selected.'>'.dol_escape_htmltag($obj->label).'</option>';
-		}
-	}
-	print '</select>';
-	print '</td></tr>';
-	
 	// Selection of Owner contact type
 	print '<tr><td class="tdtop">'.$langs->trans("ProjectContactTypeManager").'</td>';
 	print '<td>';
@@ -1409,36 +1369,6 @@ if ($action == 'create' && $user->hasRight('projet', 'creer')) {
 				print $langs->trans("SharedProject");
 			}
 		}
-		print '</td></tr>';
-
-		// Ticket Template
-		print '<tr><td>'.$langs->trans("TicketTemplate").'</td><td>';
-		print '<select class="flat minwidth200" name="fk_ticket_template" id="fk_ticket_template">';
-		print '<option value="0">-- '.$langs->trans("Choose").' --</option>';
-		
-		// Get current template
-		$currentTemplate = 0;
-		$sqlCurrent = "SELECT fk_template FROM ".MAIN_DB_PREFIX."tickets_project_template WHERE fk_project = ".(int)$object->id;
-		$resCurrent = $db->query($sqlCurrent);
-		if ($resCurrent && $rowCurrent = $db->fetch_object($resCurrent)) {
-			$currentTemplate = (int)$rowCurrent->fk_template;
-		}
-		
-		// Load ticket templates
-		$sql = "SELECT rowid, label FROM ".MAIN_DB_PREFIX."tickets_template WHERE entity = ".(int)$conf->entity." ORDER BY label";
-		$resql = $db->query($sql);
-		if ($resql) {
-			while ($obj = $db->fetch_object($resql)) {
-				$selected = '';
-				if (GETPOSTISSET('fk_ticket_template') && GETPOSTINT('fk_ticket_template') == $obj->rowid) {
-					$selected = ' selected';
-				} elseif (!GETPOSTISSET('fk_ticket_template') && $currentTemplate == $obj->rowid) {
-					$selected = ' selected';
-				}
-				print '<option value="'.(int)$obj->rowid.'"'.$selected.'>'.dol_escape_htmltag($obj->label).'</option>';
-			}
-		}
-		print '</select>';
 		print '</td></tr>';
 
 		// Other options

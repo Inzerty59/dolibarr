@@ -1,4 +1,13 @@
 <?php
+/*
+ * T6 - Ticket template editor.
+ *
+ * This custom page manages the definition of reusable ticket templates:
+ * template label, custom fields, field types, defaults and validation flags.
+ * It deliberately stores only model-specific fields. Native ticket fields
+ * such as third party, contact, assignment, severity and project must remain
+ * rendered and processed by Dolibarr's native ticket/card.php workflow.
+ */
 
 $res = 0;
 if (!$res && file_exists(dirname(__FILE__).'/../../main.inc.php')) {
@@ -17,12 +26,25 @@ $langs->loadLangs(array('tickets@tickets', 'ticket', 'admin'));
 
 class TicketTemplateExtraFields extends ExtraFields
 {
+	/**
+	 * Prevent Dolibarr from loading global ticket extrafields on this page.
+	 *
+	 * The template editor builds an in-memory ExtraFields definition from the
+	 * draft template currently stored in session, so loading real DB extrafields
+	 * here would mix template design fields with production ticket fields.
+	 */
 	public function fetch_name_optionals_label($elementtype, $forceload = false, $attrname = '')
 	{
 		return 1;
 	}
 }
 
+/**
+ * Return the minimal ExtraFields attribute structure required by Dolibarr.
+ *
+ * The template editor fills this structure dynamically to preview inputs for
+ * fields that do not necessarily exist yet in llx_extrafields.
+ */
 function ticketTemplateEmptyAttributes()
 {
 	return array(
@@ -52,6 +74,12 @@ function ticketTemplateEmptyAttributes()
 	);
 }
 
+/**
+ * Convert the field edition form into a normalized array stored in session.
+ *
+ * This is used before the model is saved in database, so the user can add,
+ * update and delete several fields while staying on the same edition page.
+ */
 function ticketTemplateFieldFromPost()
 {
 	$param = GETPOST('param', 'restricthtml');
@@ -82,6 +110,12 @@ function ticketTemplateFieldFromPost()
 	);
 }
 
+/**
+ * Convert textarea option syntax into the array format expected by ExtraFields.
+ *
+ * Dolibarr select/list fields expect an array('options' => key/value pairs).
+ * The UI keeps this editable as one option per line for simplicity.
+ */
 function ticketTemplateParamToArray($param)
 {
 	$out = array('options' => array());

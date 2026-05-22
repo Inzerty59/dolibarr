@@ -1,3 +1,6 @@
+-- T6 - Associates one project with one ticket template.
+-- The selector is rendered by a projectcard hook, then this association is
+-- saved by the PROJECT_CREATE/PROJECT_MODIFY trigger.
 CREATE TABLE IF NOT EXISTS llx_tickets_project_template (
   rowid integer AUTO_INCREMENT PRIMARY KEY,
   entity integer DEFAULT 1 NOT NULL,

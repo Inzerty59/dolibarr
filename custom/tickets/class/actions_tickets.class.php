@@ -1,13 +1,17 @@
 <?php
+/*
+ * T6 - Hook actions for custom ticket templates.
+ *
+ * This class is loaded by Dolibarr's HookManager when the custom tickets module
+ * is enabled. Its job is to extend native pages without patching core files:
+ * - projectcard: add the "ticket template" selector to project create/edit.
+ * - ticketcard: let Dolibarr render the native ticket form and inject only the
+ *   custom fields of the template attached to the selected project.
+ */
 
 require_once DOL_DOCUMENT_ROOT.'/core/class/commonhookactions.class.php';
 require_once DOL_DOCUMENT_ROOT.'/core/class/extrafields.class.php';
-require_once DOL_DOCUMENT_ROOT.'/core/class/html.form.class.php';
 require_once DOL_DOCUMENT_ROOT.'/ticket/class/ticket.class.php';
-
-if (isModEnabled('project')) {
-	require_once DOL_DOCUMENT_ROOT.'/projet/class/project.class.php';
-}
 
 class ActionsTickets extends CommonHookActions
 {
@@ -21,9 +25,19 @@ class ActionsTickets extends CommonHookActions
 		$this->db = $db;
 	}
 
+	/**
+	 * Main hook entry point for actions executed before native page processing.
+	 *
+	 * For ticket creation, it synchronizes template fields into Dolibarr
+	 * extrafields storage, redirects ticket creation without project to the
+	 * project selector, and validates required template fields before Dolibarr's
+	 * native add action creates the ticket.
+	 */
 	public function doActions($parameters, &$object, &$action, $hookmanager)
 	{
-		global $conf, $langs, $user;
+		global $langs, $user;
+
+		$langs->load('tickets@tickets');
 
 		if (!$this->isTicketCard()) {
 			return 0;
@@ -31,7 +45,7 @@ class ActionsTickets extends CommonHookActions
 
 		$projectid = $this->getProjectIdFromRequest();
 
-		if (in_array($action, array('create', 'add', 'add_project_template_ticket'), true)) {
+		if (in_array($action, array('add', 'update'), true)) {
 			$this->syncAllTemplateExtraFieldsForStorage();
 		}
 
@@ -40,16 +54,7 @@ class ActionsTickets extends CommonHookActions
 			exit;
 		}
 
-		if ($action === 'add_project_template_ticket') {
-			if (!$user->hasRight('ticket', 'write')) {
-				accessforbidden('NotEnoughPermissions', 0, 1);
-			}
-
-			$this->createTicketFromTemplate($object, $projectid);
-			return 1;
-		}
-
-		if ($action !== 'create' || $projectid <= 0) {
+		if ($action !== 'add' || $projectid <= 0) {
 			return 0;
 		}
 
@@ -67,15 +72,190 @@ class ActionsTickets extends CommonHookActions
 			accessforbidden('NotEnoughPermissions', 0, 1);
 		}
 
-		$this->renderTemplateCreateForm($object, $projectid, $template, $fields);
-		exit;
+		$templateExtraFields = new ExtraFields($this->db);
+		$this->fillExtraFields($templateExtraFields, $fields, 1);
+
+		if (!$this->validateRequiredFields($fields, $templateExtraFields)) {
+			$action = 'create';
+			return -1;
+		}
+
+		return 0;
 	}
 
+	/**
+	 * True when the current request is handled by native ticket/card.php.
+	 */
 	private function isTicketCard()
 	{
 		return strpos($_SERVER['PHP_SELF'] ?? '', '/ticket/card.php') !== false;
 	}
 
+	/**
+	 * Extend native Dolibarr forms without replacing them.
+	 *
+	 * - projectcard: inject the project -> ticket template selector.
+	 * - ticketcard: inject only the selected template fields into FormTicket.
+	 */
+	public function formObjectOptions($parameters, &$object, &$action, $hookmanager)
+	{
+		global $langs;
+
+		if ($this->isProjectCard()) {
+			if (!in_array($action, array('create', 'edit'), true)) {
+				return 0;
+			}
+
+			$langs->load('tickets@tickets');
+			$selectedTemplateId = GETPOSTISSET('fk_ticket_template') ? GETPOSTINT('fk_ticket_template') : $this->fetchProjectTemplateId((int) $object->id);
+
+			$this->resprints = $this->renderProjectTemplateSelect($selectedTemplateId);
+
+			return 0;
+		}
+
+		if ($this->isTicketCard() && in_array($action, array('create', 'edit'), true)) {
+			$ticketForOptionals = $this->fetchCurrentTicketForOptionals($object, $action);
+			$projectid = $this->getProjectIdFromRequest();
+			if ($projectid <= 0 && !empty($ticketForOptionals->fk_project)) {
+				$projectid = (int) $ticketForOptionals->fk_project;
+			}
+
+			$template = $projectid > 0 ? $this->fetchProjectTemplate($projectid) : null;
+			if (empty($template)) {
+				return 0;
+			}
+
+			$templateFields = $this->fetchTemplateFields((int) $template->rowid);
+			if (!empty($templateFields)) {
+				$this->syncDolibarrExtraFields($templateFields);
+			}
+
+			print $this->renderTicketTemplateOptionals($ticketForOptionals, $templateFields);
+
+			return 1;
+		}
+
+		return 0;
+	}
+
+	/**
+	 * True when the current request is handled by native projet/card.php.
+	 */
+	private function isProjectCard()
+	{
+		return strpos($_SERVER['PHP_SELF'] ?? '', '/projet/card.php') !== false;
+	}
+
+	/**
+	 * Fetch the template currently attached to a project.
+	 *
+	 * Used to preselect the project template when editing a project.
+	 */
+	private function fetchProjectTemplateId($projectid)
+	{
+		global $conf;
+
+		if ($projectid <= 0) {
+			return 0;
+		}
+
+		$sql = "SELECT fk_template";
+		$sql .= " FROM ".MAIN_DB_PREFIX."tickets_project_template";
+		$sql .= " WHERE fk_project = ".((int) $projectid);
+		$sql .= " AND entity = ".((int) $conf->entity);
+		$sql .= " ORDER BY rowid DESC";
+
+		$resql = $this->db->query($sql);
+		if ($resql && ($obj = $this->db->fetch_object($resql))) {
+			return (int) $obj->fk_template;
+		}
+
+		return 0;
+	}
+
+	/**
+	 * Build the HTML row injected into Dolibarr's native project form.
+	 *
+	 * The field name is fk_ticket_template because the project trigger reads
+	 * that POST value after Dolibarr saves the project.
+	 */
+	private function renderProjectTemplateSelect($selectedTemplateId)
+	{
+		global $conf, $langs;
+
+		$out = '<tr><td>'.$langs->trans("TicketTemplate").'</td><td class="maxwidthonsmartphone">';
+		$out .= '<select class="flat minwidth200" name="fk_ticket_template" id="fk_ticket_template">';
+		$out .= '<option value="0">-- '.$langs->trans("Choose").' --</option>';
+
+		$sql = "SELECT rowid, label";
+		$sql .= " FROM ".MAIN_DB_PREFIX."tickets_template";
+		$sql .= " WHERE entity = ".((int) $conf->entity);
+		$sql .= " ORDER BY label";
+
+		$resql = $this->db->query($sql);
+		while ($resql && ($obj = $this->db->fetch_object($resql))) {
+			$selected = ((int) $selectedTemplateId === (int) $obj->rowid) ? ' selected' : '';
+			$out .= '<option value="'.((int) $obj->rowid).'"'.$selected.'>'.dol_escape_htmltag($obj->label).'</option>';
+		}
+
+		$out .= '</select>';
+		$out .= '</td></tr>';
+
+		return $out;
+	}
+
+	/**
+	 * Render only the fields of the selected project template.
+	 *
+	 * FormTicket has a formObjectOptions hook, but does not print resPrint. For
+	 * this native hook location we print from the hook and return 1, so Dolibarr
+	 * does not also render the extrafields created manually from the interface.
+	 */
+	private function renderTicketTemplateOptionals($ticket, $templateFields)
+	{
+		$extrafields = new ExtraFields($this->db);
+		$this->fillExtraFields($extrafields, $templateFields, 1);
+
+		$out = '';
+		foreach ($templateFields as $field) {
+			$key = $this->getTechnicalAttrname($field);
+			$type = $this->normalizeType($field->type);
+			$value = $this->getTemplateFieldInputValue($ticket, $key, $type, $field->fielddefault);
+			$requiredClass = !empty($field->fieldrequired) ? ' fieldrequired' : '';
+
+			$out .= '<tr>';
+			$out .= '<td class="titlefieldcreate'.$requiredClass.'">'.dol_escape_htmltag($field->label).'</td>';
+			$out .= '<td>'.$extrafields->showInputField($key, $value, '', '', 'options_', '', $ticket, 'ticket').'</td>';
+			$out .= '</tr>';
+		}
+
+		return $out;
+	}
+
+	/**
+	 * Load the current ticket for edit mode so custom values are prefilled.
+	 */
+	private function fetchCurrentTicketForOptionals($ticket, $action)
+	{
+		if ($action !== 'edit') {
+			return $ticket;
+		}
+
+		$id = GETPOSTINT('id');
+		$trackid = GETPOST('track_id', 'alphanohtml');
+
+		$currentTicket = new Ticket($this->db);
+		if ($currentTicket->fetch($id, '', $trackid) > 0) {
+			return $currentTicket;
+		}
+
+		return $ticket;
+	}
+
+	/**
+	 * Read project id from the different parameter names used by Dolibarr pages.
+	 */
 	private function getProjectIdFromRequest()
 	{
 		$projectid = GETPOSTINT('projectid');
@@ -89,6 +269,9 @@ class ActionsTickets extends CommonHookActions
 		return $projectid;
 	}
 
+	/**
+	 * Fetch the template associated with a project.
+	 */
 	private function fetchProjectTemplate($projectid)
 	{
 		global $conf;
@@ -109,6 +292,9 @@ class ActionsTickets extends CommonHookActions
 		return null;
 	}
 
+	/**
+	 * Fetch active fields for one ticket template, ordered for display.
+	 */
 	private function fetchTemplateFields($templateid)
 	{
 		$fields = array();
@@ -127,149 +313,9 @@ class ActionsTickets extends CommonHookActions
 		return $fields;
 	}
 
-	private function createTicketFromTemplate(&$object, $projectid)
-	{
-		global $langs, $user;
-
-		$token = GETPOST('token', 'alphanohtml');
-		if (empty($token) || $token !== currentToken()) {
-			accessforbidden('Invalid token', 0, 1);
-		}
-
-		$templateid = GETPOSTINT('template_id');
-		$template = $this->fetchProjectTemplate($projectid);
-		if (empty($template) || (int) $template->rowid !== $templateid) {
-			accessforbidden('Invalid ticket template', 0, 1);
-		}
-
-		$fields = $this->fetchTemplateFields($templateid);
-		if (empty($fields)) {
-			setEventMessages('Aucun champ actif sur le modèle de ticket.', null, 'errors');
-			$this->renderTemplateCreateForm($object, $projectid, $template, $fields);
-			exit;
-		}
-
-		$this->syncDolibarrExtraFields($fields);
-
-		$templateExtraFields = new ExtraFields($this->db);
-		$this->fillExtraFields($templateExtraFields, $fields, 1);
-
-		if (!$this->validateRequiredFields($fields, $templateExtraFields)) {
-			$this->renderTemplateCreateForm($object, $projectid, $template, $fields);
-			exit;
-		}
-
-		$ret = $templateExtraFields->setOptionalsFromPost(null, $object);
-		if ($ret < 0) {
-			setEventMessages($templateExtraFields->error, $templateExtraFields->errors, 'errors');
-			$this->renderTemplateCreateForm($object, $projectid, $template, $fields);
-			exit;
-		}
-
-		$object->fk_project = $projectid;
-		$object->fk_user_create = $user->id;
-		$object->ref = $object->getDefaultRef();
-		$object->subject = $this->getTicketSubjectFromFields($fields, $template);
-		$object->message = '';
-
-		$result = $object->create($user);
-		if ($result > 0) {
-			setEventMessages($langs->trans("TicketCreated"), null, 'mesgs');
-			header('Location: '.DOL_URL_ROOT.'/ticket/card.php?track_id='.urlencode($object->track_id));
-			exit;
-		}
-
-		setEventMessages($object->error, $object->errors, 'errors');
-		$this->renderTemplateCreateForm($object, $projectid, $template, $fields);
-		exit;
-	}
-
-	private function getTicketSubjectFromFields($fields, $template)
-	{
-		foreach ($fields as $field) {
-			$key = 'options_'.$this->getTechnicalAttrname($field);
-			if (GETPOSTISSET($key)) {
-				$value = GETPOST($key, 'alphanohtml');
-				if (is_array($value)) {
-					$value = implode(', ', $value);
-				}
-				$value = trim((string) $value);
-				if ($value !== '') {
-					return dol_trunc($value, 255);
-				}
-			}
-		}
-
-		return dol_trunc(!empty($template->label) ? $template->label : 'Ticket', 255);
-	}
-
-	private function renderTemplateCreateForm(&$object, $projectid, $template, $fields)
-	{
-		global $conf, $langs;
-
-		$this->syncDolibarrExtraFields($fields);
-
-		$templateExtraFields = new ExtraFields($this->db);
-		$this->fillExtraFields($templateExtraFields, $fields, 1);
-
-		$title = $langs->trans('NewTicket');
-		llxHeader('', $title, 'EN:Module_Ticket|FR:DocumentationModuleTicket', '', 0, 0, '', '', '', 'mod-ticket page-card');
-
-		print load_fiche_titre($title, '', 'ticket');
-
-		$projectlabel = '';
-		if (isModEnabled('project') && class_exists('Project')) {
-			$project = new Project($this->db);
-			if ($project->fetch($projectid) > 0) {
-				$projectlabel = $project->ref.' - '.$project->title;
-			}
-		}
-
-		print '<form action="'.dol_escape_htmltag($_SERVER["PHP_SELF"]).'" method="POST">';
-		print '<input type="hidden" name="token" value="'.newToken().'">';
-		print '<input type="hidden" name="action" value="add_project_template_ticket">';
-		print '<input type="hidden" name="projectid" value="'.((int) $projectid).'">';
-		print '<input type="hidden" name="template_id" value="'.((int) $template->rowid).'">';
-
-		print dol_get_fiche_head();
-		print '<table class="border centpercent tableforfieldcreate">';
-
-		if ($projectlabel !== '') {
-			print '<tr><td class="titlefieldcreate">'.$langs->trans('Project').'</td>';
-			print '<td><strong>'.dol_escape_htmltag($projectlabel).'</strong></td></tr>';
-		}
-
-		print $this->showNativeFields($object, $templateExtraFields, $fields);
-
-		print '</table>';
-		print dol_get_fiche_end();
-
-		$form = new Form($this->db);
-		print $form->buttonsSaveCancel('CreateTicket', 'Cancel');
-		print '</form>';
-
-		llxFooter();
-	}
-
-	private function showNativeFields($object, $extrafields, $fields)
-	{
-		$out = '';
-
-		foreach ($fields as $field) {
-			$key = $this->getTechnicalAttrname($field);
-			$type = $this->normalizeType($field->type);
-			$value = $this->getInputValue($key, $type, $field->fielddefault);
-			$requiredClass = !empty($field->fieldrequired) ? ' fieldrequired' : '';
-
-			$out .= '<tr>';
-			$out .= '<td class="titlefieldcreate'.$requiredClass.'">'.dol_escape_htmltag($field->label).'</td>';
-			$out .= '<td>'.$extrafields->showInputField($key, $value, '', '', 'options_', '', $object, 'ticket').'</td>';
-			$out .= '</tr>';
-		}
-
-		return $out;
-	}
-
+	/**
+	 * Validate required custom template fields before ticket creation.
+	 */
 	private function validateRequiredFields($fields, $extrafields)
 	{
 		global $langs;
@@ -298,6 +344,9 @@ class ActionsTickets extends CommonHookActions
 		return true;
 	}
 
+	/**
+	 * Check whether a posted custom field is empty according to its Dolibarr type.
+	 */
 	private function isPostedFieldEmpty($key, $type, $extrafields)
 	{
 		if ($type === 'date' || $type === 'datetime' || $type === 'datetimegmt') {
@@ -313,7 +362,13 @@ class ActionsTickets extends CommonHookActions
 		return ExtraFields::isEmptyValue($value, $type);
 	}
 
-	private function getInputValue($key, $type, $default)
+	/**
+	 * Resolve the value to display for one template field.
+	 *
+	 * POST has priority so validation errors keep the user's input. Existing
+	 * ticket values are used on edit, then the template default is used last.
+	 */
+	private function getTemplateFieldInputValue($ticket, $key, $type, $default)
 	{
 		if (GETPOSTISSET('options_'.$key)) {
 			$postvalue = GETPOST('options_'.$key, ($type == 'html' || $type == 'text') ? 'restricthtml' : 'alphanohtml', 3);
@@ -328,9 +383,19 @@ class ActionsTickets extends CommonHookActions
 			return dol_mktime(GETPOSTINT('options_'.$key.'hour'), GETPOSTINT('options_'.$key.'min'), GETPOSTINT('options_'.$key.'sec'), GETPOSTINT('options_'.$key.'month'), GETPOSTINT('options_'.$key.'day'), GETPOSTINT('options_'.$key.'year'), 'tzuserrel');
 		}
 
+		if (isset($ticket->array_options['options_'.$key])) {
+			return $ticket->array_options['options_'.$key];
+		}
+
 		return $default;
 	}
 
+	/**
+	 * Build an in-memory ExtraFields definition from template field rows.
+	 *
+	 * This lets Dolibarr render inputs for fields that are defined by our custom
+	 * model table, while still using Dolibarr's native extrafield rendering code.
+	 */
 	private function fillExtraFields($extrafields, $fields, $visible)
 	{
 		global $conf;
@@ -369,6 +434,13 @@ class ActionsTickets extends CommonHookActions
 		}
 	}
 
+	/**
+	 * Ensure custom template fields also exist in Dolibarr extrafields storage.
+	 *
+	 * The ticket object persists extra fields through Dolibarr's normal
+	 * extrafields mechanism, so the template definitions must be mirrored there
+	 * before creating a ticket.
+	 */
 	private function syncDolibarrExtraFields($fields)
 	{
 		global $conf;
@@ -405,6 +477,12 @@ class ActionsTickets extends CommonHookActions
 		}
 	}
 
+	/**
+	 * Synchronize every active template field before native ticket processing.
+	 *
+	 * This protects the save path: when Dolibarr later reads options_* fields,
+	 * the corresponding extrafields already exist in its metadata table.
+	 */
 	private function syncAllTemplateExtraFieldsForStorage()
 	{
 		$fields = array();
@@ -424,6 +502,12 @@ class ActionsTickets extends CommonHookActions
 		}
 	}
 
+	/**
+	 * Generate a stable Dolibarr extrafield technical name for a template field.
+	 *
+	 * The template id is included to avoid collisions between two templates that
+	 * use the same business field name.
+	 */
 	private function getTechnicalAttrname($field)
 	{
 		$templateid = !empty($field->fk_template) ? (int) $field->fk_template : 0;
@@ -450,6 +534,9 @@ class ActionsTickets extends CommonHookActions
 		return $prefix.substr($base, 0, $maxlength).$suffix;
 	}
 
+	/**
+	 * Convert option text stored on a template field into ExtraFields parameters.
+	 */
 	private function paramToArray($param)
 	{
 		$out = array('options' => array());
@@ -473,17 +560,26 @@ class ActionsTickets extends CommonHookActions
 		return $out;
 	}
 
+	/**
+	 * Decode optional field metadata stored as JSON.
+	 */
 	private function decodeOptions($json)
 	{
 		$options = json_decode((string) $json, true);
 		return is_array($options) ? $options : array();
 	}
 
+	/**
+	 * Normalize an empty/custom type to a Dolibarr-compatible extrafield type.
+	 */
 	private function normalizeType($type)
 	{
 		return ($type === '' || $type === '0') ? 'varchar' : $type;
 	}
 
+	/**
+	 * Return an empty ExtraFields attributes structure.
+	 */
 	private function emptyAttributes()
 	{
 		return array(

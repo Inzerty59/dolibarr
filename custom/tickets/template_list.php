@@ -1,4 +1,12 @@
 <?php
+/*
+ * T6 - Ticket templates list.
+ *
+ * This page belongs to the custom tickets module, not to Dolibarr core.
+ * It lets administrators see existing ticket templates and open the
+ * template edition page. A template is only a set of extra ticket fields;
+ * native ticket fields stay owned by Dolibarr ticket/card.php.
+ */
 
 $res = 0;
 if (!$res && file_exists(dirname(__FILE__).'/../../main.inc.php')) {

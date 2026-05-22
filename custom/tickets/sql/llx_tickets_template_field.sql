@@ -1,3 +1,6 @@
+-- T6 - Stores custom fields attached to ticket templates.
+-- These fields are mirrored into Dolibarr extrafields before ticket creation
+-- so the final ticket is still persisted by the native extrafields mechanism.
 CREATE TABLE IF NOT EXISTS llx_tickets_template_field (
   rowid integer AUTO_INCREMENT PRIMARY KEY,
   fk_template integer NOT NULL,

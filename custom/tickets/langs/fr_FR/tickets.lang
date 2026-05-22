@@ -4,7 +4,7 @@ TicketsDescription=Module Tickets personnalisé
 TicketsSetup=Configuration
 TicketsAbout=À propos
 
-TicketTemplates=Modèles des tickets
+TicketTemplates=Modèles de ticket
 NewTicketTemplate=Créer un modèle
 ListTicketTemplates=Liste des modèles
 TicketTemplate=Modèle de ticket

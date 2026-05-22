@@ -1,10 +1,26 @@
 <?php
+/*
+ * T6 - Custom tickets module descriptor.
+ *
+ * This file registers the custom ticket-template feature in Dolibarr:
+ * menus, SQL tables, hooks and triggers. It does not render business UI by
+ * itself; it only tells Dolibarr where the module entry points are.
+ */
 
 include_once DOL_DOCUMENT_ROOT.'/core/modules/DolibarrModules.class.php';
 
 class modTickets extends DolibarrModules
 {
 
+	/**
+	 * Configure the custom Tickets module declaration.
+	 *
+	 * Dolibarr reads this when the module is enabled/refreshed. The important
+	 * parts for T6 are:
+	 * - hooks: ticketcard/projectcard so we can extend native pages safely.
+	 * - triggers: project/template association after project save.
+	 * - menus: template list and template creation under the native Ticket menu.
+	 */
 	public function __construct($db)
 	{
 		global $conf, $langs;
@@ -38,11 +54,12 @@ class modTickets extends DolibarrModules
 			'substitutions' => 0,
 			'menus' => 0,
 			'css' => 0,
-			'js' => 1,
+			'js' => 0,
 			'hooks' => array(
 				'data' => array(
 					'ticketcard',
 					'ticket',
+					'projectcard',
 					'all'
 				),
 				'entity' => '0',
@@ -72,7 +89,7 @@ $r = 0;
 $this->menu[$r++] = array(
 	'fk_menu' => 'fk_mainmenu=ticket',
 	'type' => 'left',
-	'titre' => 'Modèles des tickets',
+	'titre' => 'TicketTemplates',
 	'prefix' => '<span class="fas fa-briefcase paddingright pictofixedwidth em092" style="color:#18bc9c"></span>',
 	'mainmenu' => 'ticket',
 	'leftmenu' => 'tickets_templates',
@@ -88,7 +105,7 @@ $this->menu[$r++] = array(
 $this->menu[$r++] = array(
 	'fk_menu' => 'fk_mainmenu=ticket,fk_leftmenu=tickets_templates',
 	'type' => 'left',
-	'titre' => 'Créer un modèle',
+	'titre' => 'NewTicketTemplate',
 	'mainmenu' => 'ticket',
 	'leftmenu' => 'tickets_template_new',
 	'url' => '/custom/tickets/template_card.php?action=newmodel&reset=1',
@@ -103,7 +120,7 @@ $this->menu[$r++] = array(
 $this->menu[$r++] = array(
 	'fk_menu' => 'fk_mainmenu=ticket,fk_leftmenu=tickets_templates',
 	'type' => 'left',
-	'titre' => 'Liste des modèles',
+	'titre' => 'ListTicketTemplates',
 	'mainmenu' => 'ticket',
 	'leftmenu' => 'tickets_template_list',
 	'url' => '/custom/tickets/template_list.php',
@@ -130,6 +147,9 @@ $this->menu[$r++] = array(
 		}
 	}
 
+	/**
+	 * Install/update custom SQL tables and register Dolibarr metadata.
+	 */
 	public function init($langs = null)
 	{
 	   $sql = array();
@@ -137,6 +157,12 @@ $this->menu[$r++] = array(
        return $this->_init($sql, $langs);
 	}
 
+	/**
+	 * Disable module metadata using Dolibarr's standard removal mechanism.
+	 *
+	 * Tables are intentionally not dropped here, following Dolibarr's usual
+	 * module behavior: disabling a module should not delete business data.
+	 */
 	public function remove($langs = null)
 	{
 		$sql = array();
