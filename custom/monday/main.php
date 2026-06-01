@@ -8,6 +8,259 @@ error_reporting(E_ALL);
 
 $langs->load("mymodule@mymodule");
 
+function monday_normalize_kpi_label($label)
+{
+    $label = dol_string_unaccent((string) $label);
+    $label = strtolower($label);
+    $label = preg_replace('/[^a-z0-9]+/', '', $label);
+    return $label;
+}
+
+function monday_get_kpi_columns($db)
+{
+    $targets = [
+        'retourclient' => 'retour_client',
+        'motifrefus' => 'motif_refus',
+        'canalsourcing' => 'canal_sourcing',
+        'client' => 'client',
+        'dateenvoieclient' => 'date_envoie_client',
+        'dateenvoiclient' => 'date_envoie_client',
+        'datedenvoiclient' => 'date_envoie_client',
+        'datedenvoieclient' => 'date_envoie_client',
+        'dateretour' => 'date_retour',
+        'actioncorrective' => 'action_corrective',
+    ];
+
+    $columns = [];
+    $res = $db->query("SELECT rowid, fk_group, label, type FROM llx_myworkspace_column");
+    while ($res && $o = $db->fetch_object($res)) {
+        $normalized = monday_normalize_kpi_label($o->label);
+        if (isset($targets[$normalized])) {
+            $columns[] = [
+                'id' => (int) $o->rowid,
+                'group_id' => (int) $o->fk_group,
+                'metric' => $targets[$normalized],
+                'type' => (string) $o->type,
+            ];
+        }
+    }
+
+    return $columns;
+}
+
+function monday_sanitize_kpi_color($color)
+{
+    $color = trim((string) $color);
+    return preg_match('/^#[0-9a-fA-F]{6}$/', $color) ? $color : '#cccccc';
+}
+
+function monday_get_kpi_select_options($db, $columns)
+{
+    if (empty($columns)) {
+        return [];
+    }
+
+    $columnIds = array_map(function ($column) {
+        return (int) $column['id'];
+    }, $columns);
+
+    $options = [];
+    $sql = "SELECT rowid, fk_column, label, color
+              FROM llx_myworkspace_column_option
+             WHERE fk_column IN (".implode(',', $columnIds).")
+          ORDER BY position ASC, rowid ASC";
+    $res = $db->query($sql);
+    while ($res && $o = $db->fetch_object($res)) {
+        $options[(int) $o->rowid] = [
+            'id' => (int) $o->rowid,
+            'column_id' => (int) $o->fk_column,
+            'label' => (string) $o->label,
+            'color' => monday_sanitize_kpi_color($o->color),
+        ];
+    }
+
+    return $options;
+}
+
+function monday_empty_kpi_bucket()
+{
+    return ['count' => 0, 'color' => '#e5e7eb'];
+}
+
+function monday_parse_kpi_date($value)
+{
+    $value = trim((string) $value);
+    if ($value === '') {
+        return null;
+    }
+
+    $formats = ['Y-m-d', 'd/m/Y', 'd-m-Y'];
+    foreach ($formats as $format) {
+        $date = DateTime::createFromFormat($format, $value);
+        if ($date && $date->format($format) === $value) {
+            $date->setTime(0, 0, 0);
+            return $date;
+        }
+    }
+
+    return null;
+}
+
+function monday_format_delay_bucket($days)
+{
+    $days = (int) $days;
+    if ($days === 0) {
+        return 'Même jour';
+    }
+    if ($days === 1) {
+        return '1 jour';
+    }
+    if ($days === 7) {
+        return '1 semaine';
+    }
+    if ($days > 7 && $days % 7 === 0 && $days < 30) {
+        return ($days / 7).' semaines';
+    }
+    if ($days === 30) {
+        return '1 mois';
+    }
+    if ($days > 30 && $days % 30 === 0) {
+        return ($days / 30).' mois';
+    }
+    return $days.' jours';
+}
+
+function monday_format_average_delay($days)
+{
+    if ($days === null) {
+        return 'N/A';
+    }
+    if ($days < 1) {
+        return round($days * 24, 1).' h';
+    }
+    return round($days, 1).' j';
+}
+
+function monday_get_kpi_context($db)
+{
+    $kpiColumns = monday_get_kpi_columns($db);
+    $options = monday_get_kpi_select_options($db, $kpiColumns);
+    $columnsByGroup = [];
+
+    foreach ($kpiColumns as $column) {
+        if (!isset($columnsByGroup[$column['group_id']])) {
+            $columnsByGroup[$column['group_id']] = [];
+        }
+        $columnsByGroup[$column['group_id']][$column['metric']] = $column['id'];
+    }
+
+    $dataGroupIds = [];
+    foreach ($columnsByGroup as $groupId => $groupColumns) {
+        if (isset($groupColumns['retour_client']) || isset($groupColumns['motif_refus']) || isset($groupColumns['canal_sourcing']) || isset($groupColumns['date_envoie_client']) || isset($groupColumns['date_retour']) || isset($groupColumns['action_corrective'])) {
+            $dataGroupIds[] = (int) $groupId;
+        }
+    }
+
+    return [$kpiColumns, $options, $columnsByGroup, $dataGroupIds];
+}
+
+function monday_get_kpi_cell_label($value, $options)
+{
+    $optionId = (int) $value;
+    if ($optionId > 0 && isset($options[$optionId])) {
+        return $options[$optionId]['label'];
+    }
+    return (string) $value;
+}
+
+function monday_csv_safe_value($value)
+{
+    $value = (string) $value;
+    if ($value !== '' && preg_match('/^[=+\-@]/', $value)) {
+        return "'".$value;
+    }
+    return $value;
+}
+
+function monday_csv_put_row($handle, $row)
+{
+    $safeRow = array_map('monday_csv_safe_value', $row);
+    fputcsv($handle, $safeRow, ';');
+}
+
+function monday_get_column_options_for_export($db, $columnIds)
+{
+    if (empty($columnIds)) {
+        return [];
+    }
+
+    $columnIds = array_map('intval', $columnIds);
+    $options = [];
+    $res = $db->query("SELECT rowid, fk_column, label
+                         FROM llx_myworkspace_column_option
+                        WHERE fk_column IN (".implode(',', $columnIds).")
+                     ORDER BY position ASC, rowid ASC");
+    while ($res && $option = $db->fetch_object($res)) {
+        $columnId = (int) $option->fk_column;
+        if (!isset($options[$columnId])) {
+            $options[$columnId] = [];
+        }
+        $options[$columnId][(int) $option->rowid] = (string) $option->label;
+    }
+
+    return $options;
+}
+
+function monday_get_users_for_export($db)
+{
+    $users = [];
+    $res = $db->query("SELECT rowid, firstname, lastname, login FROM llx_user");
+    while ($res && $user = $db->fetch_object($res)) {
+        $name = trim($user->firstname.' '.$user->lastname);
+        $users[(int) $user->rowid] = $name !== '' ? $name : (string) $user->login;
+    }
+    return $users;
+}
+
+function monday_format_export_cell_value($value, $column, $optionsByColumn, $usersById)
+{
+    $value = (string) $value;
+    if ($value === '') {
+        return '';
+    }
+
+    $columnId = (int) $column['id'];
+    switch ($column['type']) {
+        case 'select':
+            $optionId = (int) $value;
+            return isset($optionsByColumn[$columnId][$optionId]) ? $optionsByColumn[$columnId][$optionId] : $value;
+
+        case 'tags':
+            $tagIds = json_decode($value, true);
+            if (!is_array($tagIds)) {
+                return $value;
+            }
+            $labels = [];
+            foreach ($tagIds as $tagId) {
+                $tagId = (int) $tagId;
+                if (isset($optionsByColumn[$columnId][$tagId])) {
+                    $labels[] = $optionsByColumn[$columnId][$tagId];
+                }
+            }
+            return implode(', ', $labels);
+
+        case 'user':
+            $userId = (int) $value;
+            return isset($usersById[$userId]) ? $usersById[$userId] : $value;
+
+        case 'deadline':
+            return str_replace('|', ' - ', $value);
+
+        default:
+            return $value;
+    }
+}
+
 if ($_SERVER['REQUEST_METHOD']==='POST'
     && isset($_POST['toggle_group_id'], $_POST['collapsed'])) {
     if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
@@ -91,6 +344,449 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['tasks_group_id_with_cells
     
     header('Content-Type: application/json');
     echo json_encode($out);
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['kpi_export_groups'])) {
+    if (!isset($_GET['token']) || $_GET['token'] !== $_SESSION['newtoken']) {
+        accessforbidden('CSRF token invalid');
+    }
+
+    list(, , , $dataGroupIds) = monday_get_kpi_context($db);
+    $groups = [];
+
+    if (!empty($dataGroupIds)) {
+        $res = $db->query("SELECT rowid, label
+                             FROM llx_myworkspace_group
+                            WHERE rowid IN (".implode(',', $dataGroupIds).")
+                         ORDER BY position ASC, label ASC");
+        while ($res && $group = $db->fetch_object($res)) {
+            $groups[] = [
+                'id' => (int) $group->rowid,
+                'label' => (string) $group->label,
+            ];
+        }
+    }
+
+    header('Content-Type: application/json');
+    echo json_encode($groups);
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['kpi_export_csv'])) {
+    if (!isset($_GET['token']) || $_GET['token'] !== $_SESSION['newtoken']) {
+        accessforbidden('CSRF token invalid');
+    }
+
+    list(, , , $dataGroupIds) = monday_get_kpi_context($db);
+    $selected = trim((string) $_GET['kpi_export_csv']);
+    $selectedGroupId = $selected === 'all' ? 0 : (int) $selected;
+
+    if ($selectedGroupId > 0 && !in_array($selectedGroupId, $dataGroupIds, true)) {
+        accessforbidden('Invalid KPI export group');
+    }
+
+    $exportGroupIds = [];
+    if ($selectedGroupId > 0) {
+        $exportGroupIds[] = $selectedGroupId;
+    } else if (!empty($dataGroupIds)) {
+        $exportGroupIds = $dataGroupIds;
+    }
+
+    $startDate = isset($_GET['start_date']) ? trim($_GET['start_date']) : '';
+    $endDate = isset($_GET['end_date']) ? trim($_GET['end_date']) : '';
+    $year = isset($_GET['year']) ? (int) $_GET['year'] : 0;
+    $clientFilter = isset($_GET['client']) ? trim($_GET['client']) : '';
+
+    if ($year > 0) {
+        $startDate = sprintf('%04d-01-01', $year);
+        $endDate = sprintf('%04d-12-31', $year);
+    }
+
+    $dateWhere = [];
+    if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $startDate)) {
+        $dateWhere[] = "t.datec >= '".$db->escape($startDate)." 00:00:00'";
+    }
+    if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $endDate)) {
+        $dateWhere[] = "t.datec <= '".$db->escape($endDate)." 23:59:59'";
+    }
+
+    $groups = [];
+    if (!empty($exportGroupIds)) {
+        $resGroups = $db->query("SELECT rowid, label, task_column_label
+                                   FROM llx_myworkspace_group
+                                  WHERE rowid IN (".implode(',', array_map('intval', $exportGroupIds)).")
+                               ORDER BY position ASC, rowid ASC");
+        while ($resGroups && $group = $db->fetch_object($resGroups)) {
+            $groups[(int) $group->rowid] = [
+                'id' => (int) $group->rowid,
+                'label' => (string) $group->label,
+                'task_column_label' => $group->task_column_label ?: 'Tâche',
+                'columns' => [],
+                'tasks' => [],
+            ];
+        }
+    }
+
+    $allColumnIds = [];
+    if (!empty($groups)) {
+        $resColumns = $db->query("SELECT rowid, fk_group, label, type
+                                    FROM llx_myworkspace_column
+                                   WHERE fk_group IN (".implode(',', array_keys($groups)).")
+                                ORDER BY fk_group ASC, position ASC, rowid ASC");
+        while ($resColumns && $column = $db->fetch_object($resColumns)) {
+            $groupId = (int) $column->fk_group;
+            if (!isset($groups[$groupId])) {
+                continue;
+            }
+            $columnData = [
+                'id' => (int) $column->rowid,
+                'label' => (string) $column->label,
+                'type' => (string) $column->type,
+            ];
+            $groups[$groupId]['columns'][] = $columnData;
+            $allColumnIds[] = $columnData['id'];
+        }
+    }
+
+    $optionsByColumn = monday_get_column_options_for_export($db, $allColumnIds);
+    $usersById = monday_get_users_for_export($db);
+
+    $allTaskIds = [];
+    foreach ($groups as $groupId => &$group) {
+        $where = array_merge(["t.fk_group = ".(int) $groupId], $dateWhere);
+        $resTasks = $db->query("SELECT t.rowid, t.label
+                                  FROM llx_myworkspace_task t
+                                 WHERE ".implode(' AND ', $where)."
+                              ORDER BY t.position ASC, t.rowid ASC");
+        while ($resTasks && $task = $db->fetch_object($resTasks)) {
+            $taskId = (int) $task->rowid;
+            $allTaskIds[] = $taskId;
+            $group['tasks'][$taskId] = [
+                'id' => $taskId,
+                'label' => (string) $task->label,
+                'cells' => [],
+            ];
+        }
+    }
+    unset($group);
+
+    if (!empty($allTaskIds)) {
+        $resCells = $db->query("SELECT fk_task, fk_column, value
+                                  FROM llx_myworkspace_cell
+                                 WHERE fk_task IN (".implode(',', array_map('intval', $allTaskIds)).")");
+        while ($resCells && $cell = $db->fetch_object($resCells)) {
+            $taskId = (int) $cell->fk_task;
+            foreach ($groups as &$group) {
+                if (isset($group['tasks'][$taskId])) {
+                    $group['tasks'][$taskId]['cells'][(int) $cell->fk_column] = (string) $cell->value;
+                    break;
+                }
+            }
+            unset($group);
+        }
+    }
+
+    if ($clientFilter !== '') {
+        foreach ($groups as &$group) {
+            $clientColumnId = 0;
+            $clientColumn = null;
+            foreach ($group['columns'] as $column) {
+                if (monday_normalize_kpi_label($column['label']) === 'client') {
+                    $clientColumnId = (int) $column['id'];
+                    $clientColumn = $column;
+                    break;
+                }
+            }
+            if ($clientColumnId <= 0) {
+                continue;
+            }
+            foreach ($group['tasks'] as $taskId => $task) {
+                $clientValue = isset($task['cells'][$clientColumnId]) ? monday_format_export_cell_value($task['cells'][$clientColumnId], $clientColumn, $optionsByColumn, $usersById) : '';
+                if (strcasecmp($clientValue, $clientFilter) !== 0) {
+                    unset($group['tasks'][$taskId]);
+                }
+            }
+        }
+        unset($group);
+    }
+
+    $filenamePart = $selectedGroupId > 0 && isset($groups[$selectedGroupId]) ? dol_string_nospecial($groups[$selectedGroupId]['label'], '-') : 'tous';
+    $filename = 'kpi-recrutement-'.$filenamePart.'-'.date('Ymd-His').'.csv';
+    header('Content-Type: text/csv; charset=UTF-8');
+    header('Content-Disposition: attachment; filename="'.$filename.'"');
+
+    $out = fopen('php://output', 'w');
+    fprintf($out, chr(0xEF).chr(0xBB).chr(0xBF));
+
+    $isFirstGroup = true;
+    foreach ($groups as $group) {
+        if (!$isFirstGroup) {
+            monday_csv_put_row($out, []);
+        }
+        $isFirstGroup = false;
+
+        if ($selectedGroupId === 0) {
+            monday_csv_put_row($out, [$group['label']]);
+        }
+
+        $header = [$group['task_column_label']];
+        foreach ($group['columns'] as $column) {
+            $header[] = $column['label'];
+        }
+        monday_csv_put_row($out, $header);
+
+        foreach ($group['tasks'] as $task) {
+            $row = [$task['label']];
+            foreach ($group['columns'] as $column) {
+                $value = isset($task['cells'][$column['id']]) ? $task['cells'][$column['id']] : '';
+                $row[] = monday_format_export_cell_value($value, $column, $optionsByColumn, $usersById);
+            }
+            monday_csv_put_row($out, $row);
+        }
+    }
+
+    fclose($out);
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['kpi_recruitment'])) {
+    if (!isset($_GET['token']) || $_GET['token'] !== $_SESSION['newtoken']) {
+        accessforbidden('CSRF token invalid');
+    }
+
+    $startDate = isset($_GET['start_date']) ? trim($_GET['start_date']) : '';
+    $endDate = isset($_GET['end_date']) ? trim($_GET['end_date']) : '';
+    $year = isset($_GET['year']) ? (int) $_GET['year'] : 0;
+    $clientFilter = isset($_GET['client']) ? trim($_GET['client']) : '';
+
+    if ($year > 0) {
+        $startDate = sprintf('%04d-01-01', $year);
+        $endDate = sprintf('%04d-12-31', $year);
+    }
+
+    $dateConditions = [];
+    if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $startDate)) {
+        $dateConditions[] = "t.datec >= '".$db->escape($startDate)." 00:00:00'";
+    }
+    if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $endDate)) {
+        $dateConditions[] = "t.datec <= '".$db->escape($endDate)." 23:59:59'";
+    }
+
+    list($kpiColumns, $options, $columnsByGroup, $dataGroupIds) = monday_get_kpi_context($db);
+
+    $metrics = [
+        'retour_client' => [
+            'title' => 'Retour client',
+            'empty_label' => 'Aucune valeur choisie',
+            'items' => [],
+        ],
+        'motif_refus' => [
+            'title' => 'Motif refus',
+            'empty_label' => 'Aucune valeur choisie',
+            'items' => [],
+        ],
+        'canal_sourcing' => [
+            'title' => 'Canaux de sourcing',
+            'empty_label' => 'Aucune valeur choisie',
+            'items' => [],
+        ],
+    ];
+
+    $clientChoices = [];
+    foreach ($kpiColumns as $column) {
+        if ($column['metric'] !== 'client') {
+            continue;
+        }
+        if (!in_array($column['group_id'], $dataGroupIds, true)) {
+            continue;
+        }
+        foreach ($options as $option) {
+            if ($option['column_id'] === $column['id']) {
+                $clientChoices[$option['label']] = true;
+            }
+        }
+    }
+    ksort($clientChoices, SORT_NATURAL | SORT_FLAG_CASE);
+
+    if (!empty($dataGroupIds)) {
+        $dateConditions[] = "t.fk_group IN (".implode(',', $dataGroupIds).")";
+    } else {
+        $dateConditions[] = "1 = 0";
+    }
+
+    $where = !empty($dateConditions) ? ' WHERE '.implode(' AND ', $dateConditions) : '';
+    $resTasks = $db->query("SELECT t.rowid, t.fk_group FROM llx_myworkspace_task t".$where);
+
+    $taskIds = [];
+    $tasks = [];
+    while ($resTasks && $task = $db->fetch_object($resTasks)) {
+        $taskId = (int) $task->rowid;
+        $taskIds[] = $taskId;
+        $tasks[$taskId] = [
+            'id' => $taskId,
+            'group_id' => (int) $task->fk_group,
+            'cells' => [],
+        ];
+    }
+
+    if (!empty($taskIds)) {
+        $resCells = $db->query("SELECT fk_task, fk_column, value
+                                  FROM llx_myworkspace_cell
+                                 WHERE fk_task IN (".implode(',', $taskIds).")");
+        while ($resCells && $cell = $db->fetch_object($resCells)) {
+            $taskId = (int) $cell->fk_task;
+            if (isset($tasks[$taskId])) {
+                $tasks[$taskId]['cells'][(int) $cell->fk_column] = (string) $cell->value;
+            }
+        }
+    }
+
+    $totalRows = 0;
+    $validDelayRows = 0;
+    $delayTotalDays = 0;
+    $delayBuckets = [];
+    $actionCorrectiveBuckets = [];
+    $actionCorrectiveRows = 0;
+
+    foreach ($tasks as $task) {
+        $groupColumns = isset($columnsByGroup[$task['group_id']]) ? $columnsByGroup[$task['group_id']] : [];
+        $clientColumnId = isset($groupColumns['client']) ? $groupColumns['client'] : 0;
+        $clientOptionId = $clientColumnId && isset($task['cells'][$clientColumnId]) ? (int) $task['cells'][$clientColumnId] : 0;
+        $clientLabel = isset($options[$clientOptionId]) ? $options[$clientOptionId]['label'] : '';
+
+        if ($clientFilter !== '' && strcasecmp($clientLabel, $clientFilter) !== 0) {
+            continue;
+        }
+
+        $totalRows++;
+        foreach ($metrics as $metricKey => $metric) {
+            $columnId = isset($groupColumns[$metricKey]) ? $groupColumns[$metricKey] : 0;
+            $optionId = $columnId && isset($task['cells'][$columnId]) ? (int) $task['cells'][$columnId] : 0;
+
+            if ($optionId > 0 && isset($options[$optionId])) {
+                $label = $options[$optionId]['label'];
+                if (!isset($metrics[$metricKey]['items'][$label])) {
+                    $metrics[$metricKey]['items'][$label] = [
+                        'count' => 0,
+                        'color' => $options[$optionId]['color'],
+                    ];
+                }
+                $metrics[$metricKey]['items'][$label]['count']++;
+            } else {
+                $emptyLabel = $metrics[$metricKey]['empty_label'];
+                if (!isset($metrics[$metricKey]['items'][$emptyLabel])) {
+                    $metrics[$metricKey]['items'][$emptyLabel] = monday_empty_kpi_bucket();
+                }
+                $metrics[$metricKey]['items'][$emptyLabel]['count']++;
+            }
+        }
+
+        $sentColumnId = isset($groupColumns['date_envoie_client']) ? $groupColumns['date_envoie_client'] : 0;
+        $returnColumnId = isset($groupColumns['date_retour']) ? $groupColumns['date_retour'] : 0;
+        $sentDate = $sentColumnId && isset($task['cells'][$sentColumnId]) ? monday_parse_kpi_date($task['cells'][$sentColumnId]) : null;
+        $returnDate = $returnColumnId && isset($task['cells'][$returnColumnId]) ? monday_parse_kpi_date($task['cells'][$returnColumnId]) : null;
+
+        if ($sentDate && $returnDate) {
+            $delayDays = (int) $sentDate->diff($returnDate)->format('%r%a');
+            if ($delayDays >= 0) {
+                $validDelayRows++;
+                $delayTotalDays += $delayDays;
+                $bucket = monday_format_delay_bucket($delayDays);
+                if (!isset($delayBuckets[$bucket])) {
+                    $delayBuckets[$bucket] = ['label' => $bucket, 'count' => 0, 'days' => $delayDays];
+                }
+                $delayBuckets[$bucket]['count']++;
+            }
+        }
+
+        $actionColumnId = isset($groupColumns['action_corrective']) ? $groupColumns['action_corrective'] : 0;
+        $actionValue = $actionColumnId && isset($task['cells'][$actionColumnId]) ? trim(preg_replace('/\s+/', ' ', (string) $task['cells'][$actionColumnId])) : '';
+        if ($actionColumnId && $actionValue !== '') {
+            $actionValue = monday_get_kpi_cell_label($actionValue, $options);
+            $actionValue = trim(preg_replace('/\s+/', ' ', $actionValue));
+        }
+        if ($actionValue !== '') {
+            $actionCorrectiveRows++;
+            $actionKey = monday_normalize_kpi_label($actionValue);
+            if (!isset($actionCorrectiveBuckets[$actionKey])) {
+                $actionCorrectiveBuckets[$actionKey] = ['label' => $actionValue, 'count' => 0];
+            }
+            $actionCorrectiveBuckets[$actionKey]['count']++;
+        }
+    }
+
+    foreach ($metrics as $metricKey => $metric) {
+        $series = [];
+        foreach ($metric['items'] as $label => $item) {
+            $percentage = $totalRows > 0 ? round(($item['count'] / $totalRows) * 100, 1) : 0;
+            $series[] = [
+                'label' => $label,
+                'count' => $item['count'],
+                'percentage' => $percentage,
+                'color' => $item['color'],
+            ];
+        }
+        usort($series, function ($a, $b) {
+            if ($a['count'] === $b['count']) {
+                return strcasecmp($a['label'], $b['label']);
+            }
+            return $b['count'] - $a['count'];
+        });
+        $metrics[$metricKey]['series'] = $series;
+        unset($metrics[$metricKey]['items']);
+    }
+
+    $delayAverage = $validDelayRows > 0 ? $delayTotalDays / $validDelayRows : null;
+    $delaySeries = array_values($delayBuckets);
+    usort($delaySeries, function ($a, $b) {
+        if ($a['count'] === $b['count']) {
+            return $a['days'] - $b['days'];
+        }
+        return $b['count'] - $a['count'];
+    });
+    $delaySeries = array_slice($delaySeries, 0, 4);
+    foreach ($delaySeries as &$delayItem) {
+        $delayItem['percentage'] = $validDelayRows > 0 ? round(($delayItem['count'] / $validDelayRows) * 100, 1) : 0;
+    }
+    unset($delayItem);
+
+    $actionSeries = array_values($actionCorrectiveBuckets);
+    usort($actionSeries, function ($a, $b) {
+        if ($a['count'] === $b['count']) {
+            return strcasecmp($a['label'], $b['label']);
+        }
+        return $b['count'] - $a['count'];
+    });
+    foreach ($actionSeries as &$actionItem) {
+        $actionItem['percentage'] = $actionCorrectiveRows > 0 ? round(($actionItem['count'] / $actionCorrectiveRows) * 100, 1) : 0;
+    }
+    unset($actionItem);
+
+    header('Content-Type: application/json');
+    echo json_encode([
+        'total' => $totalRows,
+        'filters' => [
+            'start_date' => $startDate,
+            'end_date' => $endDate,
+            'year' => $year,
+            'client' => $clientFilter,
+        ],
+        'clients' => array_keys($clientChoices),
+        'metrics' => array_values($metrics),
+        'response_delay' => [
+            'title' => 'Délai moyen de réponse client',
+            'average_days' => $delayAverage,
+            'average_label' => monday_format_average_delay($delayAverage),
+            'valid_rows' => $validDelayRows,
+            'series' => $delaySeries,
+        ],
+        'action_corrective' => [
+            'title' => 'Actions correctives',
+            'total' => $actionCorrectiveRows,
+            'series' => $actionSeries,
+        ],
+    ]);
     exit;
 }
 
@@ -853,7 +1549,8 @@ foreach ($workspaces as $w) {
                . dol_escape_htmltag($w->label)
                . '</li>';
 }
-$leftmenu .= '</ul>';
+$leftmenu .= '</ul>'
+    . '<div class="workspace-kpi-entry" id="kpi-dashboard-link">Tableaux KPI</div>';
 
 ob_start();
 ?>

@@ -1208,9 +1208,299 @@ $(function(){
     });
   }
 
+  function escapeHtml(value) {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  function buildKpiQuery() {
+    const params = new URLSearchParams();
+    params.set('kpi_recruitment', '1');
+    params.set('token', token);
+
+    const year = $('#kpi-year').val();
+    const startDate = $('#kpi-start-date').val();
+    const endDate = $('#kpi-end-date').val();
+    const client = $('#kpi-client').val();
+
+    if (year) {
+      params.set('year', year);
+    } else {
+      if (startDate) params.set('start_date', startDate);
+      if (endDate) params.set('end_date', endDate);
+    }
+    if (client) params.set('client', client);
+
+    return params.toString();
+  }
+
+  function formatKpiPercent(value) {
+    return `${Number(value || 0).toLocaleString('fr-FR', { maximumFractionDigits: 1 })}%`;
+  }
+
+  function buildPieGradient(series) {
+    if (!series.length) {
+      return '#eef1f4';
+    }
+
+    let cursor = 0;
+    const stops = [];
+    series.forEach(item => {
+      const start = cursor;
+      const end = cursor + Number(item.percentage || 0);
+      stops.push(`${item.color || '#cccccc'} ${start}% ${end}%`);
+      cursor = end;
+    });
+
+    if (cursor < 100) {
+      stops.push(`#f2f4f7 ${cursor}% 100%`);
+    }
+
+    return `conic-gradient(${stops.join(', ')})`;
+  }
+
+  function renderKpiChart(metric) {
+    const series = metric.series || [];
+    const legend = series.map(item => `
+      <div class="kpi-legend-row">
+        <span class="kpi-legend-color" style="background:${escapeHtml(item.color || '#cccccc')}"></span>
+        <span class="kpi-legend-label">${escapeHtml(item.label)}</span>
+        <strong>${formatKpiPercent(item.percentage)}</strong>
+        <span class="kpi-legend-count">${item.count}</span>
+      </div>
+    `).join('');
+
+    const labels = series
+      .filter(item => Number(item.percentage) >= 5)
+      .map(item => `<span style="background:${escapeHtml(item.color || '#cccccc')}">${formatKpiPercent(item.percentage)}</span>`)
+      .join('');
+
+    return `
+      <section class="kpi-card">
+        <h3>${escapeHtml(metric.title)}</h3>
+        <div class="kpi-chart-body">
+          <div class="kpi-donut-wrap">
+            <div class="kpi-donut" style="background:${buildPieGradient(series)}">
+              <div class="kpi-donut-hole"></div>
+            </div>
+            <div class="kpi-donut-labels">${labels}</div>
+          </div>
+          <div class="kpi-legend">
+            ${legend || '<div class="kpi-empty">Aucune donnée</div>'}
+          </div>
+        </div>
+      </section>
+    `;
+  }
+
+  function renderKpiBars(series) {
+    return series.map(item => {
+      const percentage = Number(item.percentage || 0);
+      const width = Math.max(percentage, percentage > 0 ? 5 : 0);
+      return `
+        <div class="kpi-bar-row">
+          <span class="kpi-bar-label" title="${escapeHtml(item.label)}">${escapeHtml(item.label)}</span>
+          <div class="kpi-bar-track">
+            <div class="kpi-bar-fill" style="width:${width}%"></div>
+          </div>
+          <strong title="${item.count} ligne${Number(item.count || 0) > 1 ? 's' : ''}">${formatKpiPercent(percentage)}</strong>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function renderResponseDelaySection(delay) {
+    const series = delay?.series || [];
+    return `
+      <section class="kpi-wide-card">
+        <div class="kpi-section-title">
+          <h3>${escapeHtml(delay?.title || 'Délai moyen de réponse client')}</h3>
+          <span>${Number(delay?.valid_rows || 0)} lignes avec deux dates valides</span>
+        </div>
+        <div class="kpi-delay-layout">
+          <div class="kpi-stat-tile">
+            <strong>${escapeHtml(delay?.average_label || 'N/A')}</strong>
+            <span>Délai moyen exact</span>
+          </div>
+          <div class="kpi-top-bars">
+            ${series.length ? renderKpiBars(series) : '<div class="kpi-empty">Aucune ligne avec date envoie client et date retour.</div>'}
+          </div>
+        </div>
+      </section>
+    `;
+  }
+
+  function renderActionCorrectiveSection(actionCorrective) {
+    const series = actionCorrective?.series || [];
+    return `
+      <section class="kpi-wide-card">
+        <div class="kpi-section-title">
+          <h3>${escapeHtml(actionCorrective?.title || 'Actions correctives')}</h3>
+          <span>${Number(actionCorrective?.total || 0)} lignes renseignées</span>
+        </div>
+        <div class="kpi-top-bars kpi-scroll-bars">
+          ${series.length ? renderKpiBars(series) : '<div class="kpi-empty">Aucune action corrective renseignée.</div>'}
+        </div>
+      </section>
+    `;
+  }
+
+  function renderKpiExportSection() {
+    return `
+      <section class="kpi-export-card">
+        <div class="kpi-section-title">
+          <h3>Export KPI recrutement</h3>
+          <span>CSV compatible Excel</span>
+        </div>
+        <div class="kpi-export-controls">
+          <select id="kpi-export-group">
+            <option value="all">Tous les tableaux</option>
+          </select>
+          <button id="kpi-export-btn" type="button">Exporter</button>
+        </div>
+      </section>
+    `;
+  }
+
+  function loadKpiExportGroups() {
+    const params = new URLSearchParams();
+    params.set('kpi_export_groups', '1');
+    params.set('token', token);
+
+    fetch(`?${params.toString()}`)
+      .then(r => r.json())
+      .then(groups => {
+        const options = (groups || []).map(group => `
+          <option value="${group.id}">${escapeHtml(group.label)}</option>
+        `).join('');
+        $('#kpi-export-group').html(`<option value="all">Tous les tableaux</option>${options}`);
+      })
+      .catch(error => console.error('Erreur chargement exports KPI:', error));
+  }
+
+  function buildKpiExportUrl() {
+    const params = new URLSearchParams(buildKpiQuery());
+    params.delete('kpi_recruitment');
+    params.set('kpi_export_csv', $('#kpi-export-group').val() || 'all');
+    params.set('token', token);
+    return `?${params.toString()}`;
+  }
+
+  function loadKpiDashboard() {
+    $('#kpi-results').html('<div class="kpi-loading">Chargement des KPI...</div>');
+
+    fetch(`?${buildKpiQuery()}`)
+      .then(r => r.json())
+      .then(data => {
+        const selectedClient = $('#kpi-client').val();
+        const clients = data.clients || [];
+        $('#kpi-client').html(`
+          <option value="">Tous les clients</option>
+          ${clients.map(client => `<option value="${escapeHtml(client)}" ${client === selectedClient ? 'selected' : ''}>${escapeHtml(client)}</option>`).join('')}
+        `);
+
+        const metricCards = (data.metrics || []).map(renderKpiChart).join('');
+        $('#kpi-results').html(`
+          <div class="kpi-summary">
+            <strong>${data.total || 0}</strong>
+            <span>lignes utilisées pour ces KPI</span>
+          </div>
+          <div class="kpi-grid">
+            ${metricCards}
+          </div>
+          <div class="kpi-analytics-grid">
+            ${renderResponseDelaySection(data.response_delay)}
+            ${renderActionCorrectiveSection(data.action_corrective)}
+          </div>
+          ${renderKpiExportSection()}
+        `);
+        loadKpiExportGroups();
+        $('#kpi-export-btn').on('click', function() {
+          window.location.href = buildKpiExportUrl();
+        });
+      })
+      .catch(error => {
+        console.error('Erreur KPI:', error);
+        $('#kpi-results').html('<div class="kpi-error">Impossible de charger les KPI.</div>');
+      });
+  }
+
+  function showKpiDashboard() {
+    $('.workspace-item').removeClass('active').css({
+      'background-color': '',
+      'color': '',
+      'font-weight': ''
+    });
+    $('.workspace-kpi-entry').addClass('active');
+
+    const currentYear = new Date().getFullYear();
+    const years = [];
+    for (let year = currentYear + 1; year >= currentYear - 6; year--) {
+      years.push(year);
+    }
+
+    $('#main-content').html(`
+      <div class="kpi-page">
+        <div class="kpi-header">
+          <h2>KPI recrutement</h2>
+        </div>
+        <div class="kpi-filters">
+          <label>
+            <span>Année</span>
+            <select id="kpi-year">
+              <option value="">Période personnalisée</option>
+              ${years.map(year => `<option value="${year}">${year}</option>`).join('')}
+            </select>
+          </label>
+          <label>
+            <span>Date de début</span>
+            <input type="date" id="kpi-start-date">
+          </label>
+          <label>
+            <span>Date de fin</span>
+            <input type="date" id="kpi-end-date">
+          </label>
+          <label>
+            <span>Client</span>
+            <select id="kpi-client">
+              <option value="">Tous les clients</option>
+            </select>
+          </label>
+          <button id="kpi-apply-filter">Appliquer</button>
+          <button id="kpi-reset-filter" type="button">Réinitialiser</button>
+        </div>
+        <div id="kpi-results"></div>
+      </div>
+    `);
+
+    $('#kpi-year').on('change', function() {
+      const disabled = Boolean($(this).val());
+      $('#kpi-start-date, #kpi-end-date').prop('disabled', disabled);
+      loadKpiDashboard();
+    });
+    $('#kpi-client').on('change', loadKpiDashboard);
+    $('#kpi-apply-filter').on('click', loadKpiDashboard);
+    $('#kpi-reset-filter').on('click', function() {
+      $('#kpi-year, #kpi-start-date, #kpi-end-date, #kpi-client').val('');
+      $('#kpi-start-date, #kpi-end-date').prop('disabled', false);
+      loadKpiDashboard();
+    });
+
+    loadKpiDashboard();
+  }
+
+  $(document).on('click', '.workspace-kpi-entry', function() {
+    showKpiDashboard();
+  });
+
   $(document).on('click','.workspace-item', function(){
     const wsId    = this.dataset.id;
     const wsLabel = this.textContent;
+    $('.workspace-kpi-entry').removeClass('active');
     
     $('.workspace-item').removeClass('active').css({
       'background-color': '',
