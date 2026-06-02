@@ -1321,9 +1321,9 @@ $(function(){
           <h3>${escapeHtml(delay?.title || 'Délai moyen de réponse client')}</h3>
           <span>${Number(delay?.valid_rows || 0)} lignes avec deux dates valides</span>
         </div>
-        <div class="kpi-delay-layout">
+          <div class="kpi-delay-layout">
           <div class="kpi-stat-tile">
-            <strong>${escapeHtml(delay?.average_label || 'N/A')}</strong>
+            <strong>${escapeHtml(delay?.average_label || 'Aucune donnée')}</strong>
             <span>Délai moyen exact</span>
           </div>
           <div class="kpi-top-bars">
