@@ -10,7 +10,7 @@
 require_once DOL_DOCUMENT_ROOT.'/core/class/interfaces.class.php';
 
 
-class InterfaceTicketsTriggers extends Interfaces
+class InterfaceTickets extends Interfaces
 {
 
 	public $db;
@@ -37,6 +37,17 @@ class InterfaceTicketsTriggers extends Interfaces
 	public function getDesc()
 	{
 		return "Triggers for Tickets module";
+	}
+
+	/**
+	 * Dolibarr 23 calls runTrigger() on trigger classes.
+	 *
+	 * Keep the persistence logic in executeActions() so older code paths stay
+	 * compatible, but expose the method expected by the current trigger manager.
+	 */
+	public function runTrigger($action, $object, User $user, Translate $langs, Conf $conf)
+	{
+		return $this->executeActions($action, $object, $user, $langs, $conf);
 	}
 
 	/**
