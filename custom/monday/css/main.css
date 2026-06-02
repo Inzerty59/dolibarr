@@ -1800,4 +1800,21 @@ th[title="Glisser pour réorganiser"]:hover {
   content: attr(placeholder);
   color: #999;
 }
+
+.planity-kanban-item {
+  margin-top: 14px;
+  padding: 10px;
+  border: 1px solid #e3e7ee;
+  border-radius: 6px;
+  background: #ffffff;
+  cursor: pointer;
+  font-weight: 600;
+  color: #172b4d;
+}
+
+.planity-kanban-item:hover,
+.planity-kanban-item.active {
+  background: #007cba;
+  border-color: #007cba;
+  color: #ffffff;
 }
