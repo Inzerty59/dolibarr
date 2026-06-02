@@ -9,8 +9,8 @@
 
 function planity_kanban_render_left_menu()
 {
-	return '<h3>Kanban planity</h3>'
-		. '<ul id="planity-kanban-list" style="list-style:none;padding:0;">'
+	return 
+		  '<ul id="planity-kanban-list" style="list-style:none;padding:0;">'
 		. '<li id="planity-kanban-item" class="workspace-item planity-kanban-item">Kanban planity</li>'
 		. '</ul>';
 }
