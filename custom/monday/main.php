@@ -143,7 +143,7 @@ function monday_format_delay_bucket($days)
 function monday_format_average_delay($days)
 {
     if ($days === null) {
-        return 'N/A';
+        return 'Aucune donnée';
     }
     if ($days < 1) {
         return round($days * 24, 1).' h';
