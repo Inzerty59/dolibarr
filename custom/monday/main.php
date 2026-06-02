@@ -94,6 +94,16 @@ function monday_parse_kpi_date($value)
         return null;
     }
 
+    if (strpos($value, '|') !== false) {
+        $parts = array_values(array_filter(array_map('trim', explode('|', $value)), function ($part) {
+            return $part !== '';
+        }));
+        $value = isset($parts[0]) ? $parts[0] : '';
+        if ($value === '') {
+            return null;
+        }
+    }
+
     $formats = ['Y-m-d', 'd/m/Y', 'd-m-Y'];
     foreach ($formats as $format) {
         $date = DateTime::createFromFormat($format, $value);
@@ -118,7 +128,7 @@ function monday_format_delay_bucket($days)
     if ($days === 7) {
         return '1 semaine';
     }
-    if ($days > 7 && $days % 7 === 0 && $days < 30) {
+    if ($days > 7 && $days % 7 === 0 && $days < 60) {
         return ($days / 7).' semaines';
     }
     if ($days === 30) {
@@ -517,7 +527,7 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['kpi_export_csv'])) {
     header('Content-Disposition: attachment; filename="'.$filename.'"');
 
     $out = fopen('php://output', 'w');
-    fprintf($out, chr(0xEF).chr(0xBB).chr(0xBF));
+    fwrite($out, chr(0xEF).chr(0xBB).chr(0xBF));
 
     $isFirstGroup = true;
     foreach ($groups as $group) {
