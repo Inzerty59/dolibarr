@@ -11,7 +11,6 @@ $(function(){
     users: null,
     columnOptions: {}
   };
-  
   // Pré-charger les utilisateurs une seule fois au démarrage
   fetch('?users_list')
     .then(r=>r.json())
@@ -1383,8 +1382,7 @@ $(function(){
   }
 
   function buildKpiExportUrl() {
-    const params = new URLSearchParams(buildKpiQuery());
-    params.delete('kpi_recruitment');
+    const params = new URLSearchParams();
     params.set('kpi_export_csv', $('#kpi-export-group').val() || 'all');
     params.set('token', token);
     return `?${params.toString()}`;
@@ -1566,7 +1564,6 @@ $(function(){
         console.log('Suppression de l\'espace:', wsId);
         
         fetch('',{method:'POST',body:fd})
-        fetch('',{method:'POST',body:fd})
           .then(response => {
             console.log('Réponse du serveur pour suppression:', response.status);
             return response.text();
@@ -1589,7 +1586,10 @@ $(function(){
         if(!n) return;
         const fd=new FormData(); fd.append('add_group_workspace_id',wsId);
         fd.append('group_label',n); fd.append('token',token);
-        fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wsId));
+      fetch('',{method:'POST',body:fd}).then(()=>{
+        loadGroups(wsId);
+        loadKpiExportGroups();
+      });
       }, '', 'Ajouter un groupe');
     });
 
@@ -2039,6 +2039,7 @@ $(function(){
         fetch('',{method:'POST',body:fd}).then(()=>{
           typeModal.remove();
           loadGroups(wid);
+          loadKpiExportGroups();
         });
       });
       
@@ -2079,7 +2080,10 @@ $(function(){
           fd.append('rename_group_id',gid);
           fd.append('group_label',nw);
           fd.append('token',token);
-          fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
+          fetch('',{method:'POST',body:fd}).then(()=>{
+            loadGroups(wid);
+            loadKpiExportGroups();
+          });
         }, old, 'Renommer le groupe');
       })
       .off('click','.duplicate-group').on('click','.duplicate-group',function(){
@@ -2092,7 +2096,10 @@ $(function(){
           fd.append('duplicate_group_id',gid);
           fd.append('new_group_label',nw);
           fd.append('token',token);
-          fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
+          fetch('',{method:'POST',body:fd}).then(()=>{
+            loadGroups(wid);
+            loadKpiExportGroups();
+          });
         }, old+' (copie)', 'Dupliquer le groupe');
       })
       .off('click','.delete-group').on('click','.delete-group',function(){
@@ -2103,7 +2110,10 @@ $(function(){
           const fd=new FormData();
           fd.append('delete_group_id',gid);
           fd.append('token',token);
-          fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
+          fetch('',{method:'POST',body:fd}).then(()=>{
+            loadGroups(wid);
+            loadKpiExportGroups();
+          });
         });
       })
       .off('click','.add-row-btn').on('click','.add-row-btn',function(){
@@ -2115,7 +2125,10 @@ $(function(){
           fd.append('add_task_group_id',gid);
           fd.append('task_label',lbl);
           fd.append('token',token);
-          fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
+          fetch('',{method:'POST',body:fd}).then(()=>{
+            loadGroups(wid);
+            loadKpiExportGroups();
+          });
         }, '', `Ajouter une ${taskColumnLabel}`);
       })
       .off('click','.add-subtask-btn').on('click','.add-subtask-btn',function(e){
@@ -2131,8 +2144,9 @@ $(function(){
           fd.append('task_label', lbl);
           fd.append('parent_task_id', parentTaskId);
           fd.append('token', token);
-          fetch('', {method:'POST', body:fd}).then(() => {
+        fetch('', {method:'POST', body:fd}).then(() => {
             loadGroups(wid);
+            loadKpiExportGroups();
           });
         }, '', 'Ajouter une sous-tâche');
       })
@@ -2166,7 +2180,10 @@ $(function(){
           fd.append('rename_column_id', cid);
           fd.append('rename_column_label', nw);
           fd.append('token', token);
-          fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
+          fetch('',{method:'POST',body:fd}).then(()=>{
+            loadGroups(wid);
+            loadKpiExportGroups();
+          });
         }, old, 'Renommer la colonne');
       })
       .off('click','.delete-column-btn').on('click','.delete-column-btn',function(e){
@@ -2177,7 +2194,10 @@ $(function(){
           const fd = new FormData();
           fd.append('delete_column_id', cid);
           fd.append('token', token);
-          fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
+          fetch('',{method:'POST',body:fd}).then(()=>{
+            loadGroups(wid);
+            loadKpiExportGroups();
+          });
         });
       })
       .off('click','.manage-options-btn').on('click','.manage-options-btn',function(e){

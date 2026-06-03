@@ -16,7 +16,7 @@ function monday_normalize_kpi_label($label)
     return $label;
 }
 
-function monday_get_kpi_columns($db)
+function monday_get_kpi_columns($db, $workspaceId = 0)
 {
     $targets = [
         'retourclient' => 'retour_client',
@@ -31,8 +31,14 @@ function monday_get_kpi_columns($db)
         'actioncorrective' => 'action_corrective',
     ];
 
+    $workspaceCondition = '';
+    $workspaceId = (int) $workspaceId;
+    if ($workspaceId > 0) {
+        $workspaceCondition = ' WHERE fk_workspace = '.$workspaceId;
+    }
+
     $columns = [];
-    $res = $db->query("SELECT rowid, fk_group, label, type FROM llx_myworkspace_column");
+    $res = $db->query("SELECT rowid, fk_group, label, type FROM llx_myworkspace_column".$workspaceCondition);
     while ($res && $o = $db->fetch_object($res)) {
         $normalized = monday_normalize_kpi_label($o->label);
         if (isset($targets[$normalized])) {
@@ -151,9 +157,9 @@ function monday_format_average_delay($days)
     return round($days, 1).' j';
 }
 
-function monday_get_kpi_context($db)
+function monday_get_kpi_context($db, $workspaceId = 0)
 {
-    $kpiColumns = monday_get_kpi_columns($db);
+    $kpiColumns = monday_get_kpi_columns($db, $workspaceId);
     $options = monday_get_kpi_select_options($db, $kpiColumns);
     $columnsByGroup = [];
 
@@ -172,6 +178,39 @@ function monday_get_kpi_context($db)
     }
 
     return [$kpiColumns, $options, $columnsByGroup, $dataGroupIds];
+}
+
+function monday_get_kpi_recruitment_workspace_id($db)
+{
+    $res = $db->query("SELECT rowid, label FROM llx_myworkspace ORDER BY position ASC, rowid ASC");
+    while ($res && $workspace = $db->fetch_object($res)) {
+        if (monday_normalize_kpi_label($workspace->label) === 'kpirecrutement') {
+            return (int) $workspace->rowid;
+        }
+    }
+
+    return 0;
+}
+
+function monday_get_kpi_export_groups($db)
+{
+    $groups = [];
+    $workspaceId = monday_get_kpi_recruitment_workspace_id($db);
+
+    if ($workspaceId > 0) {
+        $res = $db->query("SELECT rowid, label
+                             FROM llx_myworkspace_group
+                            WHERE fk_workspace = ".$workspaceId."
+                         ORDER BY position ASC, label ASC");
+        while ($res && $group = $db->fetch_object($res)) {
+            $groups[] = [
+                'id' => (int) $group->rowid,
+                'label' => (string) $group->label,
+            ];
+        }
+    }
+
+    return $groups;
 }
 
 function monday_get_kpi_cell_label($value, $options)
@@ -362,21 +401,7 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['kpi_export_groups'])) {
         accessforbidden('CSRF token invalid');
     }
 
-    list(, , , $dataGroupIds) = monday_get_kpi_context($db);
-    $groups = [];
-
-    if (!empty($dataGroupIds)) {
-        $res = $db->query("SELECT rowid, label
-                             FROM llx_myworkspace_group
-                            WHERE rowid IN (".implode(',', $dataGroupIds).")
-                         ORDER BY position ASC, label ASC");
-        while ($res && $group = $db->fetch_object($res)) {
-            $groups[] = [
-                'id' => (int) $group->rowid,
-                'label' => (string) $group->label,
-            ];
-        }
-    }
+    $groups = monday_get_kpi_export_groups($db);
 
     header('Content-Type: application/json');
     echo json_encode($groups);
@@ -388,37 +413,23 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['kpi_export_csv'])) {
         accessforbidden('CSRF token invalid');
     }
 
-    list(, , , $dataGroupIds) = monday_get_kpi_context($db);
+    $groups = monday_get_kpi_export_groups($db);
     $selected = trim((string) $_GET['kpi_export_csv']);
     $selectedGroupId = $selected === 'all' ? 0 : (int) $selected;
 
-    if ($selectedGroupId > 0 && !in_array($selectedGroupId, $dataGroupIds, true)) {
+    $groupIds = array_map(function ($group) {
+        return (int) $group['id'];
+    }, $groups);
+
+    if ($selectedGroupId > 0 && !in_array($selectedGroupId, $groupIds, true)) {
         accessforbidden('Invalid KPI export group');
     }
 
     $exportGroupIds = [];
     if ($selectedGroupId > 0) {
         $exportGroupIds[] = $selectedGroupId;
-    } else if (!empty($dataGroupIds)) {
-        $exportGroupIds = $dataGroupIds;
-    }
-
-    $startDate = isset($_GET['start_date']) ? trim($_GET['start_date']) : '';
-    $endDate = isset($_GET['end_date']) ? trim($_GET['end_date']) : '';
-    $year = isset($_GET['year']) ? (int) $_GET['year'] : 0;
-    $clientFilter = isset($_GET['client']) ? trim($_GET['client']) : '';
-
-    if ($year > 0) {
-        $startDate = sprintf('%04d-01-01', $year);
-        $endDate = sprintf('%04d-12-31', $year);
-    }
-
-    $dateWhere = [];
-    if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $startDate)) {
-        $dateWhere[] = "t.datec >= '".$db->escape($startDate)." 00:00:00'";
-    }
-    if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $endDate)) {
-        $dateWhere[] = "t.datec <= '".$db->escape($endDate)." 23:59:59'";
+    } else if (!empty($groupIds)) {
+        $exportGroupIds = $groupIds;
     }
 
     $groups = [];
@@ -464,10 +475,9 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['kpi_export_csv'])) {
 
     $allTaskIds = [];
     foreach ($groups as $groupId => &$group) {
-        $where = array_merge(["t.fk_group = ".(int) $groupId], $dateWhere);
         $resTasks = $db->query("SELECT t.rowid, t.label
                                   FROM llx_myworkspace_task t
-                                 WHERE ".implode(' AND ', $where)."
+                                 WHERE t.fk_group = ".(int) $groupId."
                               ORDER BY t.position ASC, t.rowid ASC");
         while ($resTasks && $task = $db->fetch_object($resTasks)) {
             $taskId = (int) $task->rowid;
@@ -497,31 +507,11 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['kpi_export_csv'])) {
         }
     }
 
-    if ($clientFilter !== '') {
-        foreach ($groups as &$group) {
-            $clientColumnId = 0;
-            $clientColumn = null;
-            foreach ($group['columns'] as $column) {
-                if (monday_normalize_kpi_label($column['label']) === 'client') {
-                    $clientColumnId = (int) $column['id'];
-                    $clientColumn = $column;
-                    break;
-                }
-            }
-            if ($clientColumnId <= 0) {
-                continue;
-            }
-            foreach ($group['tasks'] as $taskId => $task) {
-                $clientValue = isset($task['cells'][$clientColumnId]) ? monday_format_export_cell_value($task['cells'][$clientColumnId], $clientColumn, $optionsByColumn, $usersById) : '';
-                if (strcasecmp($clientValue, $clientFilter) !== 0) {
-                    unset($group['tasks'][$taskId]);
-                }
-            }
-        }
-        unset($group);
+    $groupsById = [];
+    foreach ($groups as $group) {
+        $groupsById[$group['id']] = $group;
     }
-
-    $filenamePart = $selectedGroupId > 0 && isset($groups[$selectedGroupId]) ? dol_string_nospecial($groups[$selectedGroupId]['label'], '-') : 'tous';
+    $filenamePart = $selectedGroupId > 0 && isset($groupsById[$selectedGroupId]) ? dol_string_nospecial($groupsById[$selectedGroupId]['label'], '-') : 'tous';
     $filename = 'kpi-recrutement-'.$filenamePart.'-'.date('Ymd-His').'.csv';
     header('Content-Type: text/csv; charset=UTF-8');
     header('Content-Disposition: attachment; filename="'.$filename.'"');
@@ -583,7 +573,15 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['kpi_recruitment'])) {
         $dateConditions[] = "t.datec <= '".$db->escape($endDate)." 23:59:59'";
     }
 
-    list($kpiColumns, $options, $columnsByGroup, $dataGroupIds) = monday_get_kpi_context($db);
+    $kpiWorkspaceId = monday_get_kpi_recruitment_workspace_id($db);
+    if ($kpiWorkspaceId > 0) {
+        list($kpiColumns, $options, $columnsByGroup, $dataGroupIds) = monday_get_kpi_context($db, $kpiWorkspaceId);
+    } else {
+        $kpiColumns = [];
+        $options = [];
+        $columnsByGroup = [];
+        $dataGroupIds = [];
+    }
 
     $metrics = [
         'retour_client' => [
