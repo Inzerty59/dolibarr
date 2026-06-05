@@ -1304,7 +1304,7 @@ $(function(){
         <div class="kpi-bar-row">
           <span class="kpi-bar-label" title="${escapeHtml(item.label)}">${escapeHtml(item.label)}</span>
           <div class="kpi-bar-track">
-            <div class="kpi-bar-fill" style="width:${width}%"></div>
+            <div class="kpi-bar-fill" style="width:${width}%;background:${escapeHtml(item.color || '#6b5fad')}"></div>
           </div>
           <strong title="${item.count} ligne${Number(item.count || 0) > 1 ? 's' : ''}">${formatKpiPercent(percentage)}</strong>
         </div>
@@ -1339,7 +1339,7 @@ $(function(){
       <section class="kpi-wide-card">
         <div class="kpi-section-title">
           <h3>${escapeHtml(actionCorrective?.title || 'Actions correctives')}</h3>
-          <span>${Number(actionCorrective?.total || 0)} lignes renseignées</span>
+          <span>${Number(actionCorrective?.filled || 0)} / ${Number(actionCorrective?.total || 0)} lignes renseignées</span>
         </div>
         <div class="kpi-top-bars kpi-scroll-bars">
           ${series.length ? renderKpiBars(series) : '<div class="kpi-empty">Aucune action corrective renseignée.</div>'}

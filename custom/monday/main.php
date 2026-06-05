@@ -34,11 +34,14 @@ function monday_get_kpi_columns($db, $workspaceId = 0)
     $workspaceCondition = '';
     $workspaceId = (int) $workspaceId;
     if ($workspaceId > 0) {
-        $workspaceCondition = ' WHERE fk_workspace = '.$workspaceId;
+        $workspaceCondition = ' WHERE c.fk_workspace = '.$workspaceId;
     }
 
     $columns = [];
-    $res = $db->query("SELECT rowid, fk_group, label, type FROM llx_myworkspace_column".$workspaceCondition);
+    $res = $db->query("SELECT c.rowid, c.fk_group, c.label, c.type
+                         FROM llx_myworkspace_column c
+                         JOIN llx_myworkspace_group g ON g.rowid = c.fk_group
+                      ".$workspaceCondition);
     while ($res && $o = $db->fetch_object($res)) {
         $normalized = monday_normalize_kpi_label($o->label);
         if (isset($targets[$normalized])) {
@@ -154,7 +157,22 @@ function monday_format_average_delay($days)
     if ($days < 1) {
         return round($days * 24, 1).' h';
     }
-    return round($days, 1).' j';
+    $rounded = round($days, 1);
+    return $rounded.' '.($rounded > 1 ? 'jours' : 'jour');
+}
+
+function monday_is_kpi_date_in_range($date, $startDate, $endDate)
+{
+    if (!$date) {
+        return false;
+    }
+    if ($startDate && $date < $startDate) {
+        return false;
+    }
+    if ($endDate && $date > $endDate) {
+        return false;
+    }
+    return true;
 }
 
 function monday_get_kpi_context($db, $workspaceId = 0)
@@ -565,12 +583,16 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['kpi_recruitment'])) {
         $endDate = sprintf('%04d-12-31', $year);
     }
 
-    $dateConditions = [];
+    $filterStartDate = null;
+    $filterEndDate = null;
+    $hasDateFilter = false;
     if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $startDate)) {
-        $dateConditions[] = "t.datec >= '".$db->escape($startDate)." 00:00:00'";
+        $filterStartDate = monday_parse_kpi_date($startDate);
+        $hasDateFilter = $filterStartDate !== null;
     }
     if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $endDate)) {
-        $dateConditions[] = "t.datec <= '".$db->escape($endDate)." 23:59:59'";
+        $filterEndDate = monday_parse_kpi_date($endDate);
+        $hasDateFilter = $hasDateFilter || $filterEndDate !== null;
     }
 
     $kpiWorkspaceId = monday_get_kpi_recruitment_workspace_id($db);
@@ -617,14 +639,17 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['kpi_recruitment'])) {
     }
     ksort($clientChoices, SORT_NATURAL | SORT_FLAG_CASE);
 
+    $taskConditions = [];
     if (!empty($dataGroupIds)) {
-        $dateConditions[] = "t.fk_group IN (".implode(',', $dataGroupIds).")";
+        $taskConditions[] = "t.fk_group IN (".implode(',', $dataGroupIds).")";
     } else {
-        $dateConditions[] = "1 = 0";
+        $taskConditions[] = "1 = 0";
     }
 
-    $where = !empty($dateConditions) ? ' WHERE '.implode(' AND ', $dateConditions) : '';
-    $resTasks = $db->query("SELECT t.rowid, t.fk_group FROM llx_myworkspace_task t".$where);
+    $where = !empty($taskConditions) ? ' WHERE '.implode(' AND ', $taskConditions) : '';
+    $resTasks = $db->query("SELECT t.rowid, t.fk_group
+                              FROM llx_myworkspace_task t
+                              JOIN llx_myworkspace_group g ON g.rowid = t.fk_group".$where);
 
     $taskIds = [];
     $tasks = [];
@@ -638,10 +663,18 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['kpi_recruitment'])) {
         ];
     }
 
-    if (!empty($taskIds)) {
-        $resCells = $db->query("SELECT fk_task, fk_column, value
-                                  FROM llx_myworkspace_cell
-                                 WHERE fk_task IN (".implode(',', $taskIds).")");
+    $kpiColumnIds = array_map(function ($column) {
+        return (int) $column['id'];
+    }, $kpiColumns);
+
+    if (!empty($taskIds) && !empty($kpiColumnIds)) {
+        $resCells = $db->query("SELECT cell.fk_task, cell.fk_column, cell.value
+                                  FROM llx_myworkspace_cell cell
+                                  JOIN llx_myworkspace_task t ON t.rowid = cell.fk_task
+                                  JOIN llx_myworkspace_column c ON c.rowid = cell.fk_column
+                                   AND c.fk_group = t.fk_group
+                                 WHERE cell.fk_task IN (".implode(',', $taskIds).")
+                                   AND cell.fk_column IN (".implode(',', $kpiColumnIds).")");
         while ($resCells && $cell = $db->fetch_object($resCells)) {
             $taskId = (int) $cell->fk_task;
             if (isset($tasks[$taskId])) {
@@ -659,6 +692,15 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['kpi_recruitment'])) {
 
     foreach ($tasks as $task) {
         $groupColumns = isset($columnsByGroup[$task['group_id']]) ? $columnsByGroup[$task['group_id']] : [];
+        $sentColumnId = isset($groupColumns['date_envoie_client']) ? $groupColumns['date_envoie_client'] : 0;
+        $returnColumnId = isset($groupColumns['date_retour']) ? $groupColumns['date_retour'] : 0;
+        $sentDate = $sentColumnId && isset($task['cells'][$sentColumnId]) ? monday_parse_kpi_date($task['cells'][$sentColumnId]) : null;
+        $returnDate = $returnColumnId && isset($task['cells'][$returnColumnId]) ? monday_parse_kpi_date($task['cells'][$returnColumnId]) : null;
+
+        if ($hasDateFilter && (!monday_is_kpi_date_in_range($sentDate, $filterStartDate, $filterEndDate) || !monday_is_kpi_date_in_range($returnDate, $filterStartDate, $filterEndDate))) {
+            continue;
+        }
+
         $clientColumnId = isset($groupColumns['client']) ? $groupColumns['client'] : 0;
         $clientOptionId = $clientColumnId && isset($task['cells'][$clientColumnId]) ? (int) $task['cells'][$clientColumnId] : 0;
         $clientLabel = isset($options[$clientOptionId]) ? $options[$clientOptionId]['label'] : '';
@@ -690,11 +732,6 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['kpi_recruitment'])) {
             }
         }
 
-        $sentColumnId = isset($groupColumns['date_envoie_client']) ? $groupColumns['date_envoie_client'] : 0;
-        $returnColumnId = isset($groupColumns['date_retour']) ? $groupColumns['date_retour'] : 0;
-        $sentDate = $sentColumnId && isset($task['cells'][$sentColumnId]) ? monday_parse_kpi_date($task['cells'][$sentColumnId]) : null;
-        $returnDate = $returnColumnId && isset($task['cells'][$returnColumnId]) ? monday_parse_kpi_date($task['cells'][$returnColumnId]) : null;
-
         if ($sentDate && $returnDate) {
             $delayDays = (int) $sentDate->diff($returnDate)->format('%r%a');
             if ($delayDays >= 0) {
@@ -714,11 +751,19 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['kpi_recruitment'])) {
             $actionValue = monday_get_kpi_cell_label($actionValue, $options);
             $actionValue = trim(preg_replace('/\s+/', ' ', $actionValue));
         }
-        if ($actionValue !== '') {
+        if ($actionValue === '') {
+            $actionValue = 'Aucune action corrective';
+        } else {
             $actionCorrectiveRows++;
+        }
+        if ($actionValue !== '') {
             $actionKey = monday_normalize_kpi_label($actionValue);
             if (!isset($actionCorrectiveBuckets[$actionKey])) {
-                $actionCorrectiveBuckets[$actionKey] = ['label' => $actionValue, 'count' => 0];
+                $actionCorrectiveBuckets[$actionKey] = [
+                    'label' => $actionValue,
+                    'count' => 0,
+                    'color' => $actionValue === 'Aucune action corrective' ? '#e5e7eb' : '#6b5fad',
+                ];
             }
             $actionCorrectiveBuckets[$actionKey]['count']++;
         }
@@ -767,7 +812,7 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['kpi_recruitment'])) {
         return $b['count'] - $a['count'];
     });
     foreach ($actionSeries as &$actionItem) {
-        $actionItem['percentage'] = $actionCorrectiveRows > 0 ? round(($actionItem['count'] / $actionCorrectiveRows) * 100, 1) : 0;
+        $actionItem['percentage'] = $totalRows > 0 ? round(($actionItem['count'] / $totalRows) * 100, 1) : 0;
     }
     unset($actionItem);
 
@@ -791,7 +836,8 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['kpi_recruitment'])) {
         ],
         'action_corrective' => [
             'title' => 'Actions correctives',
-            'total' => $actionCorrectiveRows,
+            'filled' => $actionCorrectiveRows,
+            'total' => $totalRows,
             'series' => $actionSeries,
         ],
     ]);
@@ -1006,7 +1052,34 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['duplicate_group_id'],$_
 
 if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['delete_group_id'])) {
     if ($_POST['token']!==$_SESSION['newtoken']) accessforbidden('CSRF token invalid');
-    $db->query("DELETE FROM llx_myworkspace_group WHERE rowid=".(int)$_POST['delete_group_id']);
+    $gid = (int) $_POST['delete_group_id'];
+    $db->begin();
+    $db->query("DELETE cf
+                  FROM llx_myworkspace_comment_file cf
+                  JOIN llx_myworkspace_comment c ON c.rowid = cf.fk_comment
+                  JOIN llx_myworkspace_task t ON t.rowid = c.fk_task
+                 WHERE t.fk_group = $gid");
+    $db->query("DELETE tf
+                  FROM llx_myworkspace_task_file tf
+                  JOIN llx_myworkspace_task t ON t.rowid = tf.fk_task
+                 WHERE t.fk_group = $gid");
+    $db->query("DELETE c
+                  FROM llx_myworkspace_comment c
+                  JOIN llx_myworkspace_task t ON t.rowid = c.fk_task
+                 WHERE t.fk_group = $gid");
+    $db->query("DELETE cell
+                  FROM llx_myworkspace_cell cell
+             LEFT JOIN llx_myworkspace_task t ON t.rowid = cell.fk_task
+             LEFT JOIN llx_myworkspace_column col ON col.rowid = cell.fk_column
+                 WHERE t.fk_group = $gid OR col.fk_group = $gid");
+    $db->query("DELETE opt
+                  FROM llx_myworkspace_column_option opt
+                  JOIN llx_myworkspace_column col ON col.rowid = opt.fk_column
+                 WHERE col.fk_group = $gid");
+    $db->query("DELETE FROM llx_myworkspace_task WHERE fk_group = $gid");
+    $db->query("DELETE FROM llx_myworkspace_column WHERE fk_group = $gid");
+    $db->query("DELETE FROM llx_myworkspace_group WHERE rowid = $gid");
+    $db->commit();
     exit;
 }
 if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['update_task_column_label'])) {
