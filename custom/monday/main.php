@@ -38,9 +38,11 @@ function monday_get_kpi_columns($db, $workspaceId = 0)
     }
 
     $columns = [];
+    // On ignore les colonnes orphelines ou rattachees a un groupe d'un autre workspace.
     $res = $db->query("SELECT c.rowid, c.fk_group, c.label, c.type
                          FROM llx_myworkspace_column c
                          JOIN llx_myworkspace_group g ON g.rowid = c.fk_group
+                          AND g.fk_workspace = c.fk_workspace
                       ".$workspaceCondition);
     while ($res && $o = $db->fetch_object($res)) {
         $normalized = monday_normalize_kpi_label($o->label);
@@ -163,6 +165,7 @@ function monday_format_average_delay($days)
 
 function monday_is_kpi_date_in_range($date, $startDate, $endDate)
 {
+    // Filtre metier: une ligne filtree doit avoir la date presente et dans la periode.
     if (!$date) {
         return false;
     }
@@ -173,6 +176,64 @@ function monday_is_kpi_date_in_range($date, $startDate, $endDate)
         return false;
     }
     return true;
+}
+
+function monday_delete_task_tree($db, $taskId)
+{
+    $taskId = (int) $taskId;
+    $res = $db->query("SELECT rowid FROM llx_myworkspace_task WHERE parent_task_id = $taskId");
+    while ($res && $subtask = $db->fetch_object($res)) {
+        monday_delete_task_tree($db, (int) $subtask->rowid);
+    }
+
+    // La base existante n'a pas toutes les FK en cascade: on nettoie les enfants a la main.
+    $db->query("DELETE cf
+                  FROM llx_myworkspace_comment_file cf
+                  JOIN llx_myworkspace_comment c ON c.rowid = cf.fk_comment
+                 WHERE c.fk_task = $taskId");
+    $db->query("DELETE FROM llx_myworkspace_task_file WHERE fk_task = $taskId");
+    $db->query("DELETE FROM llx_myworkspace_comment WHERE fk_task = $taskId");
+    $db->query("DELETE FROM llx_myworkspace_cell WHERE fk_task = $taskId");
+    $db->query("DELETE FROM llx_myworkspace_task WHERE rowid = $taskId");
+}
+
+function monday_delete_column_data($db, $columnId)
+{
+    $columnId = (int) $columnId;
+    $db->query("DELETE FROM llx_myworkspace_cell WHERE fk_column = $columnId");
+    $db->query("DELETE FROM llx_myworkspace_column_option WHERE fk_column = $columnId");
+    $db->query("DELETE FROM llx_myworkspace_column WHERE rowid = $columnId");
+}
+
+function monday_delete_group_data($db, $groupId)
+{
+    $groupId = (int) $groupId;
+
+    // Un tableau Planity = groupe + lignes + colonnes + cellules + pieces/commentaires.
+    $resTasks = $db->query("SELECT rowid FROM llx_myworkspace_task WHERE fk_group = $groupId");
+    while ($resTasks && $task = $db->fetch_object($resTasks)) {
+        monday_delete_task_tree($db, (int) $task->rowid);
+    }
+
+    $resColumns = $db->query("SELECT rowid FROM llx_myworkspace_column WHERE fk_group = $groupId");
+    while ($resColumns && $column = $db->fetch_object($resColumns)) {
+        monday_delete_column_data($db, (int) $column->rowid);
+    }
+
+    $db->query("DELETE FROM llx_myworkspace_group WHERE rowid = $groupId");
+}
+
+function monday_delete_workspace_data($db, $workspaceId)
+{
+    $workspaceId = (int) $workspaceId;
+
+    // On supprime les tableaux avant l'espace pour ne pas fabriquer d'orphelins.
+    $resGroups = $db->query("SELECT rowid FROM llx_myworkspace_group WHERE fk_workspace = $workspaceId");
+    while ($resGroups && $group = $db->fetch_object($resGroups)) {
+        monday_delete_group_data($db, (int) $group->rowid);
+    }
+
+    $db->query("DELETE FROM llx_myworkspace WHERE rowid = $workspaceId");
 }
 
 function monday_get_kpi_context($db, $workspaceId = 0)
@@ -882,16 +943,9 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['rename_task_id'], $_POS
 if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['delete_task_id'])) {
     if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
     $tid = (int)$_POST['delete_task_id'];
-    
-    function deleteTaskAndSubtasks($db, $taskId) {
-        $res = $db->query("SELECT rowid FROM llx_myworkspace_task WHERE parent_task_id = $taskId");
-        while ($subtask = $db->fetch_object($res)) {
-            deleteTaskAndSubtasks($db, $subtask->rowid);
-        }
-        $db->query("DELETE FROM llx_myworkspace_task WHERE rowid = $taskId");
-    }
-    
-    deleteTaskAndSubtasks($db, $tid);
+    $db->begin();
+    monday_delete_task_tree($db, $tid);
+    $db->commit();
     exit;
 }
 if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['reorder_tasks'])) {
@@ -946,7 +1000,9 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['rename_workspace_id'],$
 }
 if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['delete_workspace_id'])) {
     if ($_POST['token']!==$_SESSION['newtoken']) accessforbidden('CSRF token invalid');
-    $db->query("DELETE FROM llx_myworkspace WHERE rowid=".(int)$_POST['delete_workspace_id']);
+    $db->begin();
+    monday_delete_workspace_data($db, (int) $_POST['delete_workspace_id']);
+    $db->commit();
     exit;
 }
 if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['add_group_workspace_id'],$_POST['group_label'])) {
@@ -1052,33 +1108,8 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['duplicate_group_id'],$_
 
 if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['delete_group_id'])) {
     if ($_POST['token']!==$_SESSION['newtoken']) accessforbidden('CSRF token invalid');
-    $gid = (int) $_POST['delete_group_id'];
     $db->begin();
-    $db->query("DELETE cf
-                  FROM llx_myworkspace_comment_file cf
-                  JOIN llx_myworkspace_comment c ON c.rowid = cf.fk_comment
-                  JOIN llx_myworkspace_task t ON t.rowid = c.fk_task
-                 WHERE t.fk_group = $gid");
-    $db->query("DELETE tf
-                  FROM llx_myworkspace_task_file tf
-                  JOIN llx_myworkspace_task t ON t.rowid = tf.fk_task
-                 WHERE t.fk_group = $gid");
-    $db->query("DELETE c
-                  FROM llx_myworkspace_comment c
-                  JOIN llx_myworkspace_task t ON t.rowid = c.fk_task
-                 WHERE t.fk_group = $gid");
-    $db->query("DELETE cell
-                  FROM llx_myworkspace_cell cell
-             LEFT JOIN llx_myworkspace_task t ON t.rowid = cell.fk_task
-             LEFT JOIN llx_myworkspace_column col ON col.rowid = cell.fk_column
-                 WHERE t.fk_group = $gid OR col.fk_group = $gid");
-    $db->query("DELETE opt
-                  FROM llx_myworkspace_column_option opt
-                  JOIN llx_myworkspace_column col ON col.rowid = opt.fk_column
-                 WHERE col.fk_group = $gid");
-    $db->query("DELETE FROM llx_myworkspace_task WHERE fk_group = $gid");
-    $db->query("DELETE FROM llx_myworkspace_column WHERE fk_group = $gid");
-    $db->query("DELETE FROM llx_myworkspace_group WHERE rowid = $gid");
+    monday_delete_group_data($db, (int) $_POST['delete_group_id']);
     $db->commit();
     exit;
 }
@@ -1219,7 +1250,9 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['rename_column_id'], $_P
 if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['delete_column_id'])) {
     if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
     $tid = (int)$_POST['delete_column_id'];
-    $db->query("DELETE FROM llx_myworkspace_column WHERE rowid=$tid");
+    $db->begin();
+    monday_delete_column_data($db, $tid);
+    $db->commit();
     exit;
 }
 if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['reorder_columns'])) {
@@ -1376,6 +1409,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['delete_comment_id'])) {
     $owner = $db->fetch_object($res);
     
     if ($owner && $owner->fk_user == $uid) {
+        $db->query("DELETE FROM llx_myworkspace_comment_file WHERE fk_comment = $cid");
         $db->query("DELETE FROM llx_myworkspace_comment WHERE rowid = $cid");
         echo 'OK';
     } else {
