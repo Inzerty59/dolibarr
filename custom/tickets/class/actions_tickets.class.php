@@ -35,7 +35,7 @@ class ActionsTickets extends CommonHookActions
 	 */
 	public function doActions($parameters, &$object, &$action, $hookmanager)
 	{
-		global $langs, $user;
+		global $extrafields, $langs, $user;
 
 		$langs->load('tickets@tickets');
 
@@ -43,10 +43,14 @@ class ActionsTickets extends CommonHookActions
 			return 0;
 		}
 
-		$projectid = $this->getProjectIdFromRequest();
+		$ticketForOptionals = $this->fetchCurrentTicketForOptionals($object, $action);
+		$projectid = $this->getProjectIdFromRequest($ticketForOptionals);
 
 		if (in_array($action, array('add', 'update'), true)) {
 			$this->syncAllTemplateExtraFieldsForStorage();
+			if (is_object($extrafields)) {
+				$extrafields->fetch_name_optionals_label($object->table_element, true);
+			}
 		}
 
 		if ($action === 'create' && $projectid <= 0) {
@@ -54,7 +58,7 @@ class ActionsTickets extends CommonHookActions
 			exit;
 		}
 
-		if ($action !== 'add' || $projectid <= 0) {
+		if (!in_array($action, array('add', 'update'), true) || $projectid <= 0) {
 			return 0;
 		}
 
@@ -76,7 +80,7 @@ class ActionsTickets extends CommonHookActions
 		$this->fillExtraFields($templateExtraFields, $fields, 1);
 
 		if (!$this->validateRequiredFields($fields, $templateExtraFields)) {
-			$action = 'create';
+			$action = ($action === 'add') ? 'create' : 'edit';
 			return -1;
 		}
 
@@ -116,10 +120,7 @@ class ActionsTickets extends CommonHookActions
 
 		if ($this->isTicketCard() && in_array($action, array('create', 'edit'), true)) {
 			$ticketForOptionals = $this->fetchCurrentTicketForOptionals($object, $action);
-			$projectid = $this->getProjectIdFromRequest();
-			if ($projectid <= 0 && !empty($ticketForOptionals->fk_project)) {
-				$projectid = (int) $ticketForOptionals->fk_project;
-			}
+			$projectid = $this->getProjectIdFromRequest($ticketForOptionals);
 
 			$template = $projectid > 0 ? $this->fetchProjectTemplate($projectid) : null;
 			if (empty($template)) {
@@ -238,15 +239,27 @@ class ActionsTickets extends CommonHookActions
 	 */
 	private function fetchCurrentTicketForOptionals($ticket, $action)
 	{
-		if ($action !== 'edit') {
+		if (!in_array($action, array('edit', 'update'), true)) {
 			return $ticket;
 		}
 
 		$id = GETPOSTINT('id');
 		$trackid = GETPOST('track_id', 'alphanohtml');
+		if ($trackid === '') {
+			$trackid = GETPOST('trackid', 'alphanohtml');
+		}
+		if ($id <= 0 && is_object($ticket) && !empty($ticket->id)) {
+			$id = (int) $ticket->id;
+		}
+		if ($trackid === '' && is_object($ticket) && !empty($ticket->track_id)) {
+			$trackid = $ticket->track_id;
+		}
 
 		$currentTicket = new Ticket($this->db);
 		if ($currentTicket->fetch($id, '', $trackid) > 0) {
+			if (method_exists($currentTicket, 'fetch_optionals')) {
+				$currentTicket->fetch_optionals();
+			}
 			return $currentTicket;
 		}
 
@@ -256,7 +269,7 @@ class ActionsTickets extends CommonHookActions
 	/**
 	 * Read project id from the different parameter names used by Dolibarr pages.
 	 */
-	private function getProjectIdFromRequest()
+	private function getProjectIdFromRequest($object = null)
 	{
 		$projectid = GETPOSTINT('projectid');
 		if ($projectid <= 0) {
@@ -264,6 +277,9 @@ class ActionsTickets extends CommonHookActions
 		}
 		if ($projectid <= 0) {
 			$projectid = GETPOSTINT('project_id');
+		}
+		if ($projectid <= 0 && is_object($object) && !empty($object->fk_project)) {
+			$projectid = (int) $object->fk_project;
 		}
 
 		return $projectid;
@@ -385,6 +401,10 @@ class ActionsTickets extends CommonHookActions
 
 		if (isset($ticket->array_options['options_'.$key])) {
 			return $ticket->array_options['options_'.$key];
+		}
+
+		if (isset($ticket->{'options_'.$key})) {
+			return $ticket->{'options_'.$key};
 		}
 
 		return $default;
