@@ -1983,11 +1983,14 @@ th[title="Glisser pour réorganiser"]:hover {
   display: flex;
   flex-direction: column;
   justify-content: center;
+  align-items: center; 
 }
 
 .kpi-stat-tile strong {
   display: block;
+  white-space: nowrap;
   font-size: 36px;
+  text-align: center;
   line-height: 1;
   margin-bottom: 10px;
 }
