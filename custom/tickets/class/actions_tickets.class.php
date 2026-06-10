@@ -43,6 +43,8 @@ class ActionsTickets extends CommonHookActions
 			return 0;
 		}
 
+		$this->cleanupDeletedTemplateExtraFields();
+
 		$ticketForOptionals = $this->fetchCurrentTicketForOptionals($object, $action);
 		$projectid = $this->getProjectIdFromRequest($ticketForOptionals);
 
@@ -118,6 +120,11 @@ class ActionsTickets extends CommonHookActions
 			return 0;
 		}
 
+		if ($this->isTicketCard() && is_object($object) && $object->table_element === 'ticket' && !in_array($action, array('create', 'edit'), true)) {
+			$this->filterLoadedTicketTemplateExtraFields($object);
+			return 0;
+		}
+
 		if ($this->isTicketCard() && in_array($action, array('create', 'edit'), true)) {
 			$ticketForOptionals = $this->fetchCurrentTicketForOptionals($object, $action);
 			$projectid = $this->getProjectIdFromRequest($ticketForOptionals);
@@ -138,6 +145,47 @@ class ActionsTickets extends CommonHookActions
 		}
 
 		return 0;
+	}
+
+	/**
+	 * Keep native ticket view from displaying fields of unrelated templates.
+	 */
+	public function showOptionals($parameters, &$object, &$action, $hookmanager)
+	{
+		global $extrafields;
+
+		if (!$this->isTicketCard() || !is_object($object) || $object->table_element !== 'ticket' || !is_object($extrafields)) {
+			return 0;
+		}
+
+		$this->filterLoadedTicketTemplateExtraFields($object);
+
+		return 0;
+	}
+
+	private function filterLoadedTicketTemplateExtraFields($object)
+	{
+		global $extrafields;
+
+		if (!is_object($object) || $object->table_element !== 'ticket' || !is_object($extrafields)) {
+			return;
+		}
+
+		$projectid = $this->getProjectIdFromRequest($object);
+		$template = $projectid > 0 ? $this->fetchProjectTemplate($projectid) : null;
+		$allowedTemplateFields = array();
+
+		if (!empty($template)) {
+			foreach ($this->fetchTemplateFields((int) $template->rowid) as $field) {
+				$allowedTemplateFields[$this->getTechnicalAttrname($field)] = true;
+			}
+		}
+
+		foreach ($this->getLoadedExtraFieldKeys($extrafields, 'ticket') as $key) {
+			if (strpos($key, 'ttpl') === 0 && empty($allowedTemplateFields[$key])) {
+				$this->removeLoadedExtraField($extrafields, 'ticket', $key);
+			}
+		}
 	}
 
 	/**
@@ -374,6 +422,9 @@ class ActionsTickets extends CommonHookActions
 		}
 
 		$value = $_POST['options_'.$key] ?? null;
+		if (in_array($type, array('int', 'integer', 'price', 'double', 'pricecy'), true)) {
+			return ExtraFields::isEmptyValue(price2num($value), $type);
+		}
 
 		return ExtraFields::isEmptyValue($value, $type);
 	}
@@ -388,6 +439,16 @@ class ActionsTickets extends CommonHookActions
 	{
 		if (GETPOSTISSET('options_'.$key)) {
 			$postvalue = GETPOST('options_'.$key, ($type == 'html' || $type == 'text') ? 'restricthtml' : 'alphanohtml', 3);
+			if (in_array($type, array('int', 'integer', 'price', 'double'), true)) {
+				return price2num($postvalue);
+			}
+			if ($type === 'pricecy') {
+				$amount = price2num($postvalue);
+				if (ExtraFields::isEmptyValue($amount, $type)) {
+					return '';
+				}
+				return $amount.':'.GETPOST('options_'.$key.'currency_id', 'alpha');
+			}
 			return is_array($postvalue) ? implode(',', $postvalue) : $postvalue;
 		}
 
@@ -490,9 +551,45 @@ class ActionsTickets extends CommonHookActions
 			$exists = ($resql && $this->db->num_rows($resql) > 0);
 
 			if ($exists) {
-				$extrafields->updateExtraField($attrname, $field->label, $type, (int) $field->pos, $field->size, 'ticket', !empty($options['unique']) ? 1 : 0, $storageRequired, $field->fielddefault, $param, isset($options['alwayseditable']) ? (int) $options['alwayseditable'] : 1, !empty($options['perms']) ? $options['perms'] : '', '0', !empty($options['help']) ? $options['help'] : '', !empty($options['computed']) ? $options['computed'] : '', $conf->entity, !empty($options['langfile']) ? $options['langfile'] : '', '1', !empty($options['totalizable']) ? 1 : 0, !empty($options['printable']) ? (int) $options['printable'] : 0, $moreparams, !empty($options['emptyonclone']) ? 1 : 0);
+				$extrafields->updateExtraField($attrname, $field->label, $type, (int) $field->pos, $field->size, 'ticket', !empty($options['unique']) ? 1 : 0, $storageRequired, $field->fielddefault, $param, isset($options['alwayseditable']) ? (int) $options['alwayseditable'] : 1, !empty($options['perms']) ? $options['perms'] : '', '1', !empty($options['help']) ? $options['help'] : '', !empty($options['computed']) ? $options['computed'] : '', $conf->entity, !empty($options['langfile']) ? $options['langfile'] : '', '1', !empty($options['totalizable']) ? 1 : 0, !empty($options['printable']) ? (int) $options['printable'] : 0, $moreparams, !empty($options['emptyonclone']) ? 1 : 0);
 			} else {
-				$extrafields->addExtraField($attrname, $field->label, $type, (int) $field->pos, $field->size, 'ticket', !empty($options['unique']) ? 1 : 0, $storageRequired, $field->fielddefault, $param, isset($options['alwayseditable']) ? (int) $options['alwayseditable'] : 1, !empty($options['perms']) ? $options['perms'] : '', '0', !empty($options['help']) ? $options['help'] : '', !empty($options['computed']) ? $options['computed'] : '', $conf->entity, !empty($options['langfile']) ? $options['langfile'] : '', '1', !empty($options['totalizable']) ? 1 : 0, !empty($options['printable']) ? (int) $options['printable'] : 0, $moreparams, !empty($options['aiprompt']) ? $options['aiprompt'] : '', !empty($options['emptyonclone']) ? 1 : 0);
+				$extrafields->addExtraField($attrname, $field->label, $type, (int) $field->pos, $field->size, 'ticket', !empty($options['unique']) ? 1 : 0, $storageRequired, $field->fielddefault, $param, isset($options['alwayseditable']) ? (int) $options['alwayseditable'] : 1, !empty($options['perms']) ? $options['perms'] : '', '1', !empty($options['help']) ? $options['help'] : '', !empty($options['computed']) ? $options['computed'] : '', $conf->entity, !empty($options['langfile']) ? $options['langfile'] : '', '1', !empty($options['totalizable']) ? 1 : 0, !empty($options['printable']) ? (int) $options['printable'] : 0, $moreparams, !empty($options['aiprompt']) ? $options['aiprompt'] : '', !empty($options['emptyonclone']) ? 1 : 0);
+			}
+
+			$this->makeExtraFieldWritableFromTicketForm($attrname);
+		}
+	}
+
+	/**
+	 * Dolibarr ignores extrafields with list=0 in setOptionalsFromPost().
+	 */
+	private function makeExtraFieldWritableFromTicketForm($attrname)
+	{
+		global $conf;
+
+		$sql = "UPDATE ".MAIN_DB_PREFIX."extrafields";
+		$sql .= " SET list = '1', enabled = '1'";
+		$sql .= " WHERE elementtype = 'ticket'";
+		$sql .= " AND entity = ".((int) $conf->entity);
+		$sql .= " AND name = '".$this->db->escape($attrname)."'";
+
+		$this->db->query($sql);
+	}
+
+	private function getLoadedExtraFieldKeys($extrafields, $elementtype)
+	{
+		if (empty($extrafields->attributes[$elementtype]['label']) || !is_array($extrafields->attributes[$elementtype]['label'])) {
+			return array();
+		}
+
+		return array_keys($extrafields->attributes[$elementtype]['label']);
+	}
+
+	private function removeLoadedExtraField($extrafields, $elementtype, $key)
+	{
+		foreach ($this->emptyAttributes() as $attribute => $default) {
+			if (isset($extrafields->attributes[$elementtype][$attribute]) && is_array($extrafields->attributes[$elementtype][$attribute])) {
+				unset($extrafields->attributes[$elementtype][$attribute][$key]);
 			}
 		}
 	}
@@ -519,6 +616,33 @@ class ActionsTickets extends CommonHookActions
 
 		if (!empty($fields)) {
 			$this->syncDolibarrExtraFields($fields);
+		}
+	}
+
+	private function cleanupDeletedTemplateExtraFields()
+	{
+		global $conf;
+
+		$allowed = array();
+		$sql = "SELECT *";
+		$sql .= " FROM ".MAIN_DB_PREFIX."tickets_template_field";
+		$resql = $this->db->query($sql);
+		while ($resql && ($field = $this->db->fetch_object($resql))) {
+			$allowed[$this->getTechnicalAttrname($field)] = true;
+		}
+
+		$extrafields = new ExtraFields($this->db);
+		$sql = "SELECT name";
+		$sql .= " FROM ".MAIN_DB_PREFIX."extrafields";
+		$sql .= " WHERE elementtype = 'ticket'";
+		$sql .= " AND entity = ".((int) $conf->entity);
+		$sql .= " AND name REGEXP '^ttpl[0-9]+_'";
+
+		$resql = $this->db->query($sql);
+		while ($resql && ($obj = $this->db->fetch_object($resql))) {
+			if (empty($allowed[$obj->name])) {
+				$extrafields->delete($obj->name, 'ticket');
+			}
 		}
 	}
 

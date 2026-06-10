@@ -136,6 +136,101 @@ function ticketTemplateParamToArray($param)
 	return $out;
 }
 
+function ticketTemplateTechnicalAttrname($templateid, $attrname)
+{
+	$prefix = 'ttpl'.((int) $templateid).'_';
+	$base = preg_replace('/[^a-zA-Z0-9_]/', '_', (string) $attrname);
+	$base = trim((string) $base, '_');
+
+	if ($base === '') {
+		$base = 'field';
+	}
+	if (preg_match('/^[0-9]/', $base)) {
+		$base = 'f_'.$base;
+	}
+	if (strpos($base, $prefix) === 0) {
+		return substr($base, 0, 64);
+	}
+
+	$suffix = '_'.substr(md5($base), 0, 6);
+	$maxlength = 64 - strlen($prefix) - strlen($suffix);
+	if ($maxlength < 1) {
+		$maxlength = 1;
+	}
+
+	return $prefix.substr($base, 0, $maxlength).$suffix;
+}
+
+function ticketTemplateDeleteExtraFieldMetadata($db, $conf, $templateid, $attrname = '')
+{
+	$names = array();
+
+	if ($attrname !== '') {
+		$names[] = ticketTemplateTechnicalAttrname($templateid, $attrname);
+	} else {
+		$sql = "SELECT name FROM ".MAIN_DB_PREFIX."extrafields";
+		$sql .= " WHERE elementtype = 'ticket'";
+		$sql .= " AND entity = ".((int) $conf->entity);
+		$sql .= " AND name LIKE '".$db->escape('ttpl'.((int) $templateid).'_')."%'";
+
+		$resql = $db->query($sql);
+		while ($resql && ($obj = $db->fetch_object($resql))) {
+			$names[] = $obj->name;
+		}
+	}
+
+	if (empty($names)) {
+		return 1;
+	}
+
+	$extrafields = new ExtraFields($db);
+	$result = 1;
+	foreach (array_unique($names) as $name) {
+		if ($extrafields->delete($name, 'ticket') < 0) {
+			$result = -1;
+		}
+	}
+
+	return $result;
+}
+
+function ticketTemplateFetchTechnicalAttrnames($db, $templateid)
+{
+	$names = array();
+
+	$sql = "SELECT attrname";
+	$sql .= " FROM ".MAIN_DB_PREFIX."tickets_template_field";
+	$sql .= " WHERE fk_template = ".((int) $templateid);
+
+	$resql = $db->query($sql);
+	while ($resql && ($obj = $db->fetch_object($resql))) {
+		$names[] = ticketTemplateTechnicalAttrname($templateid, $obj->attrname);
+	}
+
+	return $names;
+}
+
+function ticketTemplateDeleteExtraFieldsNotIn($db, $conf, $templateid, $keptNames)
+{
+	$prefix = 'ttpl'.((int) $templateid).'_';
+	$kept = array_fill_keys($keptNames, true);
+	$extrafields = new ExtraFields($db);
+
+	$sql = "SELECT name FROM ".MAIN_DB_PREFIX."extrafields";
+	$sql .= " WHERE elementtype = 'ticket'";
+	$sql .= " AND entity = ".((int) $conf->entity);
+	$sql .= " AND name LIKE '".$db->escape($prefix)."%'";
+
+	$resql = $db->query($sql);
+	while ($resql && ($obj = $db->fetch_object($resql))) {
+		if (empty($kept[$obj->name])) {
+			$extrafields->delete($obj->name, 'ticket');
+		}
+	}
+
+	return 1;
+}
+
 $action = GETPOST('action', 'aZ09');
 $attrname = GETPOST('attrname', 'aZ09');
 $id = GETPOST('id', 'int');
@@ -235,6 +330,9 @@ if ($action == 'confirm_delete' && GETPOST('confirm', 'alpha') == 'yes') {
 	$attrname = GETPOST('attrname', 'aZ09');
 	if ($attrname && isset($_SESSION['ticket_template_fields'][$attrname])) {
 		unset($_SESSION['ticket_template_fields'][$attrname]);
+		if (!empty($_SESSION['ticket_template_edit_id'])) {
+			ticketTemplateDeleteExtraFieldMetadata($db, $conf, (int) $_SESSION['ticket_template_edit_id'], $attrname);
+		}
 	}
 
 	header('Location: '.$_SERVER["PHP_SELF"].'?action=newmodel');
@@ -245,6 +343,8 @@ if ($action == 'confirm_delete_template' && GETPOST('confirm', 'alpha') == 'yes'
 	$templateid = !empty($_SESSION['ticket_template_edit_id']) ? (int) $_SESSION['ticket_template_edit_id'] : GETPOST('id', 'int');
 
 	if ($templateid > 0) {
+		ticketTemplateDeleteExtraFieldMetadata($db, $conf, $templateid);
+		$db->query("DELETE FROM ".MAIN_DB_PREFIX."tickets_project_template WHERE fk_template=".(int) $templateid." AND entity=".(int) $conf->entity);
 		$db->query("DELETE FROM ".MAIN_DB_PREFIX."tickets_template_field WHERE fk_template=".(int) $templateid);
 		$db->query("DELETE FROM ".MAIN_DB_PREFIX."tickets_template WHERE rowid=".(int) $templateid);
 	}
@@ -270,6 +370,7 @@ if ($action == 'savefinal' && GETPOST('token', 'alphanohtml') == $_SESSION['newt
 	} else {
 	if (!empty($_SESSION['ticket_template_edit_id'])) {
 		$id = (int) $_SESSION['ticket_template_edit_id'];
+		$previousExtraFieldNames = ticketTemplateFetchTechnicalAttrnames($db, $id);
 
 		$sql = "UPDATE ".MAIN_DB_PREFIX."tickets_template SET";
 		$sql .= " label='".$db->escape($label)."',";
@@ -279,6 +380,7 @@ if ($action == 'savefinal' && GETPOST('token', 'alphanohtml') == $_SESSION['newt
 
 		$db->query("DELETE FROM ".MAIN_DB_PREFIX."tickets_template_field WHERE fk_template=".(int) $id);
 	} else {
+			$previousExtraFieldNames = array();
 			$sql = "INSERT INTO ".MAIN_DB_PREFIX."tickets_template";
 			$sql .= " (entity, label, active, datec, fk_user_create)";
 			$sql .= " VALUES (".$conf->entity.", '".$db->escape($label)."', 1, '".$db->idate(dol_now())."', ".(int) $user->id.")";
@@ -288,7 +390,9 @@ if ($action == 'savefinal' && GETPOST('token', 'alphanohtml') == $_SESSION['newt
 	}
 
 
+		$currentExtraFieldNames = array();
 		foreach ($_SESSION['ticket_template_fields'] as $key => $field) {
+			$currentExtraFieldNames[] = ticketTemplateTechnicalAttrname($id, $key);
 			$options = array(
 				'computed' => $field['computed'],
 				'unique' => (int) $field['unique'],
@@ -324,6 +428,10 @@ if ($action == 'savefinal' && GETPOST('token', 'alphanohtml') == $_SESSION['newt
 			$sql .= ")"; 
 			$db->query($sql);
 
+		}
+
+		if (!empty($previousExtraFieldNames)) {
+			ticketTemplateDeleteExtraFieldsNotIn($db, $conf, $id, $currentExtraFieldNames);
 		}
 
 		unset($_SESSION['ticket_template_fields']);
