@@ -1647,7 +1647,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['delete_file_id'])) {
 
 $res = $db->query("SELECT rowid,label FROM llx_myworkspace ORDER BY position ASC");
 $workspaces = [];
-while ($o=$db->fetch_object($res)) $workspaces[] = $o;
+while ($res && $o=$db->fetch_object($res)) $workspaces[] = $o;
 
 llxHeader("", "Planity - Mes espaces", "");
 $formtoken = newToken();
