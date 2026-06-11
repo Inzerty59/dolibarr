@@ -31,32 +31,3 @@
 	padding: 20px;
 	text-align: center;
 }
-
-
-
-body.mod-ticket.page-list {
-	overflow-x: hidden;
-}
-
-body.mod-ticket.page-list #searchFormList {
-	max-width: 100%;
-	overflow-x: hidden;
-}
-
-body.mod-ticket.page-list #searchFormList > .div-table-responsive {
-	display: block;
-	width: 100%;
-	max-width: calc(100vw - 300px);
-	overflow-x: auto;
-	overflow-y: visible;
-}
-
-body.mod-ticket.page-list #searchFormList > .div-table-responsive > .div-table-responsive-inside {
-	width: max-content;
-	min-width: 100%;
-}
-
-body.mod-ticket.page-list #searchFormList table.liste {
-	width: max-content;
-	min-width: 100%;
-}
