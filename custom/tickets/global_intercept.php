@@ -14,3 +14,4 @@ if (strpos($_SERVER['SCRIPT_NAME'] ?? '', 'ticket/card.php') !== false) {
 		}
 	}
 }
+}

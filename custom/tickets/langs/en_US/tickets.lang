@@ -12,6 +12,13 @@ $GLOBALS['TRANSLATIONS']['ENGLISH'] = array(
 	'TicketsDescription' => 'Custom Tickets module',
 	'TicketsSetup' => 'Setup',
 	'TicketsAbout' => 'About',
+	'TicketTemplates' => 'Ticket templates',
+	'NewTicketTemplate' => 'Create a template',
+	'ListTicketTemplates' => 'Template list',
+	'TicketTemplate' => 'Ticket template',
+	'TicketTemplateName' => 'Template name',
+	'AddField' => 'Add an attribute',
+	'DeleteTemplateConfirm' => 'Do you really want to delete this ticket template?',
 );
 
 foreach ($GLOBALS['TRANSLATIONS']['ENGLISH'] as $key => $value) {
