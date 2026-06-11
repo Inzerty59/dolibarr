@@ -1728,11 +1728,17 @@ th[title="Glisser pour réorganiser"]:hover {
 #group-list .group-body table th,
 #group-list .group-body table td {
   vertical-align: top;
+  box-sizing: border-box;
+  overflow-wrap: anywhere;
+  max-width: 0;
+  word-break: break-word;
+  white-space: normal;
 }
+
 
 #group-list .group-body table {
   width: 100%;
-  table-layout: auto;
+  table-layout: fixed;
 }
 
 #group-list .cell-expandable {
@@ -1765,6 +1771,9 @@ th[title="Glisser pour réorganiser"]:hover {
   overflow-wrap: anywhere;
   word-break: break-word;
   box-sizing: border-box;
+  border: none;
+  background: transparent;
+  padding: 2px;
 }
 
 #group-list .cell-number-textarea {
@@ -1791,7 +1800,7 @@ th[title="Glisser pour réorganiser"]:hover {
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-  margin-bottom: 48px;
+  margin-bottom: 8px;
 }
 
 #group-list .group-split-toolbar {
@@ -1822,21 +1831,26 @@ th[title="Glisser pour réorganiser"]:hover {
 #group-list .group-tables-container {
   display: flex;
   flex-direction: column;
-  gap:  feux  px;
+  gap: 8px;
+  max-width: 100%;
+  overflow-x: auto;
 }
 
 #group-list .group-split-section {
-  border: 1px solid #e8decb;
-  border-radius: 16px;
-  background: #fffdf7;
-  padding: 12px 12px 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  border-radius: 0;
+  
 }
 
 #group-list .group-split-section-header {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 2px 4px 12px;
+  gap: 8px;
+  padding: 2px 4px 8px;
+  margin-top: 24px;
   
 }
 
@@ -1851,49 +1865,4 @@ th[title="Glisser pour réorganiser"]:hover {
   font-size: 14px;
   font-weight: 700;
   color: #453c32;
-}
-
-#group-list .group-split-section {
-  padding: 0;
-  border: none;
-  background: transparent;
-  box-shadow: none;
-  border-radius: 0;
-}
-
-
-#group-list .split-view-table {
-  margin-bottom: 0 !important;
-}
-
-
-#group-list .task-name-wrap {
-  display: flex;
-  align-items: flex-start;
-  gap: 5px;
-  min-width: 0;
-}
-
-#group-list .task-name-wrap > :not(.task-label) {
-  flex: 0 0 auto;
-}
-
-#group-list .task-label {
-  display: inline-block;
-  flex: 0 1 auto;
-  min-width: 0;
-  max-width: 60ch;
-  white-space: normal;
-  overflow-wrap: break-word;
-  word-break: normal;
-  line-height: 1.35;
-}
-
-#task-detail-panel #task-name-display {
-  display: inline-block;
-  max-width: 60ch;
-  white-space: normal;
-  overflow-wrap: break-word;
-  word-break: normal;
-  line-height: 1.35;
 }

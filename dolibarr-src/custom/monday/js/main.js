@@ -107,7 +107,7 @@ $(function(){
     const $tablesContainer = $grp.find('.group-tables-container');
     const splitableColumns = getSplitableColumns(cols);
     const activeSplitId = String(groupSplitState.get(g.id) || '__base__');
-
+    $grp.find('.group-body-toolbar > .add-row-btn').toggle(activeSplitId === '__base__');
     $toolbarHost.find('.group-split-toolbar').remove();
 
     if (splitableColumns.length) {
@@ -160,6 +160,13 @@ $(function(){
             <span class="group-split-dot" style="background:${section.color};"></span>
             <span class="group-split-section-title">${escapeSplitHtml(section.label)}</span>
             <span class="group-split-section-count">${countLabel}</span>
+            <button
+              class="add-row-btn"
+              data-split-column-id="${splitColumn.id}"
+              data-split-option-id="${section.key === '__empty__' ? '' : escapeSplitHtml(section.key)}"
+              type="button">
+              + Ajouter ${g.task_column_label || 'tâche'}
+            </button>
           </div>
         </div>
       `);
@@ -1587,6 +1594,10 @@ $(function(){
       fetch(`get_groups.php?wid=${wid}`)
         .then(r=>r.json()).then(groups=>{
           $('#group-list').empty();
+          const $groupList = $('#group-list');
+          groups.forEach(function(g) {
+            $groupList.append('<div class="group-slot" data-id="' + g.id + '" style="min-height:160px;"></div>');
+          });
           groups.forEach(g=>{
             fetch(`?columns_group_id=${g.id}`)
               .then(r=>r.json())
@@ -1640,7 +1651,12 @@ $(function(){
                   $grp.find('.group-toggle').text('►');
                 }
 
-                $('#group-list').append($grp);
+                const $slot = $groupList.find('.group-slot[data-id="' + g.id + '"]');
+                if ($slot.length) {
+                  $slot.replaceWith($grp);
+                } else {
+                  $groupList.append($grp);
+                }
 
                 // Pré-charger les options des colonnes select/tags en parallèle
                 const optionFetches = cols
@@ -1678,7 +1694,7 @@ $(function(){
                         const checkboxHtml = t.level_depth > 0 ? `<input type="checkbox" class="task-completion-checkbox" data-task-id="${t.id}" ${isCompleted} style="cursor:pointer;width:16px;height:16px;" onchange="window.toggleTaskCompletion(${t.id}, this.checked)">` : '';
                         
                         let tds = `
-                          <td style="border:1px solid #ddd;${indentStyle}" class="task-cell task-name-cell" data-level="${t.level_depth || 0}">
+                          <td style="border:1px solid #ddd;${indentStyle}" class="task-cell" data-level="${t.level_depth || 0}">
                             <div style="display: flex; align-items: center; gap: 5px;">
                               ${collapseBtn}
                               <span style="color: #999; font-family: monospace;">${subtaskIndicator}</span>
@@ -1893,7 +1909,7 @@ $(function(){
                             
                             const taskName = $(this).text();
                             const groupName = $grp.find('.group-label').text();
-                            const taskColumnLabel = $grp.find('.task-column-label').text();
+                            const taskColumnLabel = $grp.find('.task-column-label').first().text();
                             openTaskDetail(t.id, taskName, groupName, taskColumnLabel);
                           });
                           
@@ -1921,10 +1937,10 @@ $(function(){
           });
 
           initGroupSortable();
-
           attachEventHandlers(wid);
-          
           setTimeout(function() {
+            
+             
             if ($('#workspace-search').length && $('#workspace-search').val().trim()) {
               const searchTerm = $('#workspace-search').val();
               $('#workspace-search').trigger('input');
@@ -2058,7 +2074,7 @@ $(function(){
       }, '', 'Ajouter une colonne');
     });
 
-    $('.group-toggle').off('click').on('click',function(e){
+    $('#group-list').off('click','.group-toggle').on('click','.group-toggle',function(e){
       e.stopPropagation();
       const $g    = $(this).closest('.group');
       const $body = $g.find('.group-body');
@@ -2111,14 +2127,21 @@ $(function(){
         });
       })
       .off('click','.add-row-btn').on('click','.add-row-btn',function(){
-        const gid=$(this).closest('.group').data('id');
-        const taskColumnLabel = $(this).closest('.group').find('.task-column-label').text().toLowerCase();
+        const $button = $(this);
+        const gid = $button.closest('.group').data('id');
+        const splitColumnId = $button.data('split-column-id');
+        const splitOptionId = String($button.attr('data-split-option-id') || '');
+        const taskColumnLabel = $(this).closest('.group').find('.task-column-label').first().text().toLowerCase();
         CustomPopup.prompt(`Nom de ${taskColumnLabel} :`, function(lbl) {
           if(!lbl) return;
           const fd=new FormData();
           fd.append('add_task_group_id',gid);
           fd.append('task_label',lbl);
           fd.append('token',token);
+          if (splitColumnId && splitOptionId) {
+            fd.append('split_column_id', splitColumnId);
+            fd.append('split_option_id', splitOptionId);
+          }
           fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
         }, '', `Ajouter une ${taskColumnLabel}`);
       })
@@ -2335,7 +2358,7 @@ $(function(){
         
         const taskName = $(this).text();
         const groupName = $group.find('.group-label').text();
-        const taskColumnLabel = $group.find('.task-column-label').text();
+        const taskColumnLabel = $group.find('.task-column-label').first().text();
         openTaskDetail(taskId, taskName, groupName, taskColumnLabel);
       });
       
