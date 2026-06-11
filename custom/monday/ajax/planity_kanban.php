@@ -20,7 +20,7 @@ function planity_kanban_response($payload, $status = 200)
 }
 
 if (empty($user->id)) {
-	planity_kanban_response(array('success' => false, 'error' => 'Forbidden'), 403);
+	planity_kanban_response(array('success' => false, 'error' => 'Accès interdit'), 403);
 }
 
 if (!planity_kanban_load_service()) {
@@ -45,13 +45,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && $action === 'list') {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'update_status') {
 	$token = GETPOST('token', 'alpha');
 	if (empty($token) || !hash_equals((string) currentToken(), (string) $token)) {
-		planity_kanban_response(array('success' => false, 'error' => 'Bad token'), 403);
+		planity_kanban_response(array('success' => false, 'error' => 'token invalide'), 403);
 	}
 
 	$cardId = GETPOSTINT('planity_kanban_card_id');
 	$status = GETPOST('planity_kanban_status', 'alpha');
 	if ($cardId <= 0) {
-		planity_kanban_response(array('success' => false, 'error' => 'Bad parameters'), 400);
+		planity_kanban_response(array('success' => false, 'error' => 'Paramètres invalides'), 400);
 	}
 
 	$result = $service->updateKanbanCardStatus($conf->entity, $user->id, $cardId, $status, $isAdminView);
@@ -66,4 +66,4 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'update_status') {
 	planity_kanban_response(array('success' => true));
 }
 
-planity_kanban_response(array('success' => false, 'error' => 'Bad action'), 400);
+planity_kanban_response(array('success' => false, 'error' => 'Action invalide'), 400);

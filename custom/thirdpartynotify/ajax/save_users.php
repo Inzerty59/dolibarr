@@ -20,12 +20,12 @@ function thirdpartynotify_json($payload, $status = 200)
 }
 
 if (empty($user->admin)) {
-	thirdpartynotify_json(array('success' => false, 'error' => 'Forbidden'), 403);
+	thirdpartynotify_json(array('success' => false, 'error' => 'Accès interdit'), 403);
 }
 
 $token = GETPOST('token', 'alpha');
 if (empty($token) || !hash_equals((string) currentToken(), (string) $token)) {
-	thirdpartynotify_json(array('success' => false, 'error' => 'Bad token'), 403);
+	thirdpartynotify_json(array('success' => false, 'error' => 'token invalide'), 403);
 }
 
 $mode = GETPOST('mode', 'alpha');
@@ -66,7 +66,7 @@ if ($mode === 'save') {
 		'success' => true,
 		'count' => $result,
 		'selected' => $selected,
-		'message' => 'Configuration enregistree',
+		'message' => 'Configuration enregistrée',
 		'newToken' => currentToken(),
 	));
 }

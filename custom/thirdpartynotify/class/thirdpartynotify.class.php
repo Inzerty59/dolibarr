@@ -15,6 +15,26 @@ class ThirdpartyNotify
 		$this->db = $db;
 	}
 
+	public static function isAutomaticActionType($type, $code)
+	{
+		$type = strtolower(trim((string) $type));
+		$code = strtoupper(trim((string) $code));
+
+		return ($type !== '' && preg_match('/auto$/', $type))
+			|| ($code !== '' && preg_match('/_AUTO$/', $code));
+	}
+
+	public static function getManualActionSqlFilter($alias)
+	{
+		$alias = preg_replace('/[^a-zA-Z0-9_]/', '', (string) $alias);
+		if ($alias === '') {
+			$alias = 'c';
+		}
+
+		return " AND (".$alias.".type IS NULL OR LOWER(".$alias.".type) NOT LIKE '%auto')"
+			." AND (".$alias.".code IS NULL OR RIGHT(UPPER(".$alias.".code), 5) <> '_AUTO')";
+	}
+
 	public function getSelectedUsers($entity, $contextType = self::CONTEXT_GLOBAL, $fkContext = 0)
 	{
 		$users = array();
@@ -178,8 +198,7 @@ class ThirdpartyNotify
 			$sql .= "event_label = VALUES(event_label), ";
 			$sql .= "event_date_start = VALUES(event_date_start), ";
 			$sql .= "event_date_end = VALUES(event_date_end), ";
-			$sql .= "contacts_json = VALUES(contacts_json), ";
-			$sql .= "status = VALUES(status)";
+			$sql .= "contacts_json = VALUES(contacts_json)";
 
 			if (!$this->db->query($sql)) {
 				return -1;
@@ -248,8 +267,9 @@ class ThirdpartyNotify
 	{
 		$this->ensureKanbanTable();
 		$status = $this->normalizeKanbanStatus($status);
+		$progress = $this->mapKanbanStatusToProgress($status);
 
-		$sql = "SELECT rowid FROM ".MAIN_DB_PREFIX."thirdpartynotify_kanban_card";
+		$sql = "SELECT rowid, fk_actioncomm FROM ".MAIN_DB_PREFIX."thirdpartynotify_kanban_card";
 		$sql .= " WHERE rowid = ".((int) $cardId);
 		$sql .= " AND entity = ".((int) $entity);
 		if (!$allowAnyUserCard) {
@@ -260,19 +280,33 @@ class ThirdpartyNotify
 		if (!$resql) {
 			return -1;
 		}
-		if (!$this->db->fetch_object($resql)) {
+		$obj = $this->db->fetch_object($resql);
+		if (!$obj) {
 			return 0;
 		}
 
+		$this->db->begin();
 		$sql = "UPDATE ".MAIN_DB_PREFIX."thirdpartynotify_kanban_card";
 		$sql .= " SET status = '".$this->db->escape($status)."'";
-		$sql .= " WHERE rowid = ".((int) $cardId);
+		$sql .= " WHERE fk_actioncomm = ".((int) $obj->fk_actioncomm);
 		$sql .= " AND entity = ".((int) $entity);
-		if (!$allowAnyUserCard) {
-			$sql .= " AND fk_user_dest = ".((int) $userId);
+		if (!$this->db->query($sql)) {
+			$this->db->rollback();
+			return -1;
 		}
 
-		return $this->db->query($sql) ? 1 : -1;
+		$sql = "UPDATE ".MAIN_DB_PREFIX."actioncomm";
+		$sql .= " SET percent = ".((int) $progress);
+		$sql .= ", fk_user_mod = ".((int) $userId);
+		$sql .= " WHERE id = ".((int) $obj->fk_actioncomm);
+		$sql .= " AND entity IN (".getEntity('agenda').")";
+		if (!$this->db->query($sql)) {
+			$this->db->rollback();
+			return -1;
+		}
+
+		$this->db->commit();
+		return 1;
 	}
 
 	public function ensureKanbanTable()
@@ -307,6 +341,17 @@ class ThirdpartyNotify
 			return self::KANBAN_STATUS_RUNNING;
 		}
 		return self::KANBAN_STATUS_PENDING;
+	}
+
+	private function mapKanbanStatusToProgress($status)
+	{
+		if ($status === self::KANBAN_STATUS_ARCHIVED) {
+			return 100;
+		}
+		if ($status === self::KANBAN_STATUS_RUNNING) {
+			return 50;
+		}
+		return 0;
 	}
 
 	private function normalizeKanbanStatus($status)

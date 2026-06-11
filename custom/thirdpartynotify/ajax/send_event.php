@@ -27,43 +27,43 @@ function thirdpartynotify_send_json($payload, $status = 200)
 
 $token = GETPOST('token', 'alpha');
 if (empty($token) || !hash_equals((string) currentToken(), (string) $token)) {
-	thirdpartynotify_send_json(array('success' => false, 'error' => 'Bad token'), 403);
+	thirdpartynotify_send_json(array('success' => false, 'error' => 'token invalide'), 403);
 }
 
 $socid = GETPOSTINT('socid');
 $actioncommId = GETPOSTINT('actioncomm_id');
 if ($socid <= 0 || $actioncommId <= 0) {
-	thirdpartynotify_send_json(array('success' => false, 'error' => 'Bad parameters'), 400);
+	thirdpartynotify_send_json(array('success' => false, 'error' => 'Paramètres invalides'), 400);
 }
 
 if (!$user->hasRight('societe', 'lire')) {
-	thirdpartynotify_send_json(array('success' => false, 'error' => 'Forbidden'), 403);
+	thirdpartynotify_send_json(array('success' => false, 'error' => 'Accès interdit'), 403);
 }
 if (!$user->hasRight('agenda', 'myactions', 'read') && !$user->hasRight('agenda', 'allactions', 'read')) {
-	thirdpartynotify_send_json(array('success' => false, 'error' => 'Forbidden'), 403);
+	thirdpartynotify_send_json(array('success' => false, 'error' => 'Accès interdit'), 403);
 }
 
 $thirdparty = new Societe($db);
 if ($thirdparty->fetch($socid) <= 0) {
-	thirdpartynotify_send_json(array('success' => false, 'error' => 'Third party not found'), 404);
+	thirdpartynotify_send_json(array('success' => false, 'error' => 'Tiers introuvable'), 404);
 }
 restrictedArea($user, 'societe', $socid, '&societe');
 
 $event = new ActionComm($db);
 if ($event->fetch($actioncommId) <= 0) {
-	thirdpartynotify_send_json(array('success' => false, 'error' => 'Event not found'), 404);
+	thirdpartynotify_send_json(array('success' => false, 'error' => 'Événement introuvable'), 404);
 }
 if ((int) $event->socid !== (int) $socid) {
-	thirdpartynotify_send_json(array('success' => false, 'error' => 'Event does not belong to this third party'), 403);
+	thirdpartynotify_send_json(array('success' => false, 'error' => 'L\'événement n\'appartient pas à ce tiers'), 403);
 }
-if ($event->type === 'systemauto' || $event->type_code === 'AC_OTH_AUTO') {
-	thirdpartynotify_send_json(array('success' => false, 'error' => 'Cet evenement automatique ne peut pas etre notifie'), 403);
+if (ThirdpartyNotify::isAutomaticActionType($event->type, $event->type_code)) {
+	thirdpartynotify_send_json(array('success' => false, 'error' => 'Cet événement automatique ne peut pas être notifié'), 403);
 }
 if (!$user->hasRight('agenda', 'allactions', 'read')) {
 	$isOwnEvent = ((int) $event->authorid === (int) $user->id) || ((int) $event->userownerid === (int) $user->id);
 	$isAssigned = is_array($event->userassigned) && array_key_exists((int) $user->id, $event->userassigned);
 	if (!$isOwnEvent && !$isAssigned) {
-		thirdpartynotify_send_json(array('success' => false, 'error' => 'Forbidden'), 403);
+		thirdpartynotify_send_json(array('success' => false, 'error' => 'Accès interdit'), 403);
 	}
 }
 
@@ -90,7 +90,7 @@ if (getDolGlobalString('MAIN_MAIL_SMTPS_ID') && isValidEmail(getDolGlobalString(
 	$from = $mysoc->email;
 }
 if ($from === '' && !empty($recipients)) {
-	thirdpartynotify_send_json(array('success' => false, 'error' => 'No valid sender email configured'), 500);
+	thirdpartynotify_send_json(array('success' => false, 'error' => 'Aucun expéditeur email valide n\'est configuré'), 500);
 }
 
 $contacts = array();

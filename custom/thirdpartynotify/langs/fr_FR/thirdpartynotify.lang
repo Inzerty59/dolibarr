@@ -1,6 +1,6 @@
 ModuleThirdpartynotifyName=Notifications tiers
-ThirdpartynotifyDescription=Ajoute une liste d'utilisateurs a notifier depuis les evenements des tiers
-ThirdpartynotifyDescriptionLong=Module custom sans patch core pour configurer des destinataires internes et envoyer les evenements d'un tiers par email.
+ThirdpartynotifyDescription=Ajoute une liste d'utilisateurs à notifier depuis les événements des tiers
+ThirdpartynotifyDescriptionLong=Module custom sans patch core pour configurer des destinataires internes et envoyer les événements d'un tiers par email.
 ThirdpartynotifySetup=Configuration Notifications tiers
 ThirdpartynotifySetupHelp=La configuration principale est affichee dans la page de configuration du module Tiers, section Autre.
 OpenThirdpartySetup=Ouvrir la configuration Tiers
