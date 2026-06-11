@@ -46,7 +46,7 @@ $(function(){
 
   function buildGroupTableHtml(headerCells, extraClass = '') {
     return `
-      <table class="planity-group-table ${extraClass}" style="border-collapse:collapse;margin-bottom:8px;">
+      <table class="planity-group-table ${extraClass}" style="width:100%;border-collapse:collapse;margin-bottom:8px;">
         <thead>
           <tr style="background:#fafafa;">
             ${headerCells}
