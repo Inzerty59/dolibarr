@@ -15,6 +15,7 @@ class InterfaceTicketsEmail extends DolibarrTriggers
 	const CONTACT_CHOICE_ALL_LINKED = -2;
 	const CONTACT_CHOICE_NONE = -3;
 	const CONTACT_LINK_STATUS_ALL = -1;
+	const CONTACT_TYPE_ASSIGNED_USER = 'SUPPORTTEC';
 	const MAIL_BODY_IS_HTML_AUTO = -1;
 	const TICKET_STATUS_IN_PROGRESS = 3;
 	const TRIGGER_RESULT_ERROR = -1;
@@ -79,7 +80,7 @@ class InterfaceTicketsEmail extends DolibarrTriggers
 		}
 
 		if ($error > 0) {
-			return self::TRIGGER_RESULT_ERROR;
+			$this->reportMailErrors();
 		}
 
 		return $sent > 0 ? self::TRIGGER_RESULT_OK : self::TRIGGER_RESULT_NONE;
@@ -136,6 +137,7 @@ class InterfaceTicketsEmail extends DolibarrTriggers
 		$result = $this->sendMail($assignedUser->email, $template['subject'], $template['body'], $object);
 		if ($result > 0) {
 			self::$sentAssignmentNotifications[$notificationKey] = true;
+			$this->syncAssignedUserSupportContact($object, $assignedUser);
 		}
 
 		return $result;
@@ -172,7 +174,7 @@ class InterfaceTicketsEmail extends DolibarrTriggers
 			return $emails;
 		}
 
-		return $this->getLinkedTicketContactEmails($object, false);
+		return $this->getLinkedTicketContactEmails($object);
 	}
 
 	/**
@@ -206,25 +208,37 @@ class InterfaceTicketsEmail extends DolibarrTriggers
 	}
 
 	/**
-	 * Return contacts linked to the ticket only. When requested, include internal
-	 * linked contacts and force the assigned user as an associated recipient.
+	 * Return external contacts linked to the ticket. For the "all associated"
+	 * choice, also include the assigned user explicitly without adding every
+	 * internal linked contact to the customer-facing notification.
 	 *
 	 * @return array<string,array{email:string,name:string}> Lowercase email => recipient data
 	 */
-	private function getLinkedTicketContactEmails($object, $includeInternal = false)
+	private function getLinkedTicketContactEmails($object, $includeAssignedUser = false)
 	{
 		$emails = array();
 		$linkedContacts = $object->listeContact(self::CONTACT_LINK_STATUS_ALL, 'external');
 
 		$this->addLinkedContactEmails($emails, $linkedContacts);
-
-		if ($includeInternal) {
-			$linkedContacts = $object->listeContact(self::CONTACT_LINK_STATUS_ALL, 'internal');
-			$this->addLinkedContactEmails($emails, $linkedContacts);
+		if ($includeAssignedUser) {
 			$this->addAssignedUserEmail($emails, $object);
 		}
 
 		return $emails;
+	}
+
+	/**
+	 * Add the current assigned user email when the user selected all associated
+	 * recipients.
+	 */
+	private function addAssignedUserEmail(&$emails, $object)
+	{
+		$assignedUser = $this->getAssignedUser($object);
+		if (empty($assignedUser) || empty($assignedUser->email)) {
+			return;
+		}
+
+		$this->addEmail($emails, $assignedUser->email, $assignedUser->getFullName($this->langs));
 	}
 
 	/**
@@ -243,20 +257,6 @@ class InterfaceTicketsEmail extends DolibarrTriggers
 
 			$this->addEmail($emails, $contact['email'], $this->getLinkedContactName($contact));
 		}
-	}
-
-	/**
-	 * Add the current assigned user email, even if Dolibarr did not list it as an
-	 * internal linked contact during the close trigger.
-	 */
-	private function addAssignedUserEmail(&$emails, $object)
-	{
-		$assignedUser = $this->getAssignedUser($object);
-		if (empty($assignedUser) || empty($assignedUser->email)) {
-			return;
-		}
-
-		$this->addEmail($emails, $assignedUser->email, $assignedUser->getFullName($this->langs));
 	}
 
 	/**
@@ -336,14 +336,17 @@ class InterfaceTicketsEmail extends DolibarrTriggers
 	 */
 	private function isAssignedUserChanged($object)
 	{
-		if (empty($object->oldcopy) || !property_exists($object->oldcopy, 'fk_user_assign')) {
+		$newAssignedUserId = $this->getAssignedUserId($object);
+		if ($newAssignedUserId <= 0) {
 			return false;
 		}
 
-		$oldAssignedUserId = (int) $object->oldcopy->fk_user_assign;
-		$newAssignedUserId = $this->getAssignedUserId($object);
+		if (!empty($object->oldcopy) && property_exists($object->oldcopy, 'fk_user_assign')) {
+			$oldAssignedUserId = (int) $object->oldcopy->fk_user_assign;
+			return $newAssignedUserId !== $oldAssignedUserId;
+		}
 
-		return $newAssignedUserId > 0 && $newAssignedUserId !== $oldAssignedUserId;
+		return !$this->isAssignedUserLinkedAsSupportContact($object, $newAssignedUserId);
 	}
 
 	/**
@@ -563,6 +566,55 @@ class InterfaceTicketsEmail extends DolibarrTriggers
 	}
 
 	/**
+	 * Check whether the assigned user is already linked with Dolibarr's support
+	 * technician contact type. This is used as a fallback when TICKET_MODIFY is
+	 * fired without oldcopy, which happens from the standard ticket edit form.
+	 */
+	private function isAssignedUserLinkedAsSupportContact($object, $assignedUserId)
+	{
+		$linkedContacts = $object->listeContact(self::CONTACT_LINK_STATUS_ALL, 'internal', 0, self::CONTACT_TYPE_ASSIGNED_USER);
+		if (empty($linkedContacts) || !is_array($linkedContacts)) {
+			return false;
+		}
+
+		foreach ($linkedContacts as $contact) {
+			if (!empty($contact['id']) && (int) $contact['id'] === (int) $assignedUserId) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Keep the internal support contact aligned after an assignment made through
+	 * the generic edit form. The dedicated Dolibarr assign action already does
+	 * the same synchronization outside this trigger.
+	 */
+	private function syncAssignedUserSupportContact($object, User $assignedUser)
+	{
+		$linkedContacts = $object->listeContact(self::CONTACT_LINK_STATUS_ALL, 'internal', 0, self::CONTACT_TYPE_ASSIGNED_USER);
+		$hasCurrentAssignedUser = false;
+
+		if (!empty($linkedContacts) && is_array($linkedContacts)) {
+			foreach ($linkedContacts as $contact) {
+				if (!empty($contact['id']) && (int) $contact['id'] === (int) $assignedUser->id) {
+					$hasCurrentAssignedUser = true;
+					continue;
+				}
+
+				if (!empty($contact['rowid']) && $object->delete_contact((int) $contact['rowid'], 1) < 0) {
+					dol_syslog('Custom ticket email could not unlink previous assigned support contact '.((int) $contact['rowid']).' for ticket '.((int) $object->id), LOG_WARNING);
+				}
+			}
+		}
+
+		if (!$hasCurrentAssignedUser && $object->add_contact((int) $assignedUser->id, self::CONTACT_TYPE_ASSIGNED_USER, 'internal', 1) < 0) {
+			dol_syslog('Custom ticket email could not link assigned support contact '.((int) $assignedUser->id).' for ticket '.((int) $object->id), LOG_WARNING);
+		}
+	}
+
+	/**
 	 * Fetch the assigned user, falling back to a fresh DB lookup when the close
 	 * trigger object does not carry fk_user_assign.
 	 */
@@ -682,7 +734,7 @@ class InterfaceTicketsEmail extends DolibarrTriggers
 		if ($mailfile->error) {
 			$this->errors = array_merge((array) $this->errors, array($mailfile->error));
 			dol_syslog('Custom ticket email not sent to '.$sendto.' for ticket '.((int) $object->id).': '.$mailfile->error, LOG_ERR);
-			return self::TRIGGER_RESULT_NONE;
+			return self::TRIGGER_RESULT_ERROR;
 		}
 
 		$result = $mailfile->sendfile();
@@ -690,10 +742,26 @@ class InterfaceTicketsEmail extends DolibarrTriggers
 			$mailErrors = !empty($mailfile->errors) ? $mailfile->errors : array($mailfile->error);
 			$this->errors = array_merge((array) $this->errors, (array) $mailErrors);
 			dol_syslog('Custom ticket email not sent to '.$sendto.' for ticket '.((int) $object->id).': '.implode(' | ', (array) $mailErrors), LOG_ERR);
-			return self::TRIGGER_RESULT_NONE;
+			return self::TRIGGER_RESULT_ERROR;
 		}
 
 		return self::TRIGGER_RESULT_OK;
+	}
+
+	/**
+	 * Surface mail failures to the user without rolling back the ticket action.
+	 */
+	private function reportMailErrors()
+	{
+		$mailErrors = array_values(array_filter(array_unique((array) $this->errors)));
+		$message = $this->trans('TicketCustomMailSendFailureWarning', "L'action a ete enregistree, mais au moins un email de notification n'a pas pu etre envoye.");
+
+		if (function_exists('setEventMessages')) {
+			setEventMessages($message, $mailErrors, 'warnings');
+			return;
+		}
+
+		dol_syslog('Custom ticket email warning: '.$message.' '.implode(' | ', $mailErrors), LOG_WARNING);
 	}
 
 	/**

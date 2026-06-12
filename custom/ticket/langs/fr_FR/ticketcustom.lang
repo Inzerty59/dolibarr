@@ -12,6 +12,7 @@ TicketCustomBodyResolvedIntro=Votre ticket a été fermé.
 TicketCustomBodyResolvedFooter=Vous pouvez repondre a ce message si un complement est necessaire.
 TicketCustomBodyAssignedIntro=Un ticket vous a été attribué.
 TicketCustomBodyAssignedFooter=Merci de le prendre en charge depuis Dolibarr.
+TicketCustomMailSendFailureWarning=L'action a été enregistrée, mais au moins un email de notification n'a pas pu être envoyé.
 TicketCustomFieldTicket=Ticket
 TicketCustomFieldSubject=Sujet
 TicketCustomFieldSeverity=Sévérité
