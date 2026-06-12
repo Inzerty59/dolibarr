@@ -265,16 +265,16 @@ $config = array(
 			button.className = 'button thirdpartynotify-send-event';
 			button.title = 'Envoyer cet evenement aux utilisateurs notifies';
 			button.dataset.actioncommId = actionId;
-			button.innerHTML = '<span class="fa fa-envelope-o" aria-hidden="true"></span> Envoyer aux notifies';
+			button.innerHTML = '<span class="fa fa-envelope-o" aria-hidden="true"></span> Notifier';
 			button.addEventListener('click', function () {
 				var original = button.innerHTML;
 				button.disabled = true;
-				button.innerHTML = '<span class="fa fa-spinner fa-spin" aria-hidden="true"></span> Envoi...';
+				button.innerHTML = '<span class="fa fa-spinner fa-spin" aria-hidden="true"></span> Notifier...';
 				postForm(config.urls.sendEvent, {
 					socid: socid,
 					actioncomm_id: actionId
 				}).then(function (json) {
-					button.innerHTML = '<span class="fa fa-check" aria-hidden="true"></span> Envoye';
+					button.innerHTML = '<span class="fa fa-check" aria-hidden="true"></span> Notifie';
 					notify(json.message || 'Email envoye.', false);
 					window.setTimeout(function () {
 						button.disabled = false;
