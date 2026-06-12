@@ -133,10 +133,31 @@ header('Content-Type: text/css; charset=UTF-8');
 	border-radius: 6px;
 }
 .thirdpartynotify-send-event {
-	margin-left: 8px;
-	padding: 4px 8px;
-	font-size: 12px;
-	line-height: 1.2;
+	display: inline-flex;
+	align-items: center;
+	vertical-align: middle;
+	line-height: 1;
+	padding-top: 0;
+	padding-bottom: 0;
+	margin: 0 0 0 18px;
+	padding-left: 10px;
+	padding-right: 10px;
+	height: 28px;
+}
+
+
+ul.timeline li .timeline-item .timeline-header-action2,
+ul.timeline li .timeline-item .timeline-header {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+
+ul.timeline li .timeline-item .timeline-header-action2 .thirdpartynotify-send-event,
+ul.timeline li .timeline-item .timeline-header .thirdpartynotify-send-event {
+	margin-top: 0;
+	margin-bottom: 0;
 }
 @media (max-width: 700px) {
 	.thirdpartynotify-panel {
