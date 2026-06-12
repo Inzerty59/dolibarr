@@ -1432,12 +1432,15 @@ $(function(){
         event.preventDefault();
         if (!draggedCard) return;
 
-        const dropzone = column.querySelector('.planity-kanban-dropzone');
-        const empty = dropzone.querySelector('.planity-kanban-empty');
-        if (empty) empty.remove();
-        dropzone.appendChild(draggedCard);
+        const status = column.dataset.status;
+        if (!status || draggedCard.dataset.status === status) return;
 
-        savePlanityKanbanStatus(draggedCard, column.dataset.status);
+        savePlanityKanbanStatus(draggedCard, status)
+          .then(() => loadPlanityKanban())
+          .catch(error => {
+            console.error('Erreur déplacement Kanban planity:', error);
+            loadPlanityKanban();
+          });
       });
     });
   }
@@ -1448,23 +1451,15 @@ $(function(){
     fd.append('planity_kanban_status', status);
     fd.append('action', 'update_status');
     fd.append('token', token);
-    card.dataset.status = status;
-    const select = card.querySelector('.planity-kanban-status-select');
-    if (select && select.value !== status) select.value = status;
     return fetch(planityKanbanUrl, {method: 'POST', body: fd, credentials: 'same-origin'}).then(response => {
       return response.json().then(json => {
         if (!response.ok || json.success === false) throw new Error(json.error || 'Erreur serveur');
+        card.dataset.status = status;
+        const select = card.querySelector('.planity-kanban-status-select');
+        if (select && select.value !== status) select.value = status;
         return json;
       });
     });
-  }
-
-  function movePlanityKanbanCard(card, status) {
-    const targetZone = document.querySelector(`.kanban-column[data-status="${status}"] .planity-kanban-dropzone`);
-    if (!targetZone) return;
-    const empty = targetZone.querySelector('.planity-kanban-empty');
-    if (empty) empty.remove();
-    targetZone.appendChild(card);
   }
 
   function initPlanityKanbanStatusSelect() {
@@ -1475,10 +1470,19 @@ $(function(){
         const card = event.target.closest('.planity-kanban-card');
         const status = event.target.value;
         if (!card || !status || card.dataset.status === status) return;
-        movePlanityKanbanCard(card, status);
-        savePlanityKanbanStatus(card, status).catch(error => {
-          console.error('Erreur changement statut Kanban planity:', error);
-        });
+
+        const previousStatus = card.dataset.status;
+        event.target.value = previousStatus;
+        event.target.disabled = true;
+        savePlanityKanbanStatus(card, status)
+          .then(() => loadPlanityKanban())
+          .catch(error => {
+            console.error('Erreur changement statut Kanban planity:', error);
+            event.target.value = previousStatus;
+          })
+          .finally(() => {
+            event.target.disabled = false;
+          });
       });
     });
   }

@@ -168,7 +168,9 @@ class ThirdpartyNotify
 
 	public function createKanbanCardsForSelectedUsers($entity, $event, $thirdparty, array $contacts)
 	{
-		$this->ensureKanbanTable();
+		if ($this->ensureKanbanTable() < 0) {
+			return -1;
+		}
 
 		$selectedUsers = $this->getSelectedUsers($entity);
 		if ($selectedUsers === -1) {
@@ -211,7 +213,9 @@ class ThirdpartyNotify
 
 	public function fetchKanbanCardsForUser($entity, $userId, $includeAll = false)
 	{
-		$this->ensureKanbanTable();
+		if ($this->ensureKanbanTable() < 0) {
+			return -1;
+		}
 
 		$cards = array(
 			self::KANBAN_STATUS_PENDING => array(),
@@ -265,7 +269,9 @@ class ThirdpartyNotify
 
 	public function updateKanbanCardStatus($entity, $userId, $cardId, $status, $allowAnyUserCard = false)
 	{
-		$this->ensureKanbanTable();
+		if ($this->ensureKanbanTable() < 0) {
+			return -1;
+		}
 		$status = $this->normalizeKanbanStatus($status);
 		$progress = $this->mapKanbanStatusToProgress($status);
 

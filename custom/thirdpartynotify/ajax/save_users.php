@@ -62,6 +62,11 @@ if ($mode === 'save') {
 	}
 
 	$selected = $service->getSelectedUsers($conf->entity);
+	if ($selected === -1) {
+		dol_syslog('ThirdpartyNotify save_users selected fetch error: '.$db->lasterror(), LOG_ERR);
+		thirdpartynotify_json(array('success' => false, 'error' => 'Erreur technique'), 500);
+	}
+
 	thirdpartynotify_json(array(
 		'success' => true,
 		'count' => $result,
