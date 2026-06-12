@@ -274,7 +274,7 @@ $config = array(
 					socid: socid,
 					actioncomm_id: actionId
 				}).then(function (json) {
-					button.innerHTML = '<span class="fa fa-check" aria-hidden="true"></span> Notifie';
+					button.innerHTML = '<span class="fa fa-check" aria-hidden="true"></span> Notifié';
 					notify(json.message || 'Email envoye.', false);
 					window.setTimeout(function () {
 						button.disabled = false;
