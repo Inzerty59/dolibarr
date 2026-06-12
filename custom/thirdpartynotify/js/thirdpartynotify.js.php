@@ -103,7 +103,7 @@ $config = array(
 			'  </select>',
 			'  <button type="button" class="button" id="thirdpartynotify-add-user"><span class="fa fa-plus"></span> Ajouter</button>',
 			'</div>',
-			'<div class="thirdpartynotify-help"><span class="fa fa-info-circle"></span>Sélectionnez les utilisateurs qui recevront les notifications par email concernant les événements des tiers.Sélectionnez les utilisateurs qui recevront les notifications par email concernant les événements des tiers.</div>',
+			'<div class="thirdpartynotify-help"><span class="fa fa-info-circle"></span> Sélectionnez les utilisateurs qui recevront les notifications par email concernant les événements des tiers.</div>',
 			'<div class="thirdpartynotify-selected-box">',
 			'  <div class="thirdpartynotify-box-title">UTILISATEURS SELECTIONNÉS</div>',
 			'  <div id="thirdpartynotify-selected-users" class="thirdpartynotify-selected-users"></div>',
