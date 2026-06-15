@@ -2,25 +2,25 @@ $(function(){
   $('.side-nav .vmenu').prepend(window.leftmenu || '');
   const token = window.formtoken;
   const userId = window.userId;
-
-  function showPlanityMessage(message, type = 'ok') {
-    $('#planity-event-message').remove();
-
-    const $message = $(`
-      <div id="planity-event-message" class="planity-event-message ${type}">
-        ${message}
-      </div>
-    `);
-
-    $('#main-content').prepend($message);
-
-    setTimeout(() => {
-      $message.fadeOut(250, function() {
-        $(this).remove();
-      });
-    }, 3500);
-  }
   
+  function showPlanityMessage(message, type = 'ok') {
+  $('#planity-event-message').remove();
+
+  const $message = $(`
+    <div id="planity-event-message" class="planity-event-message ${type}">
+      ${message}
+    </div>
+  `);
+
+  $('#main-content').prepend($message);
+
+  setTimeout(() => {
+    $message.fadeOut(250, function() {
+      $(this).remove();
+    });
+  }, 3500);
+}
+
   // State pour gérer les tâches collapsées
   const taskCollapseState = new Set();
   
@@ -2094,7 +2094,7 @@ $(function(){
     });
 
     $('#group-list')
-      .off('click','.rename-group').on('click','.rename-group',function(){
+     .off('click','.rename-group').on('click','.rename-group',function(){
         const $g=$(this).closest('.group');
         const gid=$g.data('id');
         const old=$g.find('.group-label').text();
@@ -2126,6 +2126,7 @@ $(function(){
           });
         }, old+' (copie)', 'Dupliquer le groupe');
       })
+      /* */
       .off('click', '.duplicate-table-btn').on('click', '.duplicate-table-btn', function() {
         const $group = $(this).closest('.group');
         const gid = $group.data('id');
@@ -2151,13 +2152,13 @@ $(function(){
         }).get().join('');
 
         CustomPopup.show({
-          popupClass: 'duplicate-table-popup',
-          title: `<strong>Dupliquer le tableau : ${groupLabel}</strong>`,
-          message: `
-            <strong class="duplicate-popup-help">Sélectionnez l'espace de travail destination</strong>
-            <div class="duplicate-workspace-list">
-              ${choices || '<span class="duplicate-workspace-empty">Aucun autre espace disponible</span>'}
-            </div>
+            popupClass: 'duplicate-table-popup',
+            title: `<strong>Dupliquer le tableau : ${groupLabel}</strong>`,
+            message: `
+              <strong class="duplicate-popup-help">Sélectionnez l'espace de travail destination</strong>
+              <div class="duplicate-workspace-list">
+                ${choices || '<span class="duplicate-workspace-empty">Aucun autre espace disponible</span>'}
+              </div>
           `,
           buttons: [
             {
@@ -2212,6 +2213,7 @@ $(function(){
             $('.duplicate-table-popup .custom-popup-btn-primary').prop('disabled', false);
           });
       })
+
       .off('click','.delete-group').on('click','.delete-group',function(){
         const $g=$(this).closest('.group');
         const gid=$g.data('id');
@@ -2996,6 +2998,7 @@ $(function(){
         showInput: false,
         inputPlaceholder: '',
         inputValue: '',
+        popupClass: '',
         buttons: [
           {
             text: 'OK',
@@ -3023,12 +3026,12 @@ $(function(){
       
       const popupHtml = `
         <div class="custom-popup-overlay">
-          <div class="custom-popup">
+          <div class="custom-popup ${config.popupClass}">
             <div class="custom-popup-header ${headerClass}">
               <h3 class="custom-popup-title">${config.title}</h3>
             </div>
             <div class="custom-popup-content">
-              <p class="custom-popup-message">${config.message}</p>
+              <div class="custom-popup-message">${config.message}</div>
               ${inputHtml}
               <div class="custom-popup-buttons">
                 ${buttonsHtml}
