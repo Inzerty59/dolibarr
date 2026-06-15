@@ -105,6 +105,92 @@ $(function(){
       input.value = value.replace(/[^0-9€$.,\s-]/g, '');
     }
   };
+  /*le comportement de textera : s’agrandit en hauteur selon son contenu */
+  window.autoResizeTextarea = function(el) {
+    el.style.height = 'auto';
+    el.style.height = el.scrollHeight + 'px';
+  };
+  /* ce  bloc pour la logique de voir plus/moins  */
+  const CELL_PREVIEW_LIMIT = 128; /*nombre de caractères affichés avant d'afficher voir plus*/
+  /* mesurer la hauteur d'un texterea en fonction de son contenue pour pouvoir limiter la hauteur du texterea en mode preview */
+  window.measureTextareaHeight = function(textarea, value) {
+    const computed = window.getComputedStyle(textarea);
+    const mirror = document.createElement('div');
+
+    mirror.style.position = 'absolute';
+    mirror.style.visibility = 'hidden';
+    mirror.style.pointerEvents = 'none';
+    mirror.style.zIndex = '-1';
+    mirror.style.boxSizing = 'border-box';
+    mirror.style.whiteSpace = 'pre-wrap';
+    mirror.style.overflowWrap = 'anywhere';
+    mirror.style.wordBreak = computed.wordBreak;
+    mirror.style.width = `${textarea.clientWidth || textarea.offsetWidth}px`;
+    mirror.style.padding = computed.padding;
+    mirror.style.border = computed.border;
+    mirror.style.fontFamily = computed.fontFamily;
+    mirror.style.fontSize = computed.fontSize;
+    mirror.style.fontWeight = computed.fontWeight;
+    mirror.style.fontStyle = computed.fontStyle;
+    mirror.style.letterSpacing = computed.letterSpacing;
+    mirror.style.lineHeight = computed.lineHeight;
+    mirror.textContent = value || ' ';
+
+    document.body.appendChild(mirror);
+    const height = mirror.scrollHeight;
+    mirror.remove();
+
+    return height;
+  };
+  /*decider*/  
+  window.updateExpandableTextarea = function(textarea) {
+    const $wrapper = $(textarea).closest('.cell-expandable');
+    const $toggle = $wrapper.find('.cell-expandable-toggle');
+    const value = textarea.value || '';
+    const hasOverflow = value.length > CELL_PREVIEW_LIMIT;
+    const expanded = $wrapper.attr('data-expanded') === '1';
+
+    if (expanded || !hasOverflow) {
+      autoResizeTextarea(textarea);
+    } else {
+      const previewValue = value.slice(0, CELL_PREVIEW_LIMIT);
+      const previewHeight = measureTextareaHeight(textarea, previewValue);
+      textarea.style.height = 'auto';
+      textarea.style.height = `${Math.min(textarea.scrollHeight, previewHeight)}px`;
+      textarea.scrollTop = 0;
+    }
+
+    if (hasOverflow) {
+      $toggle.text(expanded ? 'voir moins' : 'voir plus').show();
+    } else {
+      $toggle.hide();
+    }
+  };
+
+  window.handleExpandableTextareaInput = function(textarea, isNumber) {
+    if (isNumber) {
+      validateNumberInput(textarea);
+    }
+
+    saveCellValue(textarea);
+    updateExpandableTextarea(textarea);
+  };
+
+  window.toggleCellPreview = function(toggle, event) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const $wrapper = $(toggle).closest('.cell-expandable');
+    const $textarea = $wrapper.find('textarea');
+    const expanded = $wrapper.attr('data-expanded') === '1';
+
+    $wrapper.attr('data-expanded', expanded ? '0' : '1');
+    updateExpandableTextarea($textarea[0]);
+    $textarea.trigger('focus');
+  };
+/* */
+
+
 
   window.openUserSelector = function(cell) {
     const $cell = $(cell);
@@ -1355,6 +1441,7 @@ $(function(){
                       </div>
                     </div>
                     <div class="group-body" style="padding:10px;">
+                      <button class="add-row-btn" style="padding:4px 8px; margin-bottom: 8px;">+ Ajouter ${g.task_column_label || 'tâche'}</button>
                       <table style="width:100%;border-collapse:collapse;margin-bottom:8px;">
                         <thead>
                           <tr style="background:#fafafa;">
@@ -1363,7 +1450,6 @@ $(function(){
                         </thead>
                         <tbody></tbody>
                       </table>
-                      <button class="add-row-btn" style="padding:4px 8px;">+ Ajouter ${g.task_column_label || 'tâche'}</button>
                     </div>
                   </div>
                 `);
@@ -1452,16 +1538,25 @@ $(function(){
                                 });
                               cellPromises.push(promise);
                             } else if(c.type === 'number') {
-                              const inputHtml = `<input type="text" class="cell-input cell-number" 
-                                data-task="${t.id}" 
-                                data-column="${c.id}" 
-                                value="${cellValue}" 
-                                style="border:none;background:transparent;width:100%;padding:2px;text-align:right;"
-                                pattern="[0-9€$.,\\s-]*"
-                                onblur="saveCellValue(this)"
-                                onkeydown="if(event.key==='Enter') saveCellValue(this)"
-                                oninput="validateNumberInput(this)">`;
-                              cellPromises.push(Promise.resolve(inputHtml));
+                                const value = String(cellValue || '')
+                                  .replace(/&/g, '&amp;')
+                                  .replace(/</g, '&lt;')
+                                  .replace(/>/g, '&gt;');
+
+                                const inputHtml = `
+                                  <div class="cell-expandable" data-expanded="0">
+                                    <textarea class="cell-input cell-number cell-number-textarea"
+                                      data-task="${t.id}"
+                                      data-column="${c.id}"
+                                      rows="1"
+                                      inputmode="numeric"
+                                      style="border:none;background:transparent;width:100%;padding:2px;resize:none;overflow:hidden;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-all;box-sizing:border-box;line-height:1.4;"
+                                      oninput="handleExpandableTextareaInput(this, true)"
+                                      onkeydown="if(event.key==='Enter'){event.preventDefault();saveCellValue(this)}"
+                                      onblur="saveCellValue(this)">${value}</textarea>
+                                    <span class="cell-expandable-toggle" onclick="toggleCellPreview(this, event)" style="display:none;"></span>
+                                  </div>`;
+                                cellPromises.push(Promise.resolve(inputHtml));
                             } else if(c.type === 'tags') {
                               const promise = (dataCache.columnOptions[c.id]
                                 ? Promise.resolve(dataCache.columnOptions[c.id])
@@ -1584,16 +1679,26 @@ $(function(){
                                                         onblur="saveCellValue(this)"
                                                         onchange="saveCellValue(this)">`;
                               cellPromises.push(Promise.resolve(inputHtml));
-                            } else {
-                              const inputHtml = `<input type="text" class="cell-input" 
-                                                        data-task="${t.id}" 
-                                                        data-column="${c.id}" 
-                                                        value="${cellValue}" 
-                                                        style="border:none;background:transparent;width:100%;padding:2px;"
-                                                        onblur="saveCellValue(this)"
-                                                        onkeydown="if(event.key==='Enter') saveCellValue(this)">`;
+                            }else {
+                              const value = String(cellValue || '')
+                                .replace(/&/g, '&amp;')
+                                .replace(/</g, '&lt;')
+                                .replace(/>/g, '&gt;');
+
+                              const inputHtml = `
+                                <div class="cell-expandable" data-expanded="0">
+                                  <textarea class="cell-input cell-textarea"
+                                    data-task="${t.id}"
+                                    data-column="${c.id}"
+                                    rows="1"
+                                    style="border:none;background:transparent;width:100%;padding:2px;resize:none;overflow:hidden;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;box-sizing:border-box;line-height:1.4;"
+                                    oninput="handleExpandableTextareaInput(this, false)"
+                                    onblur="saveCellValue(this)">${value}</textarea>
+                                  <span class="cell-expandable-toggle" onclick="toggleCellPreview(this, event)" style="display:none;"></span>
+                                </div>`;
                               cellPromises.push(Promise.resolve(inputHtml));
                             }
+
                           });
                         
                         Promise.all(cellPromises).then(cellsHtml=>{
@@ -1621,6 +1726,10 @@ $(function(){
                       taskRows.forEach($row => {
                         $grp.find('tbody').append($row);
                       });
+                        $grp.find('textarea.cell-textarea, textarea.cell-number-textarea').each(function() {
+                          updateExpandableTextarea(this);
+                     });
+
                       
                       $grp.find('select.cell-select').each(function(){
                         applySelectColor($(this));
@@ -1969,16 +2078,16 @@ $(function(){
       
       switch(columnType) {
         case 'text':
-          valueA = $cellA.find('input').val() || $cellA.text() || '';
-          valueB = $cellB.find('input').val() || $cellB.text() || '';
+          valueA = $cellA.find('input,  textarea').val() || $cellA.text() || '';
+          valueB = $cellB.find('input,  textarea').val() || $cellB.text() || '';
           valueA = valueA.toLowerCase();
           valueB = valueB.toLowerCase();
           break;
           
         case 'number':
-          valueA = parseFloat($cellA.find('input').val() || '0') || 0;
-          valueB = parseFloat($cellB.find('input').val() || '0') || 0;
-          break;
+            valueA = parseFloat(($cellA.find('input, textarea').val() || '0').replace(/\s+/g, '').replace(',', '.')) || 0;
+            valueB = parseFloat(($cellB.find('input, textarea').val() || '0').replace(/\s+/g, '').replace(',', '.')) || 0;
+            break;
           
         case 'date':
         case 'deadline':
