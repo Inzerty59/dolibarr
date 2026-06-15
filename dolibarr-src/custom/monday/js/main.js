@@ -1694,7 +1694,7 @@ $(function(){
                         const checkboxHtml = t.level_depth > 0 ? `<input type="checkbox" class="task-completion-checkbox" data-task-id="${t.id}" ${isCompleted} style="cursor:pointer;width:16px;height:16px;" onchange="window.toggleTaskCompletion(${t.id}, this.checked)">` : '';
                         
                         let tds = `
-                          <td style="border:1px solid #ddd;${indentStyle}" class="task-cell" data-level="${t.level_depth || 0}">
+                          <td style="border:1px solid #ddd;${indentStyle}" class="task-cell task-name-cell" data-level="${t.level_depth || 0}">
                             <div style="display: flex; align-items: center; gap: 5px;">
                               ${collapseBtn}
                               <span style="color: #999; font-family: monospace;">${subtaskIndicator}</span>
