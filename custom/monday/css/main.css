@@ -1,4 +1,4 @@
-.column-menu {
+ niv {
   min-width: 150px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12), 0 4px 8px rgba(0, 0, 0, 0.08);
   border-radius: 8px;
@@ -15,6 +15,22 @@
   opacity: 1;
   transform: translateY(0) scale(1);
   pointer-events: auto;
+}
+
+.column-menu-flyout {
+  display: block !important;
+  opacity: 1 !important;
+  transform: none !important;
+  pointer-events: auto !important;
+}
+
+#column-menu-portal {
+  min-width: 150px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12), 0 4px 8px rgba(0, 0, 0, 0.08);
+  border-radius: 8px;
+  background: #fff;
+  border: 1px solid #e9ecef;
+  overflow: hidden;
 }
 
 .column-menu button {
@@ -79,44 +95,8 @@
   background: #8e24aa;
 }
 
-.column-menu .sort-asc-btn:hover {
-  background: linear-gradient(90deg, #e8f5e8 0%, #f8f9fa 100%);
-  color: #00c875;
-  padding-left: 20px;
-}
-
-.column-menu .sort-asc-btn:hover::before {
-  background: #00c875;
-}
-
-.column-menu .sort-desc-btn:hover {
-  background: linear-gradient(90deg, #fff3e0 0%, #f8f9fa 100%);
-  color: #ff9800;
-  padding-left: 20px;
-}
-
-.column-menu .sort-desc-btn:hover::before {
-  background: #ff9800;
-}
-
 .column-menu button:active {
   transform: scale(0.98);
-}
-
-/* Style pour les indicateurs de tri dans les en-têtes */
-.column-sort-indicator {
-  font-size: 12px;
-  margin-left: 6px;
-  opacity: 0.7;
-  font-weight: bold;
-}
-
-.column-sort-indicator.asc {
-  color: #00c875;
-}
-
-.column-sort-indicator.desc {
-  color: #ff9800;
 }
 
 /* Style pour le bouton des trois points */
@@ -1165,7 +1145,7 @@ td[style*="background-color: rgb(255, 243, 205)"] {
   box-shadow: 0 2px 4px rgba(0, 115, 234, 0.2);
 }
 
-#rename-btn, #delete-btn, .rename-group, .delete-group, .duplicate-group {
+#rename-btn, #delete-btn, .rename-group, .delete-group {
   background: #f8f9fa;
   border: 1px solid #e9ecef;
   border-radius: 4px;
@@ -1186,14 +1166,6 @@ td[style*="background-color: rgb(255, 243, 205)"] {
   color: #0073ea;
   transform: translateY(-1px);
   box-shadow: 0 2px 4px rgba(0, 115, 234, 0.15);
-}
-
-.duplicate-group:hover {
-  background: #f3e5f5;
-  border-color: #7c3aed;
-  color: #7c3aed;
-  transform: translateY(-1px);
-  box-shadow: 0 2px 4px rgba(124, 58, 237, 0.15);
 }
 
 #delete-btn:hover, .delete-group:hover {
@@ -1236,19 +1208,19 @@ td[style*="background-color: rgb(255, 243, 205)"] {
   border-radius: 3px;
 }
 
-#add-group-btn, #rename-btn, #delete-btn, .rename-group, .delete-group, .duplicate-group, .add-row-btn, .add-column-btn {
+#add-group-btn, #rename-btn, #delete-btn, .rename-group, .delete-group, .add-row-btn, .add-column-btn {
   position: relative;
   overflow: hidden;
 }
 
 #add-group-btn:focus, #rename-btn:focus, #delete-btn:focus, 
-.rename-group:focus, .delete-group:focus, .duplicate-group:focus, .add-row-btn:focus, .add-column-btn:focus {
+.rename-group:focus, .delete-group:focus, .add-row-btn:focus, .add-column-btn:focus {
   outline: none;
   box-shadow: 0 0 0 3px rgba(0, 115, 234, 0.2);
 }
 
 #add-group-btn:disabled, #rename-btn:disabled, #delete-btn:disabled, 
-.rename-group:disabled, .delete-group:disabled, .duplicate-group:disabled, .add-row-btn:disabled, .add-column-btn:disabled {
+.rename-group:disabled, .delete-group:disabled, .add-row-btn:disabled, .add-column-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
   transform: none !important;
@@ -1259,10 +1231,6 @@ td[style*="background-color: rgb(255, 243, 205)"] {
   font-family: "Segoe UI", Arial, sans-serif;
 }
 
-.duplicate-group {
-  font-family: "Segoe UI", Arial, sans-serif;
-}
-
 #delete-btn, .delete-group {
   font-family: "Segoe UI", Arial, sans-serif;
   font-weight: bold;
@@ -1270,8 +1238,7 @@ td[style*="background-color: rgb(255, 243, 205)"] {
 
 #rename-btn + #delete-btn,
 .rename-group + .delete-group,
-.rename-group + .duplicate-group,
-.duplicate-group + .delete-group {
+.rename-group + .delete-group {
   margin-left: 4px;
 }
 
@@ -1489,32 +1456,6 @@ form[method="POST"] input[name="new_workspace"]:focus {
   border-radius: 4px;
 }
 
-th[title="Glisser pour réorganiser"]:hover {
-  background-color: #f8f9fa;
-  transition: background-color 0.2s ease;
-}
-
-.ui-sortable-helper {
-  opacity: 0.8;
-  transform: rotate(2deg);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-}
-
-.ui-sortable th {
-  transition: all 0.2s ease;
-}
-
-.ui-sortable-placeholder {
-  background: linear-gradient(45deg, #e3f2fd 25%, transparent 25%), 
-              linear-gradient(-45deg, #e3f2fd 25%, transparent 25%), 
-              linear-gradient(45deg, transparent 75%, #e3f2fd 75%), 
-              linear-gradient(-45deg, transparent 75%, #e3f2fd 75%);
-  background-size: 10px 10px;
-  background-position: 0 0, 0 5px, 5px -5px, -5px 0px;
-  border: 2px dashed #2196f3;
-  opacity: 0.7;
-}
-
 .task-cell:hover .add-subtask-btn {
   opacity: 1 !important;
 }
@@ -1720,12 +1661,14 @@ th[title="Glisser pour réorganiser"]:hover {
   overflow-x: auto;
   overflow-y: visible;
   box-sizing: border-box;
+  
 }
 
 #group-list .group-body > table {
   width: max-content !important;
   min-width: 100%;
   table-layout: auto;
+
 }
 
 #group-list .group-body > table th,
@@ -2221,11 +2164,12 @@ th[title="Glisser pour réorganiser"]:hover {
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s ease;
+  margin-left: 4px;
 }
 
 .duplicate-table-icon {
   font-size: 14px;
-  line-height: 1;
+  line-height: 1.2;
 }
 
 .duplicate-table-btn:hover {
@@ -2269,4 +2213,8 @@ th[title="Glisser pour réorganiser"]:hover {
   color: #444;
   font-size: 14px;
   margin-bottom: 14px;
+}
+
+.group-body-toolbar{
+  padding-bottom: 8px;
 }

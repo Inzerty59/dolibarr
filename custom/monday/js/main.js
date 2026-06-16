@@ -20,6 +20,22 @@ $(function(){
       });
     }, 3500);
   }
+
+  function decodeHtmlEntities(value) {
+    const textarea = document.createElement('textarea');
+    let decoded = String(value || '');
+
+    for (let i = 0; i < 3; i++) {
+      textarea.innerHTML = decoded;
+      const next = textarea.value;
+      if (next === decoded) {
+        break;
+      }
+      decoded = next;
+    }
+
+    return decoded;
+  }
   
   // State pour gérer les tâches collapsées
   const taskCollapseState = new Set();
@@ -74,8 +90,11 @@ $(function(){
         }
       })
       .then(data => {
-        const newItem = `<li class="workspace-item" data-id="${data.id}">${data.label}</li>`;
-        $('#workspace-list').append(newItem);
+        const $newItem = $('<li>', {
+          class: 'workspace-item',
+          'data-id': data.id
+        }).text(decodeHtmlEntities(data.label));
+        $('#workspace-list').append($newItem);
         
         newWorkspaceInput.val('');
         
@@ -84,8 +103,11 @@ $(function(){
       .catch(error => {
         console.error('Erreur lors de l\'ajout de l\'espace:', error);
         const newId = Date.now();
-        const newItem = `<li class="workspace-item" data-id="${newId}">${workspaceName}</li>`;
-        $('#workspace-list').append(newItem);
+        const $newItem = $('<li>', {
+          class: 'workspace-item',
+          'data-id': newId
+        }).text(decodeHtmlEntities(workspaceName));
+        $('#workspace-list').append($newItem);
         newWorkspaceInput.val('');
         
         setTimeout(() => location.reload(), 500);
@@ -154,10 +176,10 @@ $(function(){
                   const initials = user.name.split(' ').map(n => n[0]).join('').substr(0, 2).toUpperCase();
                   return `
                     <div class="user-option ${isSelected ? 'selected' : ''}" data-user-id="${user.id}" style="display:flex;align-items:center;gap:10px;margin-bottom:8px;padding:10px;border:2px solid ${isSelected ? '#007cba' : 'transparent'};background:${isSelected ? '#f0f8ff' : '#f9f9f9'};border-radius:6px;cursor:pointer;">
-                      <div class="user-avatar" title="${user.name}">${initials}</div>
+                      <div class="user-avatar" title="${escapeHtml(user.name)}">${escapeHtml(initials)}</div>
                       <div>
-                        <div style="font-weight:bold;">${user.name}</div>
-                        <div style="font-size:12px;color:#666;">${user.email || user.login}</div>
+                        <div style="font-weight:bold;">${escapeHtml(user.name)}</div>
+                        <div style="font-size:12px;color:#666;">${escapeHtml(user.email || user.login)}</div>
                       </div>
                     </div>
                   `;
@@ -258,7 +280,7 @@ $(function(){
                     console.log(`Option ${opt.label} (ID: ${opt.id}) - Sélectionnée: ${isSelected}`); // Debug
                     return `
                       <div class="tag-option ${isSelected ? 'selected' : ''}" data-tag-id="${opt.id}" style="display:inline-block;margin:5px;padding:8px 16px;background:${opt.color || '#87CEEB'};color:white;border-radius:20px;cursor:pointer;border:3px solid ${isSelected ? '#0073ea' : 'transparent'};font-weight:500;font-size:14px;transition:all 0.2s ease;">
-                        ${opt.label}
+                        ${escapeHtml(decodeHtmlEntities(opt.label))}
                       </div>
                     `;
                   }).join('')}
@@ -324,7 +346,7 @@ $(function(){
                 if(tag) {
                     tagsHtml += `
                       <span class="tag-item" data-tag-id="${tag.id}" style="background:${tag.color || '#87CEEB'};color:white;padding:2px 6px;border-radius:12px;font-size:11px;display:flex;align-items:center;gap:4px;">
-                        ${tag.label}
+                        ${escapeHtml(decodeHtmlEntities(tag.label))}
                         <span class="remove-tag" onclick="removeTag(event, this)" style="cursor:pointer;font-weight:bold;">×</span>
                       </span>
                     `;
@@ -609,7 +631,7 @@ $(function(){
           const $comment = $(`
             <div class="comment-item" data-comment-id="${comment.id}">
               <div class="comment-header">
-                <span class="comment-author">${comment.user_name}</span>
+                <span class="comment-author">${escapeHtml(comment.user_name || '')}</span>
                 <span class="comment-date">${formattedDate}</span>
               </div>
               <div class="comment-text" style="${commentStyle}">${comment.comment}</div>
@@ -654,10 +676,10 @@ $(function(){
             const $fileItem = $(`
               <div class="task-file-item" data-file-id="${file.rowid}">
                 <div class="task-file-info">
-                  <a href="#" class="task-file-name" onclick="viewTaskFile(${file.rowid}, '${file.original_name}', '${file.mimetype}'); return false;">
-                    ${fileIcon} ${file.original_name}
+                  <a href="#" class="task-file-name" onclick="viewTaskFile(${file.rowid}, ${escapeHtml(JSON.stringify(file.original_name || ''))}, ${escapeHtml(JSON.stringify(file.mimetype || ''))}); return false;">
+                    ${fileIcon} ${escapeHtml(file.original_name || '')}
                   </a>
-                  <div class="task-file-meta">${fileSize} • ${file.user_name || 'Inconnu'}</div>
+                  <div class="task-file-meta">${fileSize} • ${escapeHtml(file.user_name || 'Inconnu')}</div>
                 </div>
                 <div class="task-file-actions">
                   <button class="task-delete-file" onclick="deleteTaskFile(${file.rowid})" title="Supprimer">×</button>
@@ -1128,103 +1150,6 @@ $(function(){
     $(this).val('');
   });
 
-  $('#workspace-list').sortable({
-    cursor:'pointer',
-    update(){
-      const order = $('#workspace-list .workspace-item').map((_,el)=>el.dataset.id).get();
-      fetch('',{method:'POST',body:new URLSearchParams({
-        reorder_workspaces: JSON.stringify(order),
-        token: token
-      })});
-    }
-  }).disableSelection();
-
-  function initGroupSortable(){
-    $('#group-list').sortable({
-      cursor:'pointer',
-      update(){
-        const order = $('#group-list .group').map((_,el)=>el.dataset.id).get();
-        fetch('',{method:'POST',body:new URLSearchParams({
-          reorder_groups: JSON.stringify(order),
-          token: token
-        })});
-      }
-    }).disableSelection();
-  }
-  
-  function initTaskSortable(){
-    $('.group-body tbody').sortable({
-      cursor:'pointer',
-      update(){
-        const order = $(this).children().map((_,tr)=>tr.dataset.id).get();
-        fetch('',{method:'POST',body:new URLSearchParams({
-          reorder_tasks: JSON.stringify(order),
-          token: token
-        })});
-      }
-    }).disableSelection();
-  }
-
-  function initColumnSortable(){
-    $('.group-body thead tr').each(function(){
-      const $tr = $(this);
-      const $group = $tr.closest('.group');
-      const groupId = $group.data('id');
-      
-      $tr.sortable({
-        items: 'th:not(:first-child):not(:last-child)',
-        cursor: 'move',
-        axis: 'x',
-        helper: 'clone',
-        placeholder: 'ui-sortable-placeholder',
-        tolerance: 'pointer',
-        distance: 10,
-        cancel: '.column-menu-btn, .column-menu',
-        start: function(event, ui) {
-          ui.placeholder.height(ui.item.height());
-          ui.placeholder.css({
-            'background': '#e3f2fd',
-            'border': '2px dashed #2196f3',
-            'opacity': '0.7'
-          });
-          
-          $('.column-menu').removeClass('show').hide();
-        },
-        update: function(event, ui) {
-          const columnOrder = [];
-          $tr.find('th:not(:first-child):not(:last-child)').each(function() {
-            const $span = $(this).find('.column-label');
-            if ($span.length > 0) {
-              const columnId = $span.data('cid');
-              if (columnId) {
-                columnOrder.push(parseInt(columnId));
-              }
-            }
-          });
-          
-          if (columnOrder.length > 0) {
-            fetch('', {
-              method: 'POST',
-              body: new URLSearchParams({
-                reorder_columns: JSON.stringify(columnOrder),
-                token: token
-              })
-            }).then(() => {
-              setTimeout(() => {
-                const workspaceId = $('.workspace-item.active').data('id');
-                if (workspaceId) {
-                  loadGroups(workspaceId);
-                }
-              }, 200);
-            }).catch(error => {
-              console.error('Erreur lors de la réorganisation des colonnes:', error);
-            });
-          }
-        }
-      }).disableSelection();
-    });
-  }
-
   function escapeHtml(value) {
     return String(value ?? '')
       .replace(/&/g, '&amp;')
@@ -1392,7 +1317,7 @@ $(function(){
       .then(r => r.json())
       .then(groups => {
         const options = (groups || []).map(group => `
-          <option value="${group.id}">${escapeHtml(group.label)}</option>
+          <option value="${group.id}">${escapeHtml(decodeHtmlEntities(group.label))}</option>
         `).join('');
         $('#kpi-export-group').html(`<option value="all">Tous les tableaux</option>${options}`);
       })
@@ -1629,13 +1554,13 @@ $(function(){
               .then(cols=>{
                 let ths = `
                   <th style="border:1px solid #ddd;padding:4px;position:relative;">
-                    <span class="task-column-label" data-gid="${g.id}" style="cursor:pointer;" title="Cliquer pour modifier">${g.task_column_label || 'Tâche'}</span>
+                    <span class="task-column-label" data-gid="${g.id}" style="cursor:pointer;" title="Cliquer pour modifier"></span>
                   </th>
                 `;
                 cols.forEach(c=>{
                   ths += `<th style="border:1px solid #ddd;padding:4px;position:relative;cursor:move;" title="Glisser pour réorganiser">
-                            <span class="column-label" data-cid="${c.id}" style="cursor:pointer;">${c.label}<span class="column-sort-indicator" data-cid="${c.id}"></span></span>
-                            <button class="column-menu-btn" data-cid="${c.id}">⋮</button>
+                            <span class="column-label" data-cid="${c.id}" style="cursor:pointer;"></span><span class="column-sort-indicator" data-cid="${c.id}"></span>
+                            <button class="column-menu-btn" data-cid="${c.id}" type="button" aria-label="Menu de colonne">⋮</button>
                             <div class="column-menu" style="display:none;position:absolute;right:0;top:22px;z-index:10;">
                               <button class="sort-asc-btn" data-cid="${c.id}" data-type="${c.type}">Trier croissant ↑</button>
                               <button class="sort-desc-btn" data-cid="${c.id}" data-type="${c.type}">Trier décroissant ↓</button>
@@ -1654,21 +1579,20 @@ $(function(){
                     <div class="group-header" style="display:flex;justify-content:space-between;padding:8px;background:#f3f3f3;">
                       <div style="display:flex;align-items:center;gap:8px;">
                         <span class="group-toggle">▼</span>
-                        <span class="group-label">${g.label}</span>
+                        <span class="group-label"></span>
                       </div>
                       <div>
                         <button class="rename-group">✎</button>
-                        <button class="duplicate-group">⧉</button>
                         <button class="delete-group">✖</button>
                       </div>
                     </div>
                     <div class="group-body" style="padding:10px;">
-                      <div class="group-body-toolbar">
+                      <div class="group-body-toolbar"> 
+                        <button class="add-row-btn" type="button"></button>
                         <button class="duplicate-table-btn" data-gid="${g.id}" type="button">
                           <span class="duplicate-table-icon">▦</span>
                           Dupliquer ce tableau
                         </button>
-                        <button class="add-row-btn" type="button">+ Ajouter ${g.task_column_label || 'tâche'}</button>
                       </div>
                       <table style="width:100%;border-collapse:collapse;margin-bottom:8px;">
                         <thead>
@@ -1687,6 +1611,16 @@ $(function(){
                   $grp.find('.group-toggle').text('►');
                 }
 
+                $grp.find('.task-column-label').text(decodeHtmlEntities(g.task_column_label || 'Tâche'));
+                $grp.find('.group-label').text(decodeHtmlEntities(g.label));
+                $grp.find('.add-row-btn').text(`+ Ajouter ${decodeHtmlEntities(g.task_column_label || 'tâche')}`);
+                $grp.find('.column-label').each(function(index) {
+                  const col = cols[index];
+                  if (col) {
+                    $(this).text(decodeHtmlEntities(col.label));
+                  }
+                });
+
                 $('#group-list').append($grp);
 
                 // Pré-charger les options des colonnes select/tags en parallèle
@@ -1704,16 +1638,14 @@ $(function(){
                 fetch(`?tasks_group_id_with_cells=${g.id}`)
                   .then(r=>r.json())
                   .then(tasks=>{
-                    // Trier les tâches de manière hiérarchique (parent suivi de ses enfants)
                     const sortedTasks = sortTasksHierarchically(tasks);
-                    
                     const taskPromises = sortedTasks.map(t=>{
                       return new Promise((resolve) => {
                         const indentPx = (t.level_depth || 0) * 20;
                         const indentStyle = `padding-left: ${4 + indentPx}px;`;
                         
                         // Vérifier si cette tâche a des enfants
-                        const hasChildren = sortedTasks.some(task => task.parent_task_id === t.id);
+                        const hasChildren = tasks.some(task => task.parent_task_id === t.id);
                         const isCollapsed = taskCollapseState.has(t.id);
                         const collapseBtn = hasChildren 
                           ? `<button class="collapse-toggle" data-task-id="${t.id}" onclick="window.toggleCollapse(${t.id})" style="width:16px;background:none;border:none;cursor:pointer;padding:0;font-size:12px;">${isCollapsed ? '▶' : '▼'}</button>`
@@ -1730,7 +1662,7 @@ $(function(){
                               ${collapseBtn}
                               <span style="color: #999; font-family: monospace;">${subtaskIndicator}</span>
                               ${checkboxHtml}
-                              <span class="task-label" style="${completedStyle}">${t.label}</span>
+                              <span class="task-label" style="${completedStyle}">${escapeHtml(decodeHtmlEntities(t.label))}</span>
                               <button class="add-subtask-btn" data-task-id="${t.id}" style="opacity: 0; transition: opacity 0.2s; background: none; border: none; cursor: pointer; color: #007cba; font-size: 12px;" title="Ajouter une sous-tâche">+</button>
                             </div>
                           </td>
@@ -1759,7 +1691,7 @@ $(function(){
                                   options.forEach(opt=>{
                                     const selected = cellValue == opt.id ? 'selected' : '';
                                     const optionColor = opt.color || '#87CEEB';
-                                    selectHtml += `<option value="${opt.id}" ${selected} style="background:${optionColor};">${opt.label}</option>`;
+                                    selectHtml += `<option value="${opt.id}" ${selected} style="background:${optionColor};">${escapeHtml(decodeHtmlEntities(opt.label))}</option>`;
                                   });
                                   selectHtml += '</select>';
                                   return selectHtml;
@@ -1798,7 +1730,7 @@ $(function(){
                                     if(tag) {
                                       tagsHtml += `
                                         <span class="tag-item" data-tag-id="${tag.id}" style="background:${tag.color || '#87CEEB'};color:white;padding:2px 6px;border-radius:12px;font-size:11px;display:flex;align-items:center;gap:4px;">
-                                          ${tag.label}
+                                          ${escapeHtml(decodeHtmlEntities(tag.label))}
                                           <span class="remove-tag" onclick="removeTag(event, this)" style="cursor:pointer;font-weight:bold;">×</span>
                                         </span>
                                       `;
@@ -1868,7 +1800,7 @@ $(function(){
                                                      <option value="">-- Non assigné --</option>`;
                                   users.forEach(user=>{
                                     const selected = cellValue == user.id ? 'selected' : '';
-                                    selectHtml += `<option value="${user.id}" ${selected}>${user.name}</option>`;
+                                    selectHtml += `<option value="${user.id}" ${selected}>${escapeHtml(user.name)}</option>`;
                                   });
                                   selectHtml += '</select>';
                                   
@@ -1878,8 +1810,8 @@ $(function(){
                                       const initials = selectedUser.name.split(' ').map(n => n[0]).join('').substr(0, 2).toUpperCase();
                                       return `
                                         <div class="user-cell" data-task="${t.id}" data-column="${c.id}" style="cursor:pointer;" onclick="openUserSelector(this)">
-                                          <div class="user-avatar" title="${selectedUser.name}">${initials}</div>
-                                          <span>${selectedUser.name}</span>
+                                          <div class="user-avatar" title="${escapeHtml(selectedUser.name)}">${escapeHtml(initials)}</div>
+                                          <span>${escapeHtml(selectedUser.name)}</span>
                                           ${selectHtml.replace('style="', 'style="display:none;')}
                                         </div>
                                       `;
@@ -2110,22 +2042,6 @@ $(function(){
           });
         }, old, 'Renommer le groupe');
       })
-      .off('click','.duplicate-group').on('click','.duplicate-group',function(){
-        const $g=$(this).closest('.group');
-        const gid=$g.data('id');
-        const old=$g.find('.group-label').text();
-        CustomPopup.prompt('Nom du nouveau groupe :', function(nw) {
-          if(!nw) return;
-          const fd=new FormData();
-          fd.append('duplicate_group_id',gid);
-          fd.append('new_group_label',nw);
-          fd.append('token',token);
-          fetch('',{method:'POST',body:fd}).then(()=>{
-            loadGroups(wid);
-            loadKpiExportGroups();
-          });
-        }, old+' (copie)', 'Dupliquer le groupe');
-      })
       .off('click', '.duplicate-table-btn').on('click', '.duplicate-table-btn', function() {
         const $group = $(this).closest('.group');
         const gid = $group.data('id');
@@ -2135,24 +2051,23 @@ $(function(){
 
         const choices = $('.workspace-item').map(function() {
           const workspaceId = String($(this).data('id'));
-          const workspaceName = $(this).text().trim();
+          const workspaceName = decodeHtmlEntities($(this).text().trim());
 
           if (workspaceId === activeWorkspaceId) {
             return '';
           }
 
-          return `
-            <button class="duplicate-workspace-choice"
-                    data-workspace-id="${workspaceId}"
-                    type="button">
-              ${workspaceName}
-            </button>
-          `;
+          const $choice = $('<button>', {
+            class: 'duplicate-workspace-choice',
+            type: 'button'
+          }).attr('data-workspace-id', workspaceId).text(workspaceName);
+
+          return $('<div>').append($choice).html();
         }).get().join('');
 
         CustomPopup.show({
           popupClass: 'duplicate-table-popup',
-          title: `<strong>Dupliquer le tableau : ${groupLabel}</strong>`,
+          title: `<strong>Dupliquer le tableau : ${escapeHtml(decodeHtmlEntities(groupLabel))}</strong>`,
           message: `
             <strong class="duplicate-popup-help">Sélectionnez l'espace de travail destination</strong>
             <div class="duplicate-workspace-list">
@@ -2280,7 +2195,13 @@ $(function(){
           });
         }, currentLabel, 'Modifier le nom de la colonne');
       })
-      .off('click','.rename-column-btn').on('click','.rename-column-btn',function(e){
+      .off('click','.column-menu').on('click','.column-menu',function(e){
+        e.stopPropagation();
+      });
+
+    $(document)
+      .off('click', '.rename-column-btn')
+      .on('click', '.rename-column-btn', function(e){
         e.stopPropagation();
         const cid = $(this).data('cid');
         const old = $(this).closest('.column-menu').siblings('.column-label').text();
@@ -2296,7 +2217,8 @@ $(function(){
           });
         }, old, 'Renommer la colonne');
       })
-      .off('click','.delete-column-btn').on('click','.delete-column-btn',function(e){
+      .off('click', '.delete-column-btn')
+      .on('click', '.delete-column-btn', function(e){
         e.stopPropagation();
         const cid = $(this).data('cid');
         CustomPopup.confirm('Supprimer cette colonne ?', function(result) {
@@ -2310,39 +2232,43 @@ $(function(){
           });
         });
       })
-      .off('click','.manage-options-btn').on('click','.manage-options-btn',function(e){
+      .off('click', '.manage-options-btn')
+      .on('click', '.manage-options-btn', function(e){
         e.stopPropagation();
         const cid = $(this).data('cid');
         
         manageColumnOptions(cid, token, () => loadGroups(wid));
       })
-      .off('click','.sort-asc-btn').on('click','.sort-asc-btn',function(e){
+      .off('click', '.sort-asc-btn')
+      .on('click', '.sort-asc-btn', function(e){
         e.stopPropagation();
         const cid = $(this).data('cid');
         const type = $(this).data('type');
         const $group = $(this).closest('.group');
         sortColumn($group, cid, type, 'asc');
-        
+
         $group.find('.column-sort-indicator').text('').removeClass('asc desc');
         $group.find(`[data-cid="${cid}"].column-sort-indicator`).text('↑').addClass('asc');
-        
+
         $('.column-menu').removeClass('show');
         setTimeout(() => $('.column-menu').hide(), 200);
       })
-      .off('click','.sort-desc-btn').on('click','.sort-desc-btn',function(e){
+      .off('click', '.sort-desc-btn')
+      .on('click', '.sort-desc-btn', function(e){
         e.stopPropagation();
         const cid = $(this).data('cid');
         const type = $(this).data('type');
         const $group = $(this).closest('.group');
         sortColumn($group, cid, type, 'desc');
-        
+
         $group.find('.column-sort-indicator').text('').removeClass('asc desc');
         $group.find(`[data-cid="${cid}"].column-sort-indicator`).text('↓').addClass('desc');
-        
+
         $('.column-menu').removeClass('show');
         setTimeout(() => $('.column-menu').hide(), 200);
       })
-      .off('click','.column-menu-btn').on('click','.column-menu-btn',function(e){
+      .off('click', '.column-menu-btn')
+      .on('click', '.column-menu-btn', function(e){
         e.stopPropagation();
         $('.column-menu').removeClass('show');
         setTimeout(() => {
@@ -2350,9 +2276,6 @@ $(function(){
           menu.show();
           setTimeout(() => menu.addClass('show'), 10);
         }, 200);
-      })
-      .off('click','.column-menu').on('click','.column-menu',function(e){
-        e.stopPropagation();
       });
       
     $(document).on('click', function(e) {
@@ -2360,114 +2283,6 @@ $(function(){
         $('.column-menu').removeClass('show');
         setTimeout(() => $('.column-menu').hide(), 200);
       }
-    });
-  }
-
-  function sortColumn($group, columnId, columnType, direction) {
-    const $tbody = $group.find('tbody');
-    const $rows = $tbody.find('tr').toArray();
-    
-    const $headers = $group.find('th');
-    let columnIndex = -1;
-    
-    $headers.each(function(index) {
-      const $header = $(this);
-      const $label = $header.find('.column-label');
-      if ($label.data('cid') == columnId) {
-        columnIndex = index;
-        return false;
-      }
-    });
-    
-    if (columnIndex === -1) return;
-    
-    $rows.sort(function(a, b) {
-      const $cellA = $(a).find('td').eq(columnIndex);
-      const $cellB = $(b).find('td').eq(columnIndex);
-      
-      let valueA, valueB;
-      
-      switch(columnType) {
-        case 'text':
-          valueA = $cellA.find('input').val() || $cellA.text() || '';
-          valueB = $cellB.find('input').val() || $cellB.text() || '';
-          valueA = valueA.toLowerCase();
-          valueB = valueB.toLowerCase();
-          break;
-          
-        case 'number':
-          valueA = parseFloat($cellA.find('input').val() || '0') || 0;
-          valueB = parseFloat($cellB.find('input').val() || '0') || 0;
-          break;
-          
-        case 'date':
-        case 'deadline':
-          if (columnType === 'deadline') {
-            valueA = $cellA.find('.deadline-end').val() || '';
-            valueB = $cellB.find('.deadline-end').val() || '';
-          } else {
-            valueA = $cellA.find('input[type="date"]').val() || '';
-            valueB = $cellB.find('input[type="date"]').val() || '';
-          }
-          valueA = valueA ? new Date(valueA) : new Date('1970-01-01');
-          valueB = valueB ? new Date(valueB) : new Date('1970-01-01');
-          break;
-          
-        case 'select':
-          valueA = $cellA.find('select option:selected').text() || '';
-          valueB = $cellB.find('select option:selected').text() || '';
-          valueA = valueA.toLowerCase();
-          valueB = valueB.toLowerCase();
-          break;
-          
-        case 'user':
-          valueA = $cellA.find('span').text() || $cellA.find('select option:selected').text() || '';
-          valueB = $cellB.find('span').text() || $cellB.find('select option:selected').text() || '';
-          valueA = valueA.toLowerCase();
-          valueB = valueB.toLowerCase();
-          break;
-          
-        case 'tags':
-          valueA = $cellA.find('.tag-item').length;
-          valueB = $cellB.find('.tag-item').length;
-          break;
-          
-        default:
-          valueA = $cellA.text() || '';
-          valueB = $cellB.text() || '';
-          valueA = valueA.toLowerCase();
-          valueB = valueB.toLowerCase();
-      }
-      
-      let result = 0;
-      if (columnType === 'number' || columnType === 'date' || columnType === 'deadline' || columnType === 'tags') {
-        result = valueA - valueB;
-      } else {
-        result = valueA.localeCompare(valueB);
-      }
-      
-      return direction === 'desc' ? -result : result;
-    });
-    
-    $tbody.empty().append($rows);
-    
-    $rows.forEach(row => {
-      const $row = $(row);
-      const taskId = $row.data('id');
-      const $group = $row.closest('.group');
-      
-      $row.find('td:nth-child(1)').off('click').on('click', function(e) {
-        if ($(e.target).is('button')) return;
-        
-        const taskName = $(this).text();
-        const groupName = $group.find('.group-label').text();
-        const taskColumnLabel = $group.find('.task-column-label').text();
-        openTaskDetail(taskId, taskName, groupName, taskColumnLabel);
-      });
-      
-      $row.find('select.cell-select').each(function(){
-        applySelectColor($(this));
-      });
     });
   }
 
@@ -2486,7 +2301,7 @@ $(function(){
                   ${options.map(opt => `
                     <div class="option-item" data-option-id="${opt.id}" style="display:flex;align-items:center;gap:12px;margin-bottom:12px;padding:12px;border:1px solid #e9ecef;border-radius:8px;background:#fff;transition:all 0.2s ease;">
                       <div class="color-preview" style="width:24px;height:24px;border-radius:6px;background:${opt.color || '#87CEEB'};border:2px solid #e9ecef;cursor:pointer;transition:all 0.2s ease;" title="Cliquer pour changer la couleur"></div>
-                      <span class="option-label-display" style="flex:1;padding:8px;font-weight:500;color:#333;">${opt.label}</span>
+                      <span class="option-label-display" style="flex:1;padding:8px;font-weight:500;color:#333;">${escapeHtml(decodeHtmlEntities(opt.label))}</span>
                       <button class="edit-option-btn modal-btn modal-btn-edit" data-option-id="${opt.id}" style="padding:6px 10px;background:#0073ea;color:white;border:none;cursor:pointer;border-radius:4px;font-size:12px;transition:all 0.2s ease;">✎</button>
                       <button class="delete-option-btn modal-btn modal-btn-danger" data-option-id="${opt.id}" style="padding:6px 10px;background:#e2445c;color:white;border:none;cursor:pointer;border-radius:4px;font-size:12px;transition:all 0.2s ease;">✖</button>
                     </div>
@@ -2688,7 +2503,7 @@ $(function(){
               const newOption = $(`
                 <div class="option-item" data-option-id="temp_${tempId}" style="display:flex;align-items:center;gap:10px;margin-bottom:10px;padding:10px;border:1px solid #ddd;border-radius:4px;">
                   <div class="color-preview" style="width:20px;height:20px;border-radius:4px;background:${selectedColor};border:1px solid #ccc;cursor:pointer;" title="Cliquer pour changer la couleur"></div>
-                  <span class="option-label-display" style="flex:1;padding:4px;">${label}</span>
+                  <span class="option-label-display" style="flex:1;padding:4px;">${escapeHtml(label)}</span>
                   <button class="edit-option-btn" data-option-id="temp_${tempId}" style="padding:4px 8px;background:#007cba;color:white;border:none;cursor:pointer;border-radius:3px;">✎</button>
                   <button class="delete-option-btn" data-option-id="temp_${tempId}" style="padding:4px 8px;background:#dc3545;color:white;border:none;cursor:pointer;border-radius:3px;">✖</button>
                 </div>
@@ -2748,7 +2563,200 @@ $(function(){
     });
   }
 
-  // Trier les tâches de manière hiérarchique (parent suivi de ses enfants)
+  function initGroupSortable(){
+    $('#group-list').sortable({
+      cursor:'pointer',
+      update(){
+        const order = $('#group-list .group').map((_,el)=>el.dataset.id).get();
+        fetch('',{method:'POST',body:new URLSearchParams({
+          reorder_groups: JSON.stringify(order),
+          token: token
+        })});
+      }
+    }).disableSelection();
+  }
+  
+  function initTaskSortable(){
+    $('.group-body tbody').sortable({
+      cursor:'pointer',
+      update(){
+        const order = $(this).children().map((_,tr)=>tr.dataset.id).get();
+        fetch('',{method:'POST',body:new URLSearchParams({
+          reorder_tasks: JSON.stringify(order),
+          token: token
+        })});
+      }
+    }).disableSelection();
+  }
+
+  function initColumnSortable(){
+    $('.group-body thead tr').each(function(){
+      const $tr = $(this);
+      const $group = $tr.closest('.group');
+      const groupId = $group.data('id');
+      
+      $tr.sortable({
+        items: 'th:not(:first-child):not(:last-child)',
+        cursor: 'move',
+        axis: 'x',
+        helper: 'clone',
+        placeholder: 'ui-sortable-placeholder',
+        tolerance: 'pointer',
+        distance: 10,
+        cancel: '.column-menu-btn, .column-menu',
+        start: function(event, ui) {
+          ui.placeholder.height(ui.item.height());
+          ui.placeholder.css({
+            'background': '#e3f2fd',
+            'border': '2px dashed #2196f3',
+            'opacity': '0.7'
+          });
+          
+          $('.column-menu').removeClass('show').hide();
+        },
+        update: function(event, ui) {
+          const columnOrder = [];
+          $tr.find('th:not(:first-child):not(:last-child)').each(function() {
+            const $span = $(this).find('.column-label');
+            if ($span.length > 0) {
+              const columnId = $span.data('cid');
+              if (columnId) {
+                columnOrder.push(parseInt(columnId));
+              }
+            }
+          });
+          
+          if (columnOrder.length > 0) {
+            fetch('', {
+              method: 'POST',
+              body: new URLSearchParams({
+                reorder_columns: JSON.stringify(columnOrder),
+                token: token
+              })
+            }).then(() => {
+              setTimeout(() => {
+                const workspaceId = $('.workspace-item.active').data('id');
+                if (workspaceId) {
+                  loadGroups(workspaceId);
+                }
+              }, 200);
+            }).catch(error => {
+              console.error('Erreur lors de la réorganisation des colonnes:', error);
+            });
+          }
+        }
+      }).disableSelection();
+    });
+  }
+
+  function sortColumn($group, columnId, columnType, direction) {
+    const $tbody = $group.find('tbody');
+    const $rows = $tbody.find('tr').toArray();
+    
+    const $headers = $group.find('th');
+    let columnIndex = -1;
+    
+    $headers.each(function(index) {
+      const $header = $(this);
+      const $label = $header.find('.column-label');
+      if ($label.data('cid') == columnId) {
+        columnIndex = index;
+        return false;
+      }
+    });
+    
+    if (columnIndex === -1) return;
+    
+    $rows.sort(function(a, b) {
+      const $cellA = $(a).find('td').eq(columnIndex);
+      const $cellB = $(b).find('td').eq(columnIndex);
+      
+      let valueA, valueB;
+      
+      switch(columnType) {
+        case 'text':
+          valueA = $cellA.find('input').val() || $cellA.text() || '';
+          valueB = $cellB.find('input').val() || $cellB.text() || '';
+          valueA = valueA.toLowerCase();
+          valueB = valueB.toLowerCase();
+          break;
+          
+        case 'number':
+          valueA = parseFloat($cellA.find('input').val() || '0') || 0;
+          valueB = parseFloat($cellB.find('input').val() || '0') || 0;
+          break;
+          
+        case 'date':
+        case 'deadline':
+          if (columnType === 'deadline') {
+            valueA = $cellA.find('.deadline-end').val() || '';
+            valueB = $cellB.find('.deadline-end').val() || '';
+          } else {
+            valueA = $cellA.find('input[type="date"]').val() || '';
+            valueB = $cellB.find('input[type="date"]').val() || '';
+          }
+          valueA = valueA ? new Date(valueA) : new Date('1970-01-01');
+          valueB = valueB ? new Date(valueB) : new Date('1970-01-01');
+          break;
+          
+        case 'select':
+          valueA = $cellA.find('select option:selected').text() || '';
+          valueB = $cellB.find('select option:selected').text() || '';
+          valueA = valueA.toLowerCase();
+          valueB = valueB.toLowerCase();
+          break;
+          
+        case 'user':
+          valueA = $cellA.find('span').text() || $cellA.find('select option:selected').text() || '';
+          valueB = $cellB.find('span').text() || $cellB.find('select option:selected').text() || '';
+          valueA = valueA.toLowerCase();
+          valueB = valueB.toLowerCase();
+          break;
+          
+        case 'tags':
+          valueA = $cellA.find('.tag-item').length;
+          valueB = $cellB.find('.tag-item').length;
+          break;
+          
+        default:
+          valueA = $cellA.text() || '';
+          valueB = $cellB.text() || '';
+          valueA = valueA.toLowerCase();
+          valueB = valueB.toLowerCase();
+      }
+      
+      let result = 0;
+      if (columnType === 'number' || columnType === 'date' || columnType === 'deadline' || columnType === 'tags') {
+        result = valueA - valueB;
+      } else {
+        result = valueA.localeCompare(valueB);
+      }
+      
+      return direction === 'desc' ? -result : result;
+    });
+    
+    $tbody.empty().append($rows);
+    
+    $rows.forEach(row => {
+      const $row = $(row);
+      const taskId = $row.data('id');
+      const $group = $row.closest('.group');
+      
+      $row.find('td:nth-child(1)').off('click').on('click', function(e) {
+        if ($(e.target).is('button')) return;
+        
+        const taskName = $(this).text();
+        const groupName = $group.find('.group-label').text();
+        const taskColumnLabel = $group.find('.task-column-label').text();
+        openTaskDetail(taskId, taskName, groupName, taskColumnLabel);
+      });
+      
+      $row.find('select.cell-select').each(function(){
+        applySelectColor($(this));
+      });
+    });
+  }
+
   function sortTasksHierarchically(tasks) {
     const result = [];
     const taskMap = new Map(tasks.map(t => [t.id, t]));
@@ -2763,14 +2771,12 @@ $(function(){
       processed.add(taskId);
       result.push(task);
       
-      // Ajouter tous les enfants de cette tâche
       tasks
         .filter(t => t.parent_task_id === taskId)
         .sort((a, b) => (a.position || 0) - (b.position || 0))
         .forEach(t => addTaskAndChildren(t.id));
     }
     
-    // Commencer par les tâches sans parent (triées par position)
     tasks
       .filter(t => !t.parent_task_id)
       .sort((a, b) => (a.position || 0) - (b.position || 0))
@@ -3020,10 +3026,12 @@ $(function(){
       config.buttons.forEach(button => {
         buttonsHtml += `<button class="custom-popup-btn ${button.class}" data-action="${button.text.toLowerCase()}">${button.text}</button>`;
       });
+
+      const popupClass = config.popupClass ? ` ${config.popupClass}` : '';
       
       const popupHtml = `
         <div class="custom-popup-overlay">
-          <div class="custom-popup">
+          <div class="custom-popup${popupClass}">
             <div class="custom-popup-header ${headerClass}">
               <h3 class="custom-popup-title">${config.title}</h3>
             </div>
