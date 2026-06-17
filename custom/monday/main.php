@@ -1049,7 +1049,9 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['duplicate_group_id'], $
     $resPos = $db->query("SELECT MAX(position) as m FROM llx_myworkspace_group WHERE fk_workspace = $targetWorkspaceId");
     $newGroupPos = ($resPos && ($rowPos = $db->fetch_object($resPos))) ? ((int) $rowPos->m + 1) : 0;
 
-    $newGroupLabel = $db->escape($sourceGroup->label);
+    $newGroupLabel = isset($_POST['new_group_label']) && trim($_POST['new_group_label']) !== '' 
+    ? $db->escape(trim($_POST['new_group_label'])) 
+    : $db->escape($sourceGroup->label);
     $taskColumnLabel = $db->escape($sourceGroup->task_column_label);
 
     $db->query("INSERT INTO llx_myworkspace_group (fk_workspace, label, position, task_column_label) VALUES ($targetWorkspaceId, '$newGroupLabel', $newGroupPos, '$taskColumnLabel')");
@@ -1074,48 +1076,6 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['duplicate_group_id'], $
             $db->query("INSERT INTO llx_myworkspace_column_option (fk_column, label, color, position) VALUES ($newColId, '$optLabel', '$optColor', $optPosition)");
         }
     }
-
-    $resTasks = $db->query("SELECT rowid, label, position, parent_task_id, level_depth, is_completed, datec FROM llx_myworkspace_task WHERE fk_group = $oldGroupId ORDER BY position ASC, rowid ASC");
-    $taskMap = [];
-    $taskParents = [];
-    $taskData = [];
-
-    while ($resTasks && $task = $db->fetch_object($resTasks)) {
-        $taskData[] = $task;
-    }
-
-    foreach ($taskData as $task) {
-        $taskLabel = $db->escape($task->label);
-        $datec = $db->escape($task->datec);
-        $levelDepth = (int) $task->level_depth;
-        $isCompleted = (int) $task->is_completed;
-
-        $db->query("INSERT INTO llx_myworkspace_task (fk_group, label, position, datec, level_depth, is_completed) VALUES ($newGroupId, '$taskLabel', ".(int) $task->position.", '$datec', $levelDepth, $isCompleted)");
-        $newTaskId = (int) $db->last_insert_id('llx_myworkspace_task');
-        $taskMap[(int) $task->rowid] = $newTaskId;
-        $taskParents[$newTaskId] = !empty($task->parent_task_id) ? (int) $task->parent_task_id : 0;
-    }
-
-    foreach ($taskParents as $newTaskId => $oldParentId) {
-        if ($oldParentId > 0 && isset($taskMap[$oldParentId])) {
-            $db->query("UPDATE llx_myworkspace_task SET parent_task_id = ".(int) $taskMap[$oldParentId]." WHERE rowid = ".(int) $newTaskId);
-        }
-    }
-
-    if (!empty($taskMap) && !empty($columnMap)) {
-        $sourceTaskIds = implode(',', array_map('intval', array_keys($taskMap)));
-        $resCells = $db->query("SELECT fk_task, fk_column, value FROM llx_myworkspace_cell WHERE fk_task IN ($sourceTaskIds)");
-        while ($resCells && $cell = $db->fetch_object($resCells)) {
-            if (!isset($taskMap[(int) $cell->fk_task]) || !isset($columnMap[(int) $cell->fk_column])) {
-                continue;
-            }
-            $newTaskId = (int) $taskMap[(int) $cell->fk_task];
-            $newColumnId = (int) $columnMap[(int) $cell->fk_column];
-            $cellValue = $db->escape($cell->value);
-            $db->query("INSERT INTO llx_myworkspace_cell (fk_task, fk_column, value) VALUES ($newTaskId, $newColumnId, '$cellValue')");
-        }
-    }
-
     exit;
 }
 

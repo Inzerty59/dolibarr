@@ -1693,7 +1693,7 @@ $(function(){
                                     const optionColor = opt.color || '#87CEEB';
                                     selectHtml += `<option value="${opt.id}" ${selected} style="background:${optionColor};">${escapeHtml(decodeHtmlEntities(opt.label))}</option>`;
                                   });
-                                  selectHtml += '</select>';
+                                  selectHtml += '</select>'; 
                                   return selectHtml;
                                 });
                               cellPromises.push(promise);
@@ -1703,7 +1703,6 @@ $(function(){
                                 data-column="${c.id}" 
                                 value="${cellValue}" 
                                 style="border:none;background:transparent;width:100%;padding:2px;text-align:right;"
-                                pattern="[0-9€$.,\\s-]*"
                                 onblur="saveCellValue(this)"
                                 onkeydown="if(event.key==='Enter') saveCellValue(this)"
                                 oninput="validateNumberInput(this)">`;
@@ -2051,12 +2050,7 @@ $(function(){
 
         const choices = $('.workspace-item').map(function() {
           const workspaceId = String($(this).data('id'));
-          const workspaceName = decodeHtmlEntities($(this).text().trim());
-
-          if (workspaceId === activeWorkspaceId) {
-            return '';
-          }
-
+          const workspaceName = decodeHtmlEntities($(this).text().trim()) + (workspaceId === activeWorkspaceId ? ' (espace actuel)' : '');
           const $choice = $('<button>', {
             class: 'duplicate-workspace-choice',
             type: 'button'
@@ -2072,6 +2066,11 @@ $(function(){
             <strong class="duplicate-popup-help">Sélectionnez l'espace de travail destination</strong>
             <div class="duplicate-workspace-list">
               ${choices || '<span class="duplicate-workspace-empty">Aucun autre espace disponible</span>'}
+            </div>
+            <div style="margin-top:15px;">
+              <label style="display:block;margin-bottom:5px;font-weight:bold;">Nom du tableau</label>
+              <input type="text" id="duplicate-group-name" value="${escapeHtml(decodeHtmlEntities(groupLabel))} (copie)"
+                    style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:14px;">
             </div>
           `,
           buttons: [
@@ -2089,8 +2088,10 @@ $(function(){
                 }
 
                 const fd = new FormData();
+                const newGroupName = $('#duplicate-group-name').val().trim() || groupLabel;
                 fd.append('duplicate_group_id', gid);
                 fd.append('target_workspace_id', selectedWorkspaceId);
+                fd.append('new_group_label', newGroupName);
                 fd.append('token', token);
 
                 fetch('', { method: 'POST', body: fd })
@@ -2951,11 +2952,6 @@ $(function(){
       }
     }
     
-    function escapeHtml(text) {
-      const div = document.createElement('div');
-      div.textContent = text;
-      return div.innerHTML;
-    }
     
     $searchInput.on('input', function() {
       clearTimeout(searchTimeout);
