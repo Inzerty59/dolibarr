@@ -2562,7 +2562,17 @@ $(function(){
       }
     });
   }
-
+  
+  $('#workspace-list').sortable({
+    cursor:'pointer',
+    update(){
+      const order = $('#workspace-list .workspace-item').map((_,el)=>el.dataset.id).get();
+      fetch('',{method:'POST',body:new URLSearchParams({
+        reorder_workspaces: JSON.stringify(order),
+        token: token
+      })});
+    }
+  }).disableSelection();
   function initGroupSortable(){
     $('#group-list').sortable({
       cursor:'pointer',
