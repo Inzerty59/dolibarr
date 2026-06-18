@@ -6,11 +6,12 @@ $(function(){
   // State pour gérer les tâches collapsées
   const taskCollapseState = new Set();
   
-  // Cache pour les données fréquemment utilisées
+  // Cache pour les données fréquemment utilisées 
   const dataCache = {
     users: null,
     columnOptions: {}
   };
+  const pendingColumnOptions = {};
     const groupSplitState = new Map();
 
   function getSplitableColumns(cols) {
@@ -102,6 +103,27 @@ $(function(){
     return sections;
   }
 
+  function getColumnOptions(columnId) {
+    const cachedOptions = dataCache.columnOptions[columnId];
+    if (cachedOptions !== undefined) {
+      return Promise.resolve(cachedOptions);
+    }
+
+    if (!pendingColumnOptions[columnId]) {
+      pendingColumnOptions[columnId] = fetch(`?column_options=${columnId}`)
+        .then(r => r.json())
+        .then(options => {
+          dataCache.columnOptions[columnId] = options;
+          return options;
+        })
+        .finally(() => {
+          delete pendingColumnOptions[columnId];
+        });
+    }
+
+    return pendingColumnOptions[columnId];
+  }
+
   function renderGroupTables($grp, g, cols, headerCells, taskRows) {
     const $toolbarHost = $grp.find('.group-body-toolbar');
     const $tablesContainer = $grp.find('.group-tables-container');
@@ -137,7 +159,21 @@ $(function(){
       return;
     }
 
-    const splitOptions = dataCache.columnOptions[splitColumn.id] || [];
+    const splitOptions = dataCache.columnOptions[splitColumn.id];
+
+    if (!splitOptions) {
+      getColumnOptions(splitColumn.id).then(() => {
+        if (String(groupSplitState.get(g.id) || '__base__') === String(splitColumn.id)) {
+          loadGroups(getActiveWorkspaceId());
+        }
+      });
+      const $table = $(buildGroupTableHtml(headerCells, 'group-base-table'));
+      taskRows.forEach($row => {
+        $table.find('tbody').append($row);
+      });
+      $tablesContainer.append($table);
+      return;
+    }
 
     if (!splitOptions.length) {
       const $table = $(buildGroupTableHtml(headerCells, 'group-base-table'));
@@ -157,9 +193,11 @@ $(function(){
       const $section = $(`
         <div class="group-split-section">
           <div class="group-split-section-header">
-            <span class="group-split-dot" style="background:${section.color};"></span>
-            <span class="group-split-section-title">${escapeSplitHtml(section.label)}</span>
-            <span class="group-split-section-count">${countLabel}</span>
+            <div class =" gpr">
+              <span class="group-split-dot" style="background:${section.color};"></span>
+              <span class="group-split-section-title">${escapeSplitHtml(section.label)}</span>
+              <span class="group-split-section-count">${countLabel}</span>
+            </div>
             <button
               class="add-row-btn"
               data-split-column-id="${splitColumn.id}"
@@ -367,9 +405,6 @@ $(function(){
     if (isNumber) {
       validateNumberInput(textarea);
     }
-    const $wrapper = $(textarea).closest('.cell-expandable');
-    $wrapper.attr('data-expanded', '1');
-    saveCellValue(textarea);
     updateExpandableTextarea(textarea);
   };
 
@@ -2218,10 +2253,11 @@ $(function(){
         const cid = $(this).data('cid');
         const type = $(this).data('type');
         const $group = $(this).closest('.group');
-        sortColumn($group, cid, type, 'asc');
+        const $table = $(this).closest('table');
+        sortColumn($group, $table, cid, type, 'asc');
         
-        $group.find('.column-sort-indicator').text('').removeClass('asc desc');
-        $group.find(`[data-cid="${cid}"].column-sort-indicator`).text('↑').addClass('asc');
+        $table.find('.column-sort-indicator').text('').removeClass('asc desc');
+        $table.find(`[data-cid="${cid}"].column-sort-indicator`).text('↑').addClass('asc');
         
         $('.column-menu').removeClass('show');
         setTimeout(() => $('.column-menu').hide(), 200);
@@ -2231,10 +2267,11 @@ $(function(){
         const cid = $(this).data('cid');
         const type = $(this).data('type');
         const $group = $(this).closest('.group');
-        sortColumn($group, cid, type, 'desc');
+        const $table = $(this).closest('table');
+        sortColumn($group, $table, cid, type, 'desc');
         
-        $group.find('.column-sort-indicator').text('').removeClass('asc desc');
-        $group.find(`[data-cid="${cid}"].column-sort-indicator`).text('↓').addClass('desc');
+        $table.find('.column-sort-indicator').text('').removeClass('asc desc');
+        $table.find(`[data-cid="${cid}"].column-sort-indicator`).text('↓').addClass('desc');
         
         $('.column-menu').removeClass('show');
         setTimeout(() => $('.column-menu').hide(), 200);
@@ -2260,11 +2297,11 @@ $(function(){
     });
   }
 
-  function sortColumn($group, columnId, columnType, direction) {
-    const $tbody = $group.find('tbody');
+  function sortColumn($group, $table, columnId, columnType, direction) {
+    const $tbody = $table.find('tbody').first();
     const $rows = $tbody.find('tr').toArray();
-    
-    const $headers = $group.find('th');
+
+    const $headers = $table.find('th');
     let columnIndex = -1;
     
     $headers.each(function(index) {
