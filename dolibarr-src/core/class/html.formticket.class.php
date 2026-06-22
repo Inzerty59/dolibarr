@@ -257,7 +257,25 @@ class FormTicket
 		$resql = $this->db->query($sql);
 		if ($resql) {
 			while ($obj = $this->db->fetch_object($resql)) {
-				$filesbydir[$obj->filepath][] = $obj;
+				$sourcefull = DOL_DATA_ROOT.'/'.$obj->filepath.'/'.$obj->filename;
+				$realsource = realpath($sourcefull);
+				$realroot = realpath(DOL_DATA_ROOT);
+
+				if (!empty($realsource) && !empty($realroot) && strpos($realsource, $realroot.DIRECTORY_SEPARATOR) === 0 && is_file($realsource)) {
+					$filesbydir[$obj->filepath][] = $obj;
+				}
+			}
+		}
+
+		if (is_array($arbo)) {
+			foreach ($arbo as $dir) {
+				$path = empty($dir['fullrelativename']) ? 'ecm' : 'ecm/'.$dir['fullrelativename'];
+				foreach ($filesbydir as $filepath => $files) {
+					if ($filepath === $path || strpos($filepath, $path.'/') === 0) {
+						continue 2;
+					}
+				}
+				unset($dirs[(int) $dir['id']]);
 			}
 		}
 
