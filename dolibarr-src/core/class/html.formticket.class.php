@@ -231,7 +231,26 @@ class FormTicket
 
 		$out = '<input type="hidden" name="'.$htmlname.'" id="'.$htmlname.'" value="0">';
 
-		if (!isModEnabled('ecm') || (!$user->hasRight('ecm', 'read') && !$user->hasRight('ecm', 'upload'))) {
+		$out .= '<style>
+		.attach-file-line { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+		.attach-file-display { display: inline-flex; align-items: center; min-width: 300px; border: 1px solid #ddd; border-radius: 4px; background: #fff; }
+		.attach-file-display input, .attach-gray-button { border: 1px solid #999; border-radius: 3px; background: #f5f5f5; color: #111; cursor: pointer; padding: 4px 8px; font-weight: normal; }
+		.attach-file-display input { border-top: 0; border-left: 0; border-bottom: 0; }
+		.attach-file-name { padding: 0 10px; color: #111; }
+		.attach-source-choices { margin-top: 8px; }
+		.ged-attach-modal { position: fixed; inset: 0; z-index: 9999; background: rgba(0,0,0,.35); }
+		.ged-attach-box { width: min(900px, 92vw); height: min(620px, 82vh); margin: 7vh auto; background: #fff; border-radius: 6px; box-shadow: 0 12px 35px rgba(0,0,0,.25); display: flex; flex-direction: column; }
+		.ged-attach-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid #ddd; font-weight: 600; }
+		.ged-attach-body { display: grid; grid-template-columns: 260px 1fr; min-height: 0; flex: 1; }
+		.ged-folder-list { border-right: 1px solid #ddd; overflow: auto; padding: 8px; }
+		.ged-file-list { overflow: auto; padding: 8px; }
+		.ged-folder-title { padding: 8px; font-weight: 600; }
+		.ged-folder-entry, .ged-file-row { display: block; width: 100%; text-align: left; border: 0; background: #fff; padding: 8px; cursor: pointer; }
+		.ged-folder-entry:hover, .ged-file-row:hover, .ged-folder-entry.active { background: #f0f0f0; }
+		.ged-file-empty, .ged-file-help { padding: 12px; color: #777; }
+		</style>';
+
+		if (!isModEnabled('ecm') || !$user->hasRight('ecm', 'read')) {
 			return $out;
 		}
 
@@ -278,25 +297,6 @@ class FormTicket
 				unset($dirs[(int) $dir['id']]);
 			}
 		}
-
-		$out .= '<style>
-		.attach-file-line { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-		.attach-file-display { display: inline-flex; align-items: center; min-width: 300px; border: 1px solid #ddd; border-radius: 4px; background: #fff; }
-		.attach-file-display input, .attach-gray-button { border: 1px solid #999; border-radius: 3px; background: #f5f5f5; color: #111; cursor: pointer; padding: 4px 8px; font-weight: normal; }
-		.attach-file-display input { border-top: 0; border-left: 0; border-bottom: 0; }
-		.attach-file-name { padding: 0 10px; color: #111; }
-		.attach-source-choices { margin-top: 8px; }
-		.ged-attach-modal { position: fixed; inset: 0; z-index: 9999; background: rgba(0,0,0,.35); }
-		.ged-attach-box { width: min(900px, 92vw); height: min(620px, 82vh); margin: 7vh auto; background: #fff; border-radius: 6px; box-shadow: 0 12px 35px rgba(0,0,0,.25); display: flex; flex-direction: column; }
-		.ged-attach-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid #ddd; font-weight: 600; }
-		.ged-attach-body { display: grid; grid-template-columns: 260px 1fr; min-height: 0; flex: 1; }
-		.ged-folder-list { border-right: 1px solid #ddd; overflow: auto; padding: 8px; }
-		.ged-file-list { overflow: auto; padding: 8px; }
-		.ged-folder-title { padding: 8px; font-weight: 600; }
-		.ged-folder-entry, .ged-file-row { display: block; width: 100%; text-align: left; border: 0; background: #fff; padding: 8px; cursor: pointer; }
-		.ged-folder-entry:hover, .ged-file-row:hover, .ged-folder-entry.active { background: #f0f0f0; }
-		.ged-file-empty, .ged-file-help { padding: 12px; color: #777; }
-		</style>';
 
 		$out .= '<div id="attach_ged_modal" class="ged-attach-modal hidden">';
 		$out .= '<div class="ged-attach-box">';
@@ -725,6 +725,7 @@ class FormTicket
 				}
 			}
 			if ($this->withfile == 2) { // Can add other files
+				$canAttachFromGed = (isModEnabled('ecm') && $user->hasRight('ecm', 'read'));
 				$maxfilesizearray = getMaxFileSizeArray();
 				$maxmin = $maxfilesizearray['maxmin'];
 				if ($maxmin > 0) {
@@ -742,7 +743,9 @@ class FormTicket
 
 				$out .= '<div id="attach_source_choices" class="attach-source-choices hidden">';
 				$out .= '<input type="button" class="attach-gray-button reposition" id="attach_from_pc" value="DEPUIS LE PC" /> ';
-				$out .= '<input type="button" class="attach-gray-button reposition" id="attach_from_ged" value="DEPUIS L\'ESPACE GED" />';
+				if ($canAttachFromGed) {
+					$out .= '<input type="button" class="attach-gray-button reposition" id="attach_from_ged" value="DEPUIS L\'ESPACE GED" />';
+				}
 				$out .= '</div>';
 
 				$out .= $this->renderEcmAttachmentDialog('ecm_file_rowid');

@@ -181,8 +181,11 @@ if (empty($reshook)) {
 		$vardir = $conf->user->dir_output.'/'.$user->id;
 		$upload_dir_tmp = $vardir.'/temp';
 
-		dol_add_file_process($upload_dir_tmp, 1, 0, 'addedfile', '', null, '', 0);
-		$action = 'create';
+		if (GETPOST('ref', 'alpha') && GETPOST('type_code', 'alpha') && GETPOST('category_code', 'alpha') && GETPOST('severity_code', 'alpha') && GETPOST('subject', 'alphanohtml') && GETPOST('message', 'restricthtml') && !empty($_FILES['addedfile']['name'])) {
+			dol_add_file_process($upload_dir_tmp, 1, 0, 'addedfile', '', null, '', 0);
+		}
+		$_POST['save'] = '1';
+		$action = 'add';
 	}
 
 	// Add existing GED/ECM file in ticket creation form
@@ -232,6 +235,7 @@ if (empty($reshook)) {
 						$formmailtmp = new FormMail($db);
 						$formmailtmp->trackid = '';
 						$formmailtmp->add_attached_files($destfull, basename($destfull), dol_mimetype($destfull));
+						setEventMessages($langs->trans("FileTransferComplete"), null, 'mesgs');
 					} else {
 						setEventMessages('Impossible de copier le fichier GED en temporaire.', null, 'errors');
 					}
