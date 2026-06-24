@@ -1619,6 +1619,7 @@ th[title="Glisser pour réorganiser"]:hover {
   display: none !important;
 }
 
+
 /* Comment Formatting Toolbar */
 .comment-formatting-toolbar {
   display: flex;
@@ -2117,4 +2118,89 @@ th[title="Glisser pour réorganiser"]:hover {
   .kpi-filters label {
     min-width: 100%;
   }
+}
+
+.candidates-panel {
+  background: white;
+  border: 1px solid #ddd;
+  margin: 8px 0 4px 64px;
+  box-sizing: border-box;
+  width: calc(100% - 64px);
+  max-width: 620px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  border-radius: 4px;
+  padding: 10px;
+}
+
+.candidates-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 12px;
+}
+
+.candidates-table th,
+.candidates-table td {
+  border: 1px solid #e0e0e0;
+  padding: 6px 8px;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.candidates-table th {
+  background: #f5f5f5;
+  font-weight: bold;
+}
+
+.candidates-empty {
+  color: #999;
+  text-align: center;
+}
+
+.candidate-detail-link {
+  background: none;
+  border: none;
+  color: #0073ea;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  text-align: left;
+}
+
+.candidate-detail-link:hover {
+  color: #005bb5;
+  text-decoration: underline;
+}
+
+.candidates-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  line-height: 1.2;
+  white-space: nowrap;
+  color: #0073ea;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 2px 6px;
+  margin-left: 8px;
+}
+
+.candidates-caret {
+  display: inline-block;
+  width: 10px;
+  text-align: center;
+  font-size: 10px;
+  line-height: 1;
+}
+
+.candidates-toggle .count {
+  min-width: 1ch;
+  text-align: left;
+}
+
+.candidates-toggle:hover {
+  color: #005bb5;
+  text-decoration: underline;
 }

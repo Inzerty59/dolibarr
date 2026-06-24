@@ -5,6 +5,8 @@ $(function(){
   
   // State pour gérer les tâches collapsées
   const taskCollapseState = new Set();
+  const clientNeedCandidateState = new Set();
+  let currentWorkspaceLabel = '';
   
   // Cache pour les données fréquemment utilisées
   const dataCache = {
@@ -1110,7 +1112,18 @@ $(function(){
     $(this).val('');
   });
 
-  $('#workspace-list').sortable({
+  function initSortable($element, options) {
+    if (!$element.length || typeof $element.sortable !== 'function') {
+      return;
+    }
+
+    $element.sortable(options);
+    if (typeof $element.disableSelection === 'function') {
+      $element.disableSelection();
+    }
+  }
+
+  initSortable($('#workspace-list'), {
     cursor:'pointer',
     update(){
       const order = $('#workspace-list .workspace-item').map((_,el)=>el.dataset.id).get();
@@ -1119,10 +1132,10 @@ $(function(){
         token: token
       })});
     }
-  }).disableSelection();
+  });
 
   function initGroupSortable(){
-    $('#group-list').sortable({
+    initSortable($('#group-list'), {
       cursor:'pointer',
       update(){
         const order = $('#group-list .group').map((_,el)=>el.dataset.id).get();
@@ -1131,29 +1144,30 @@ $(function(){
           token: token
         })});
       }
-    }).disableSelection();
+    });
   }
   
   function initTaskSortable(){
-    $('.group-body tbody').sortable({
+    initSortable($('.group-body > table.tasks-table > tbody.tasks-tbody'), {
+      items: '> tr.task-row',
       cursor:'pointer',
       update(){
-        const order = $(this).children().map((_,tr)=>tr.dataset.id).get();
+        const order = $(this).children('.task-row').map((_,tr)=>tr.dataset.id).get();
         fetch('',{method:'POST',body:new URLSearchParams({
           reorder_tasks: JSON.stringify(order),
           token: token
         })});
       }
-    }).disableSelection();
+    });
   }
 
   function initColumnSortable(){
-    $('.group-body thead tr').each(function(){
+    $('.group-body > table.tasks-table > thead > tr').each(function(){
       const $tr = $(this);
       const $group = $tr.closest('.group');
       const groupId = $group.data('id');
       
-      $tr.sortable({
+      initSortable($tr, {
         items: 'th:not(:first-child):not(:last-child)',
         cursor: 'move',
         axis: 'x',
@@ -1203,7 +1217,7 @@ $(function(){
             });
           }
         }
-      }).disableSelection();
+      });
     });
   }
 
@@ -1214,6 +1228,74 @@ $(function(){
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#039;');
+  }
+  function getClientNeedCandidateRows(taskId, candidatesByNeed) {
+    const key = String(taskId);
+    if (!Object.prototype.hasOwnProperty.call(candidatesByNeed, key)) {
+      return null;
+    }
+    return Array.isArray(candidatesByNeed[key]) ? candidatesByNeed[key] : [];
+  }
+
+  function isClientNeedCandidatesExpanded(taskId) {
+    return clientNeedCandidateState.has(String(taskId));
+  }
+
+  function renderClientNeedCandidatesToggle(taskId, count) {
+    const expanded = isClientNeedCandidatesExpanded(taskId);
+    const panelId = `client-need-candidates-${Number(taskId)}`;
+    return `
+      <button class="candidates-toggle" type="button" data-need-id="${Number(taskId)}" aria-expanded="${expanded ? 'true' : 'false'}" aria-controls="${panelId}">
+        <span class="candidates-caret" aria-hidden="true">${expanded ? '▼' : '▶'}</span>
+        <span>Candidatures</span>
+        <span class="count">${count}</span>
+      </button>`;
+  }
+
+  function renderClientNeedCandidatesPanel(taskId, candidates) {
+    const expanded = isClientNeedCandidatesExpanded(taskId);
+    const panelId = `client-need-candidates-${Number(taskId)}`;
+    const candidateRows = (candidates || []).map(candidate => `
+      <tr>
+        <td>
+          <button class="candidate-detail-link" type="button" data-candidate-id="${Number(candidate.id)}" data-candidate-name="${escapeHtml(candidate.name)}">
+            ${escapeHtml(candidate.name)}
+          </button>
+        </td>
+        <td>${escapeHtml(candidate.date_envoie_client || '')}</td>
+        <td>${escapeHtml(candidate.action_client || '')}</td>
+      </tr>
+    `).join('');
+
+    return `
+      <div id="${panelId}" class="candidates-panel" data-need-id="${Number(taskId)}"${expanded ? '' : ' hidden'}>
+        <table class="candidates-table">
+          <thead>
+            <tr>
+              <th>Prénom et nom</th>
+              <th>Date d'envoi</th>
+              <th>Action client</th>
+            </tr>
+          </thead>
+          <tbody>${candidateRows || '<tr><td colspan="3" class="candidates-empty">Aucune candidature</td></tr>'}</tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function setClientNeedCandidatesExpanded($button, expanded) {
+    const needId = String($button.data('need-id'));
+    const $panel = $button.closest('.task-cell').find(`.candidates-panel[data-need-id="${needId}"]`);
+
+    $panel.prop('hidden', !expanded);
+    $button.attr('aria-expanded', expanded ? 'true' : 'false');
+    $button.find('.candidates-caret').text(expanded ? '▼' : '▶');
+
+    if (expanded) {
+      clientNeedCandidateState.add(needId);
+    } else {
+      clientNeedCandidateState.delete(needId);
+    }
   }
 
   function buildKpiQuery() {
@@ -1498,6 +1580,7 @@ $(function(){
   $(document).on('click','.workspace-item', function(){
     const wsId    = this.dataset.id;
     const wsLabel = this.textContent;
+    currentWorkspaceLabel = wsLabel;
     $('.workspace-kpi-entry').removeClass('active');
     
     $('.workspace-item').removeClass('active').css({
@@ -1645,13 +1728,13 @@ $(function(){
                       </div>
                     </div>
                     <div class="group-body" style="padding:10px;">
-                      <table style="width:100%;border-collapse:collapse;margin-bottom:8px;">
+                      <table class="tasks-table" style="width:100%;border-collapse:collapse;margin-bottom:8px;">
                         <thead>
                           <tr style="background:#fafafa;">
                             ${ths}
                           </tr>
                         </thead>
-                        <tbody></tbody>
+                        <tbody class="tasks-tbody"></tbody>
                       </table>
                       <button class="add-row-btn" style="padding:4px 8px;">+ Ajouter ${g.task_column_label || 'tâche'}</button>
                     </div>
@@ -1677,29 +1760,45 @@ $(function(){
                       })
                   );
 
-                fetch(`?tasks_group_id_with_cells=${g.id}`)
-                  .then(r=>r.json())
-                  .then(tasks=>{
-                    // Trier les tâches de manière hiérarchique (parent suivi de ses enfants)
-                    const sortedTasks = sortTasksHierarchically(tasks);
-                    
-                    const taskPromises = sortedTasks.map(t=>{
-                      return new Promise((resolve) => {
-                        const indentPx = (t.level_depth || 0) * 20;
-                        const indentStyle = `padding-left: ${4 + indentPx}px;`;
-                        
-                        // Vérifier si cette tâche a des enfants
-                        const hasChildren = sortedTasks.some(task => task.parent_task_id === t.id);
-                        const isCollapsed = taskCollapseState.has(t.id);
-                        const collapseBtn = hasChildren 
-                          ? `<button class="collapse-toggle" data-task-id="${t.id}" onclick="window.toggleCollapse(${t.id})" style="width:16px;background:none;border:none;cursor:pointer;padding:0;font-size:12px;">${isCollapsed ? '▶' : '▼'}</button>`
-                          : `<span style="width:16px;display:inline-block;"></span>`;
-                        
-                        const subtaskIndicator = t.level_depth > 0 ? '└─ ' : '';
+                Promise.all([
+                  fetch(`?tasks_group_id_with_cells=${g.id}`).then(r=>r.json()),
+                  fetch(`?client_need_candidates_group_id=${g.id}&token=${encodeURIComponent(token)}`).then(r=>r.json()).catch(() => ({enabled: false, candidates_by_need: {}}))
+                ])
+	                  .then(([tasks, candidatePayload])=>{
+	                    const needsCandidatesEnabled = Boolean(candidatePayload && candidatePayload.enabled);
+	                    const candidatesByNeed = candidatePayload?.candidates_by_need || {};
+	                    const normalizedWorkspace = String(currentWorkspaceLabel || '').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+	                    const flattenNeedRows = normalizedWorkspace.includes('besoinclient');
+	                    const byPosition = (a, b) => {
+	                      const positionA = Number.isFinite(Number(a.position)) ? Number(a.position) : Number.MAX_SAFE_INTEGER;
+	                      const positionB = Number.isFinite(Number(b.position)) ? Number(b.position) : Number.MAX_SAFE_INTEGER;
+	                      if (positionA !== positionB) return positionA - positionB;
+	                      return Number(a.id || 0) - Number(b.id || 0);
+	                    };
+	                    const sortedTasks = flattenNeedRows ? tasks.slice().sort(byPosition) : sortTasksHierarchically(tasks);
+	                    
+	                    const taskPromises = sortedTasks.map(t=>{
+	                      return new Promise((resolve) => {
+	                        const displayLevel = flattenNeedRows ? (Number(t.level_depth || 0) > 0 ? 1 : 0) : (t.level_depth || 0);
+	                        const indentPx = displayLevel * 20;
+	                        const indentStyle = `padding-left: ${4 + indentPx}px;`;
+	                        
+	                        // Vérifier si cette tâche a des enfants
+	                        const hasChildren = !flattenNeedRows && sortedTasks.some(task => Number(task.parent_task_id || 0) === Number(t.id || 0));
+	                        const isCollapsed = taskCollapseState.has(t.id);
+	                        const collapseBtn = hasChildren 
+	                          ? `<button class="collapse-toggle" data-task-id="${t.id}" onclick="window.toggleCollapse(${t.id})" style="width:16px;background:none;border:none;cursor:pointer;padding:0;font-size:12px;">${isCollapsed ? '▶' : '▼'}</button>`
+	                          : `<span style="width:16px;display:inline-block;"></span>`;
+	                        
+	                        const subtaskIndicator = !flattenNeedRows && t.level_depth > 0 ? '└─ ' : '';
                         const isCompleted = t.is_completed ? 'checked' : '';
                         const completedStyle = t.is_completed ? 'text-decoration: line-through; color: #999;' : '';
                         const checkboxHtml = t.level_depth > 0 ? `<input type="checkbox" class="task-completion-checkbox" data-task-id="${t.id}" ${isCompleted} style="cursor:pointer;width:16px;height:16px;" onchange="window.toggleTaskCompletion(${t.id}, this.checked)">` : '';
                         
+                        const needCandidates = needsCandidatesEnabled ? getClientNeedCandidateRows(t.id, candidatesByNeed) : null;
+                        const candidatesToggle = needCandidates ? renderClientNeedCandidatesToggle(t.id, needCandidates.length) : '';
+                        const candidatesPanel = needCandidates ? renderClientNeedCandidatesPanel(t.id, needCandidates) : '';
+
                         let tds = `
                           <td style="border:1px solid #ddd;${indentStyle}" class="task-cell" data-level="${t.level_depth || 0}">
                             <div style="display: flex; align-items: center; gap: 5px;">
@@ -1707,8 +1806,10 @@ $(function(){
                               <span style="color: #999; font-family: monospace;">${subtaskIndicator}</span>
                               ${checkboxHtml}
                               <span class="task-label" style="${completedStyle}">${t.label}</span>
+                              ${candidatesToggle}
                               <button class="add-subtask-btn" data-task-id="${t.id}" style="opacity: 0; transition: opacity 0.2s; background: none; border: none; cursor: pointer; color: #007cba; font-size: 12px;" title="Ajouter une sous-tâche">+</button>
                             </div>
+                            ${candidatesPanel}
                           </td>
                         `;
                         
@@ -1747,7 +1848,6 @@ $(function(){
                                 data-column="${c.id}" 
                                 value="${cellValue}" 
                                 style="border:none;background:transparent;width:100%;padding:2px;text-align:right;"
-                                pattern="[0-9€$.,\\s-]*"
                                 onblur="saveCellValue(this)"
                                 onkeydown="if(event.key==='Enter') saveCellValue(this)"
                                 oninput="validateNumberInput(this)">`;
@@ -1892,16 +1992,16 @@ $(function(){
                           });
                           tds += `<td style="border:1px solid #ddd;padding:4px;"></td>`;
                           const $taskRow = $(`<tr class="task-row" data-id="${t.id}" data-parent-id="${t.parent_task_id || ''}" style="cursor:pointer;">${tds}</tr>`);
-                          
+
                           $taskRow.find('td:nth-child(1)').click(function(e) {
-                            if ($(e.target).is('button')) return;
-                            
-                            const taskName = $(this).text();
+                            if ($(e.target).closest('button').length) return;
+
+                            const taskName = $(this).find('.task-label').text();
                             const groupName = $grp.find('.group-label').text();
                             const taskColumnLabel = $grp.find('.task-column-label').text();
                             openTaskDetail(t.id, taskName, groupName, taskColumnLabel);
                           });
-                          
+
                           resolve($taskRow);
                         });
                       });
@@ -1909,9 +2009,9 @@ $(function(){
                     
                     Promise.all(taskPromises).then((taskRows) => {
                       taskRows.forEach($row => {
-                        $grp.find('tbody').append($row);
+                        $grp.find('tbody.tasks-tbody').append($row);
                       });
-                      
+                       
                       $grp.find('select.cell-select').each(function(){
                         applySelectColor($(this));
                       });
@@ -1939,6 +2039,21 @@ $(function(){
   }
 
   function attachEventHandlers(wid) {
+    $('#group-list').off('click', '.candidates-toggle').on('click', '.candidates-toggle', function(e) {
+      e.stopPropagation();
+      const $button = $(this);
+      setClientNeedCandidatesExpanded($button, $button.attr('aria-expanded') !== 'true');
+    });
+
+    $('#group-list').off('click', '.candidate-detail-link').on('click', '.candidate-detail-link', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      const candidateId = Number($(this).data('candidate-id'));
+      if (!candidateId) return;
+      const candidateName = $(this).data('candidate-name') || $(this).text().trim();
+      openTaskDetail(candidateId, candidateName, 'Candidat', 'Candidat');
+    });
+
     $('#group-list').off('click','.add-column-btn').on('click','.add-column-btn',function(e){
       e.stopPropagation();
       const gid = $(this).data('gid');
@@ -2254,8 +2369,8 @@ $(function(){
   }
 
   function sortColumn($group, columnId, columnType, direction) {
-    const $tbody = $group.find('tbody');
-    const $rows = $tbody.find('tr').toArray();
+    const $tbody = $group.find('tbody.tasks-tbody');
+    const $rows = $tbody.find('tr.task-row').toArray();
     
     const $headers = $group.find('th');
     let columnIndex = -1;
@@ -2618,9 +2733,19 @@ $(function(){
   };
 
   function updateCollapsedRows() {
+    const normalizedWorkspace = String(currentWorkspaceLabel || '').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const flattenNeedRows = normalizedWorkspace.includes('besoinclient');
+
     document.querySelectorAll('.task-row').forEach(row => {
       const taskId = row.dataset.id;
       const parentId = row.dataset.parentId;
+
+      if (flattenNeedRows) {
+        row.classList.remove('collapsed-children');
+        row.classList.remove('task-row-hidden');
+        row.style.display = '';
+        return;
+      }
       
       // Si le parent de cette tâche est collapsed, on la masque
       if (parentId && taskCollapseState.has(parseInt(parentId))) {
@@ -2641,10 +2766,19 @@ $(function(){
   // Trier les tâches de manière hiérarchique (parent suivi de ses enfants)
   function sortTasksHierarchically(tasks) {
     const result = [];
-    const taskMap = new Map(tasks.map(t => [t.id, t]));
+    const taskMap = new Map(tasks.map(t => [Number(t.id), t]));
     const processed = new Set();
+    const originalOrder = new Map(tasks.map((t, index) => [Number(t.id), index]));
+
+    const byPosition = (a, b) => {
+      const positionA = Number.isFinite(Number(a.position)) ? Number(a.position) : originalOrder.get(Number(a.id));
+      const positionB = Number.isFinite(Number(b.position)) ? Number(b.position) : originalOrder.get(Number(b.id));
+      if (positionA !== positionB) return positionA - positionB;
+      return Number(a.id || 0) - Number(b.id || 0);
+    };
     
     function addTaskAndChildren(taskId) {
+      taskId = Number(taskId);
       if (processed.has(taskId)) return;
       
       const task = taskMap.get(taskId);
@@ -2655,15 +2789,20 @@ $(function(){
       
       // Ajouter tous les enfants de cette tâche
       tasks
-        .filter(t => t.parent_task_id === taskId)
-        .sort((a, b) => (a.position || 0) - (b.position || 0))
+        .filter(t => Number(t.parent_task_id || 0) === taskId)
+        .sort(byPosition)
         .forEach(t => addTaskAndChildren(t.id));
     }
     
     // Commencer par les tâches sans parent (triées par position)
     tasks
       .filter(t => !t.parent_task_id)
-      .sort((a, b) => (a.position || 0) - (b.position || 0))
+      .sort(byPosition)
+      .forEach(t => addTaskAndChildren(t.id));
+
+    tasks
+      .filter(t => !processed.has(Number(t.id)))
+      .sort(byPosition)
       .forEach(t => addTaskAndChildren(t.id));
     
     return result;

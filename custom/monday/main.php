@@ -16,6 +16,79 @@ function monday_normalize_kpi_label($label)
     return $label;
 }
 
+function monday_tokenize_need_label($label)
+{
+    $label = dol_string_unaccent((string) $label);
+    $label = strtolower($label);
+    preg_match_all('/[a-z0-9]+/', $label, $matches);
+    return isset($matches[0]) ? $matches[0] : [];
+}
+
+function monday_need_label_matches($needLabel, $candidateNeedLabel)
+{
+    $needWords = monday_tokenize_need_label($needLabel);
+    $candidateWords = monday_tokenize_need_label($candidateNeedLabel);
+    if (empty($needWords) || empty($candidateWords)) {
+        return false;
+    }
+
+    $noiseWords = [
+        'insertion' => true,
+        'prio' => true,
+        'prioritaire' => true,
+        'confirme' => true,
+        'confirmee' => true,
+        'junior' => true,
+        'senior' => true,
+    ];
+
+    if (count($candidateWords) > count($needWords)) {
+        return false;
+    }
+
+    foreach ($candidateWords as $index => $word) {
+        if (!isset($needWords[$index]) || $needWords[$index] !== $word) {
+            return false;
+        }
+    }
+
+    for ($i = count($candidateWords); $i < count($needWords); $i++) {
+        if (!isset($noiseWords[$needWords[$i]])) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+function monday_split_kpi_needs($value)
+{
+    $parts = preg_split('/\s*[,;\/\n]+\s*/', (string) $value);
+    $needs = [];
+    foreach ($parts as $part) {
+        $part = trim(preg_replace('/\s+/', ' ', $part));
+        if ($part !== '') {
+            $needs[] = $part;
+        }
+    }
+    return $needs;
+}
+
+function monday_format_client_need_candidate_date($value)
+{
+    $date = monday_parse_kpi_date($value);
+    if ($date) {
+        return $date->format('d/m/Y');
+    }
+    return (string) $value;
+}
+
+function monday_is_client_need_workspace_label($label)
+{
+    $normalized = monday_normalize_kpi_label($label);
+    return $normalized === 'besoinclientlille' || $normalized === 'besoinclientparis';
+}
+
 function monday_get_kpi_columns($db, $workspaceId = 0)
 {
     $targets = [
@@ -29,6 +102,8 @@ function monday_get_kpi_columns($db, $workspaceId = 0)
         'datedenvoieclient' => 'date_envoie_client',
         'dateretour' => 'date_retour',
         'actioncorrective' => 'action_corrective',
+        'actionclient' => 'action_client',
+        'besoin' => 'besoin',
     ];
 
     $workspaceCondition = '';
@@ -251,7 +326,7 @@ function monday_get_kpi_context($db, $workspaceId = 0)
 
     $dataGroupIds = [];
     foreach ($columnsByGroup as $groupId => $groupColumns) {
-        if (isset($groupColumns['retour_client']) || isset($groupColumns['motif_refus']) || isset($groupColumns['canal_sourcing']) || isset($groupColumns['date_envoie_client']) || isset($groupColumns['date_retour']) || isset($groupColumns['action_corrective'])) {
+        if (isset($groupColumns['retour_client']) || isset($groupColumns['motif_refus']) || isset($groupColumns['canal_sourcing']) || isset($groupColumns['date_envoie_client']) || isset($groupColumns['date_retour']) || isset($groupColumns['action_corrective']) || isset($groupColumns['action_client']) || isset($groupColumns['besoin'])) {
             $dataGroupIds[] = (int) $groupId;
         }
     }
@@ -414,7 +489,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['toggle_task_completion'
 
 if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['tasks_group_id'])) {
     $gid = (int)$_GET['tasks_group_id'];
-    $res = $db->query("SELECT rowid, label, parent_task_id, level_depth, is_completed FROM llx_myworkspace_task WHERE fk_group = $gid ORDER BY position ASC");
+    $res = $db->query("SELECT rowid, label, parent_task_id, level_depth, is_completed, position FROM llx_myworkspace_task WHERE fk_group = $gid ORDER BY position ASC");
     $out = [];
     while ($o = $db->fetch_object($res)) {
         $out[] = [
@@ -422,7 +497,8 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['tasks_group_id'])) {
             'label'=>$o->label,
             'parent_task_id'=>$o->parent_task_id,
             'level_depth'=>$o->level_depth,
-            'is_completed'=>(int)$o->is_completed
+            'is_completed'=>(int)$o->is_completed,
+            'position'=>(int)$o->position
         ];
     }
     header('Content-Type: application/json');
@@ -435,7 +511,7 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['tasks_group_id_with_cells
     $gid = (int)$_GET['tasks_group_id_with_cells'];
     
     // Récupérer les tâches
-    $res = $db->query("SELECT rowid, label, parent_task_id, level_depth, is_completed FROM llx_myworkspace_task WHERE fk_group = $gid ORDER BY position ASC");
+    $res = $db->query("SELECT rowid, label, parent_task_id, level_depth, is_completed, position FROM llx_myworkspace_task WHERE fk_group = $gid ORDER BY position ASC");
     $out = [];
     $taskIds = [];
     while ($o = $db->fetch_object($res)) {
@@ -446,6 +522,7 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['tasks_group_id_with_cells
             'parent_task_id'=>$o->parent_task_id,
             'level_depth'=>$o->level_depth,
             'is_completed'=>(int)$o->is_completed,
+            'position'=>(int)$o->position,
             'cells' => []
         ];
     }
@@ -472,6 +549,182 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['tasks_group_id_with_cells
     
     header('Content-Type: application/json');
     echo json_encode($out);
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['client_need_candidates_group_id'])) {
+    if (!isset($_GET['token']) || $_GET['token'] !== $_SESSION['newtoken']) {
+        accessforbidden('CSRF token invalid');
+    }
+
+    $gid = (int) $_GET['client_need_candidates_group_id'];
+    $groupRes = $db->query("SELECT g.rowid, g.fk_workspace, w.label AS workspace_label
+                              FROM llx_myworkspace_group g
+                              JOIN llx_myworkspace w ON w.rowid = g.fk_workspace
+                             WHERE g.rowid = ".$gid);
+    $group = $groupRes ? $db->fetch_object($groupRes) : null;
+    if (!$group || !monday_is_client_need_workspace_label($group->workspace_label)) {
+        header('Content-Type: application/json');
+        echo json_encode(['enabled' => false, 'candidates_by_need' => []]);
+        exit;
+    }
+
+    $needs = [];
+    $clients = [];
+    $currentClientId = 0;
+    $taskRes = $db->query("SELECT rowid, label, parent_task_id, level_depth
+                             FROM llx_myworkspace_task
+                            WHERE fk_group = ".$gid."
+                         ORDER BY position ASC, rowid ASC");
+    while ($taskRes && $task = $db->fetch_object($taskRes)) {
+        $taskId = (int) $task->rowid;
+        $levelDepth = (int) $task->level_depth;
+        $parentTaskId = !empty($task->parent_task_id) ? (int) $task->parent_task_id : 0;
+        $isNeed = $parentTaskId > 0 || $levelDepth > 0;
+        if (!$isNeed) {
+            $currentClientId = $taskId;
+            $clients[$taskId] = [
+                'id' => $taskId,
+                'label' => (string) $task->label,
+                'normalized' => monday_normalize_kpi_label($task->label),
+            ];
+        } else {
+            $parentId = $parentTaskId > 0 ? $parentTaskId : $currentClientId;
+            if ($parentId <= 0) {
+                continue;
+            }
+            $needs[$taskId] = [
+                'id' => $taskId,
+                'label' => (string) $task->label,
+                'parent_id' => $parentId,
+                'candidates' => [],
+                'candidate_ids' => [],
+            ];
+        }
+    }
+
+    $emptyNeedsById = [];
+    foreach ($needs as $needId => $need) {
+        $emptyNeedsById[$needId] = [];
+    }
+
+    $kpiWorkspaceId = monday_get_kpi_recruitment_workspace_id($db);
+    if ($kpiWorkspaceId <= 0 || empty($needs)) {
+        header('Content-Type: application/json');
+        echo json_encode(['enabled' => true, 'candidates_by_need' => $emptyNeedsById]);
+        exit;
+    }
+
+    list($kpiColumns, $options, $columnsByGroup, $dataGroupIds) = monday_get_kpi_context($db, $kpiWorkspaceId);
+    $eligibleGroupIds = [];
+    foreach ($columnsByGroup as $kpiGroupId => $groupColumns) {
+        if (isset($groupColumns['client']) && isset($groupColumns['besoin'])) {
+            $eligibleGroupIds[] = (int) $kpiGroupId;
+        }
+    }
+
+    if (empty($eligibleGroupIds)) {
+        header('Content-Type: application/json');
+        echo json_encode(['enabled' => true, 'candidates_by_need' => $emptyNeedsById]);
+        exit;
+    }
+
+    $candidateTasks = [];
+    $candidateTaskIds = [];
+    $taskSql = "SELECT t.rowid, t.fk_group, t.label
+                  FROM llx_myworkspace_task t
+                 WHERE t.fk_group IN (".implode(',', $eligibleGroupIds).")
+              ORDER BY t.position ASC, t.rowid ASC";
+    $candidateTaskRes = $db->query($taskSql);
+    while ($candidateTaskRes && $task = $db->fetch_object($candidateTaskRes)) {
+        $taskId = (int) $task->rowid;
+        $candidateTaskIds[] = $taskId;
+        $candidateTasks[$taskId] = [
+            'id' => $taskId,
+            'group_id' => (int) $task->fk_group,
+            'name' => (string) $task->label,
+            'cells' => [],
+        ];
+    }
+
+    $kpiColumnIds = array_map(function ($column) {
+        return (int) $column['id'];
+    }, $kpiColumns);
+
+    if (!empty($candidateTaskIds) && !empty($kpiColumnIds)) {
+        $cellSql = "SELECT cell.fk_task, cell.fk_column, cell.value
+                      FROM llx_myworkspace_cell cell
+                      JOIN llx_myworkspace_task t ON t.rowid = cell.fk_task
+                      JOIN llx_myworkspace_column c ON c.rowid = cell.fk_column
+                       AND c.fk_group = t.fk_group
+                     WHERE cell.fk_task IN (".implode(',', $candidateTaskIds).")
+                       AND cell.fk_column IN (".implode(',', $kpiColumnIds).")";
+        $cellRes = $db->query($cellSql);
+        while ($cellRes && $cell = $db->fetch_object($cellRes)) {
+            $taskId = (int) $cell->fk_task;
+            if (isset($candidateTasks[$taskId])) {
+                $candidateTasks[$taskId]['cells'][(int) $cell->fk_column] = (string) $cell->value;
+            }
+        }
+    }
+
+    foreach ($candidateTasks as $candidateTask) {
+        $groupColumns = isset($columnsByGroup[$candidateTask['group_id']]) ? $columnsByGroup[$candidateTask['group_id']] : [];
+        $clientColumnId = isset($groupColumns['client']) ? (int) $groupColumns['client'] : 0;
+        $needColumnId = isset($groupColumns['besoin']) ? (int) $groupColumns['besoin'] : 0;
+        if (!$clientColumnId || !$needColumnId) {
+            continue;
+        }
+
+        $clientValue = isset($candidateTask['cells'][$clientColumnId]) ? $candidateTask['cells'][$clientColumnId] : '';
+        $clientLabel = monday_get_kpi_cell_label($clientValue, $options);
+        $clientKey = monday_normalize_kpi_label($clientLabel);
+        if ($clientKey === '') {
+            continue;
+        }
+
+        $needValue = isset($candidateTask['cells'][$needColumnId]) ? $candidateTask['cells'][$needColumnId] : '';
+        $candidateNeedLabels = monday_split_kpi_needs(monday_get_kpi_cell_label($needValue, $options));
+        if (empty($candidateNeedLabels)) {
+            continue;
+        }
+
+        $sentColumnId = isset($groupColumns['date_envoie_client']) ? (int) $groupColumns['date_envoie_client'] : 0;
+        $actionColumnId = isset($groupColumns['action_client']) ? (int) $groupColumns['action_client'] : 0;
+        $candidate = [
+            'id' => $candidateTask['id'],
+            'name' => $candidateTask['name'],
+            'date_envoie_client' => $sentColumnId && isset($candidateTask['cells'][$sentColumnId]) ? monday_format_client_need_candidate_date($candidateTask['cells'][$sentColumnId]) : '',
+            'action_client' => $actionColumnId && isset($candidateTask['cells'][$actionColumnId]) ? monday_get_kpi_cell_label($candidateTask['cells'][$actionColumnId], $options) : '',
+        ];
+
+        foreach ($needs as $needId => &$need) {
+            $parentId = (int) $need['parent_id'];
+            if (!isset($clients[$parentId]) || $clients[$parentId]['normalized'] !== $clientKey) {
+                continue;
+            }
+
+            foreach ($candidateNeedLabels as $candidateNeedLabel) {
+                if (!monday_need_label_matches($need['label'], $candidateNeedLabel)) {
+                    continue;
+                }
+                if (!isset($need['candidate_ids'][$candidate['id']])) {
+                    $need['candidate_ids'][$candidate['id']] = true;
+                    $need['candidates'][] = $candidate;
+                }
+                break;
+            }
+        }
+        unset($need);
+    }
+
+    $out = [];
+    foreach ($needs as $needId => $need) {
+        $out[$needId] = $need['candidates'];
+    }
+
+    header('Content-Type: application/json');
+    echo json_encode(['enabled' => true, 'candidates_by_need' => $out]);
     exit;
 }
 
@@ -1739,7 +1992,7 @@ ob_start();
   </div>
 </div>
 
-<script src="https://code.jquery.com/ui/1.13.2/jquery-ui.min.js"></script>
+<script src="<?php echo DOL_URL_ROOT ?>/includes/jquery/js/jquery-ui.min.js"></script>
 <script>
 window.leftmenu = <?php echo json_encode($leftmenu); ?>;
 window.formtoken = <?php echo json_encode($formtoken); ?>;
