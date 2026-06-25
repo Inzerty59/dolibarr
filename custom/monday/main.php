@@ -346,6 +346,63 @@ function monday_get_kpi_recruitment_workspace_id($db)
     return 0;
 }
 
+function monday_get_candidate_source_workspace_id($db, $needWorkspaceLabel)
+{
+    $needWorkspaceLabel = monday_normalize_kpi_label($needWorkspaceLabel);
+    $target = '';
+    if ($needWorkspaceLabel === 'besoinclientparis') {
+        $target = 'viviercandidatparis';
+    } elseif ($needWorkspaceLabel === 'besoinclientlille') {
+        $target = 'viviercandidatslille';
+    }
+
+    if ($target === '') {
+        return 0;
+    }
+
+    $res = $db->query("SELECT rowid, label FROM llx_myworkspace ORDER BY rowid ASC");
+    while ($res && $workspace = $db->fetch_object($res)) {
+        if (monday_normalize_kpi_label($workspace->label) === $target) {
+            return (int) $workspace->rowid;
+        }
+    }
+
+    return 0;
+}
+
+function monday_get_candidate_source_task_map($db, $workspaceId)
+{
+    $workspaceId = (int) $workspaceId;
+    if ($workspaceId <= 0) {
+        return [];
+    }
+
+    $sourceTasks = [];
+    $res = $db->query("SELECT t.rowid, t.label,
+                              (SELECT COUNT(*) FROM llx_myworkspace_comment c WHERE c.fk_task = t.rowid) AS comment_count,
+                              (SELECT COUNT(*) FROM llx_myworkspace_task_file f WHERE f.fk_task = t.rowid) AS file_count
+                         FROM llx_myworkspace_task t
+                         JOIN llx_myworkspace_group g ON g.rowid = t.fk_group
+                        WHERE g.fk_workspace = ".$workspaceId."
+                     ORDER BY t.rowid DESC");
+    while ($res && $task = $db->fetch_object($res)) {
+        $key = monday_normalize_kpi_label($task->label);
+        if ($key === '') {
+            continue;
+        }
+
+        $score = ((int) $task->comment_count) + ((int) $task->file_count);
+        if (!isset($sourceTasks[$key]) || $score > $sourceTasks[$key]['score']) {
+            $sourceTasks[$key] = [
+                'id' => (int) $task->rowid,
+                'score' => $score,
+            ];
+        }
+    }
+
+    return $sourceTasks;
+}
+
 function monday_get_kpi_export_groups($db)
 {
     $groups = [];
@@ -615,6 +672,9 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['client_need_candidates_gr
         exit;
     }
 
+    $sourceWorkspaceId = monday_get_candidate_source_workspace_id($db, $group->workspace_label);
+    $sourceTaskByName = monday_get_candidate_source_task_map($db, $sourceWorkspaceId);
+
     list($kpiColumns, $options, $columnsByGroup, $dataGroupIds) = monday_get_kpi_context($db, $kpiWorkspaceId);
     $eligibleGroupIds = [];
     foreach ($columnsByGroup as $kpiGroupId => $groupColumns) {
@@ -689,10 +749,13 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['client_need_candidates_gr
             continue;
         }
 
+        $sourceKey = monday_normalize_kpi_label($candidateTask['name']);
+        $sourceTaskId = isset($sourceTaskByName[$sourceKey]) ? (int) $sourceTaskByName[$sourceKey]['id'] : 0;
         $sentColumnId = isset($groupColumns['date_envoie_client']) ? (int) $groupColumns['date_envoie_client'] : 0;
         $actionColumnId = isset($groupColumns['action_client']) ? (int) $groupColumns['action_client'] : 0;
         $candidate = [
-            'id' => $candidateTask['id'],
+            'id' => $sourceTaskId > 0 ? $sourceTaskId : $candidateTask['id'],
+            'kpi_id' => $candidateTask['id'],
             'name' => $candidateTask['name'],
             'date_envoie_client' => $sentColumnId && isset($candidateTask['cells'][$sentColumnId]) ? monday_format_client_need_candidate_date($candidateTask['cells'][$sentColumnId]) : '',
             'action_client' => $actionColumnId && isset($candidateTask['cells'][$actionColumnId]) ? monday_get_kpi_cell_label($candidateTask['cells'][$actionColumnId], $options) : '',
