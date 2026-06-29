@@ -271,6 +271,10 @@
   right: 0;
 }
 
+.task-detail-panel.no-transition {
+  transition: none !important;
+}
+
 .panel-header {
   padding: 20px;
   border-bottom: 1px solid #eee;
@@ -2137,6 +2141,7 @@ th[title="Glisser pour réorganiser"]:hover {
   border-collapse: collapse;
   table-layout: fixed;
   font-size: 12px;
+  border-top: none;
 }
 
 .candidates-table th,

@@ -566,10 +566,22 @@ $(function(){
     loadTaskFiles(taskId);
   };
 
-  window.closeTaskDetail = function() {
-    $('#task-detail-panel').removeClass('open');
+  window.closeTaskDetail = function(options = {}) {
+    const immediate = Boolean(options && options.immediate);
+    const $panel = $('#task-detail-panel');
+
+    if (immediate) {
+      $panel.addClass('no-transition');
+    }
+
+    $panel.removeClass('open');
     currentTaskId = null;
     currentTaskColumnLabel = 'tâche';
+
+    if (immediate && $panel.length) {
+      $panel[0].offsetHeight;
+      $panel.removeClass('no-transition');
+    }
   };
 
   function loadComments(taskId) {
@@ -1284,6 +1296,11 @@ $(function(){
     return `
       <div id="${panelId}" class="candidates-panel" data-need-id="${Number(taskId)}"${expanded ? '' : ' hidden'}>
         <table class="candidates-table">
+          <colgroup>
+            <col style="width: 46.666%">
+            <col style="width: 26.667%">
+            <col style="width: 26.667%">
+          </colgroup>
           <thead>
             <tr>
               <th>Prénom et nom</th>
@@ -1588,12 +1605,14 @@ $(function(){
   }
 
   $(document).on('click', '.workspace-kpi-entry', function() {
+    closeTaskDetail({ immediate: true });
     showKpiDashboard();
   });
 
   $(document).on('click','.workspace-item', function(){
     const wsId    = this.dataset.id;
     const wsLabel = this.textContent;
+    closeTaskDetail({ immediate: true });
     currentWorkspaceLabel = wsLabel;
     $('.workspace-kpi-entry').removeClass('active');
     
@@ -2863,12 +2882,12 @@ $(function(){
           visibleItems++;
         }
         
-        const $rows = $group.find('tbody tr');
+        const $rows = $group.find('tbody.tasks-tbody > tr');
         $rows.each(function() {
           const $row = $(this);
           let hasMatchInRow = false;
           
-          $row.find('td').each(function() {
+          $row.children('td').each(function() {
             const $cell = $(this);
             let cellText = '';
             
@@ -2890,7 +2909,29 @@ $(function(){
             }
             
             if (cellText && normalizeText(cellText).includes(normalizedSearchTerm)) {
-              if ($cell.find('input, textarea').length === 0 && 
+              if ($cell.find('.candidates-panel').length > 0) {
+                $cell.css('background-color', '#fff3cd');
+                const $candidatePanel = $cell.find('.candidates-panel').first();
+                $candidatePanel.find('tbody tr').each(function() {
+                  const $candidateRow = $(this);
+                  $candidateRow.children('td').each(function() {
+                    const $candidateCell = $(this);
+                    const candidateCellText = $candidateCell.text().trim();
+
+                    if (!candidateCellText || !normalizeText(candidateCellText).includes(normalizedSearchTerm)) {
+                      return;
+                    }
+
+                    if ($candidateCell.find('.candidate-detail-link').length > 0) {
+                      const $candidateLink = $candidateCell.find('.candidate-detail-link').first();
+                      const candidateLinkText = $candidateLink.text().trim();
+                      $candidateLink.html(candidateLinkText.replace(searchRegex, '<span class="search-highlight">$&</span>'));
+                    } else {
+                      $candidateCell.css('background-color', '#fff3cd');
+                    }
+                  });
+                });
+              } else if ($cell.find('input, textarea').length === 0 && 
                   $cell.find('select').length === 0 && 
                   $cell.find('.tag-item').length === 0 && 
                   $cell.find('.user-cell').length === 0) {
