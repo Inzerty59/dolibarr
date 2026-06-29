@@ -13,6 +13,20 @@ $(function(){
     users: null,
     columnOptions: {}
   };
+
+  function normalizeKpiLabel(label) {
+    return String(label || '')
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]+/g, "");
+  }
+
+  function isClientNeedWorkspaceLabel(label) {
+    const normalizedWorkspace = normalizeKpiLabel(label);
+    return normalizedWorkspace === 'besoinclientlille' || normalizedWorkspace === 'besoinclientparis';
+  }
+
   // Pré-charger les utilisateurs une seule fois au démarrage
   fetch('?users_list')
     .then(r=>r.json())
@@ -1767,15 +1781,8 @@ $(function(){
 	                  .then(([tasks, candidatePayload])=>{
 	                    const needsCandidatesEnabled = Boolean(candidatePayload && candidatePayload.enabled);
 	                    const candidatesByNeed = candidatePayload?.candidates_by_need || {};
-	                    const normalizedWorkspace = String(currentWorkspaceLabel || '').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-	                    const flattenNeedRows = normalizedWorkspace.includes('besoinclient');
-	                    const byPosition = (a, b) => {
-	                      const positionA = Number.isFinite(Number(a.position)) ? Number(a.position) : Number.MAX_SAFE_INTEGER;
-	                      const positionB = Number.isFinite(Number(b.position)) ? Number(b.position) : Number.MAX_SAFE_INTEGER;
-	                      if (positionA !== positionB) return positionA - positionB;
-	                      return Number(a.id || 0) - Number(b.id || 0);
-	                    };
-	                    const sortedTasks = flattenNeedRows ? tasks.slice().sort(byPosition) : sortTasksHierarchically(tasks);
+	                    const flattenNeedRows = isClientNeedWorkspaceLabel(currentWorkspaceLabel);
+	                    const sortedTasks = sortTasksHierarchically(tasks);
 	                    
 	                    const taskPromises = sortedTasks.map(t=>{
 	                      return new Promise((resolve) => {
@@ -2733,8 +2740,7 @@ $(function(){
   };
 
   function updateCollapsedRows() {
-    const normalizedWorkspace = String(currentWorkspaceLabel || '').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    const flattenNeedRows = normalizedWorkspace.includes('besoinclient');
+    const flattenNeedRows = isClientNeedWorkspaceLabel(currentWorkspaceLabel);
 
     document.querySelectorAll('.task-row').forEach(row => {
       const taskId = row.dataset.id;
