@@ -3,9 +3,6 @@ require '../../main.inc.php';
 require_once DOL_DOCUMENT_ROOT.'/core/lib/admin.lib.php';
 require_once DOL_DOCUMENT_ROOT.'/core/lib/functions.lib.php';
 
-ini_set('display_errors', 1);
-error_reporting(E_ALL);
-
 $langs->load("mymodule@mymodule");
 
 function monday_normalize_kpi_label($label)
@@ -86,7 +83,125 @@ function monday_format_client_need_candidate_date($value)
 function monday_is_client_need_workspace_label($label)
 {
     $normalized = monday_normalize_kpi_label($label);
-    return $normalized === 'besoinclientlille' || $normalized === 'besoinclientparis';
+    return in_array($normalized, monday_get_configured_workspace_labels('MONDAY_CLIENT_NEED_WORKSPACE_LABELS', ['Besoin client Lille', 'Besoin client Paris']), true);
+}
+
+function monday_get_global_string($name, $default = '')
+{
+    if (function_exists('getDolGlobalString')) {
+        return getDolGlobalString($name, $default);
+    }
+
+    global $conf;
+    return !empty($conf->global->$name) ? (string) $conf->global->$name : $default;
+}
+
+function monday_get_global_int($name, $default = 0)
+{
+    if (function_exists('getDolGlobalInt')) {
+        return getDolGlobalInt($name, $default);
+    }
+
+    global $conf;
+    return !empty($conf->global->$name) ? (int) $conf->global->$name : $default;
+}
+
+function monday_get_configured_workspace_labels($constantName, $defaultLabels)
+{
+    $configured = monday_get_global_string($constantName, implode(',', $defaultLabels));
+    $labels = [];
+    foreach (preg_split('/\s*[,;\n]+\s*/', $configured) as $label) {
+        $normalized = monday_normalize_kpi_label($label);
+        if ($normalized !== '') {
+            $labels[] = $normalized;
+        }
+    }
+
+    return $labels;
+}
+
+function monday_parse_workspace_id_list($value)
+{
+    $ids = [];
+    foreach (preg_split('/\s*[,;\n]+\s*/', (string) $value) as $id) {
+        $id = (int) trim($id);
+        if ($id > 0) {
+            $ids[$id] = true;
+        }
+    }
+
+    return $ids;
+}
+
+function monday_parse_workspace_id_map($value)
+{
+    $map = [];
+    foreach (preg_split('/\s*[,;\n]+\s*/', (string) $value) as $pair) {
+        $parts = preg_split('/\s*[:=]\s*/', $pair, 2);
+        if (count($parts) !== 2) {
+            continue;
+        }
+
+        $sourceId = (int) trim($parts[1]);
+        if ((int) trim($parts[0]) > 0 && $sourceId > 0) {
+            $map[(int) trim($parts[0])] = $sourceId;
+        }
+    }
+
+    return $map;
+}
+
+function monday_parse_workspace_label_map($value)
+{
+    $map = [];
+    foreach (preg_split('/\s*[,;\n]+\s*/', (string) $value) as $pair) {
+        $parts = preg_split('/\s*[:=]\s*/', $pair, 2);
+        if (count($parts) !== 2) {
+            continue;
+        }
+
+        $needLabel = monday_normalize_kpi_label($parts[0]);
+        $sourceLabel = monday_normalize_kpi_label($parts[1]);
+        if ($needLabel !== '' && $sourceLabel !== '') {
+            $map[$needLabel] = $sourceLabel;
+        }
+    }
+
+    return $map;
+}
+
+function monday_find_workspace_id_by_labels($db, $labels)
+{
+    if (empty($labels)) {
+        return 0;
+    }
+
+    $allowedLabels = array_fill_keys($labels, true);
+    $res = $db->query("SELECT rowid, label FROM llx_myworkspace ORDER BY position ASC, rowid ASC");
+    while ($res && $workspace = $db->fetch_object($res)) {
+        if (isset($allowedLabels[monday_normalize_kpi_label($workspace->label)])) {
+            return (int) $workspace->rowid;
+        }
+    }
+
+    return 0;
+}
+
+function monday_is_client_need_workspace($workspaceId, $label)
+{
+    $workspaceIds = monday_parse_workspace_id_list(monday_get_global_string('MONDAY_CLIENT_NEED_WORKSPACE_IDS', ''));
+    if (!empty($workspaceIds)) {
+        return isset($workspaceIds[(int) $workspaceId]);
+    }
+
+    return monday_is_client_need_workspace_label($label);
+}
+
+function monday_user_can_read_workspace()
+{
+    global $user;
+
+    return !empty($user->admin) || (method_exists($user, 'hasRight') && $user->hasRight('monday', 'myobject', 'read'));
 }
 
 function monday_get_kpi_columns($db, $workspaceId = 0)
@@ -336,45 +451,47 @@ function monday_get_kpi_context($db, $workspaceId = 0)
 
 function monday_get_kpi_recruitment_workspace_id($db)
 {
-    $res = $db->query("SELECT rowid, label FROM llx_myworkspace ORDER BY position ASC, rowid ASC");
-    while ($res && $workspace = $db->fetch_object($res)) {
-        if (monday_normalize_kpi_label($workspace->label) === 'kpirecrutement') {
-            return (int) $workspace->rowid;
-        }
+    $configuredId = monday_get_global_int('MONDAY_KPI_RECRUITMENT_WORKSPACE_ID', 0);
+    if ($configuredId > 0) {
+        return $configuredId;
     }
 
-    return 0;
+    return monday_find_workspace_id_by_labels($db, monday_get_configured_workspace_labels('MONDAY_KPI_RECRUITMENT_WORKSPACE_LABELS', ['KPI Recrutement']));
 }
 
-function monday_get_candidate_source_workspace_id($db, $needWorkspaceLabel)
+function monday_get_candidate_source_workspace_id($db, $needWorkspaceId, $needWorkspaceLabel)
 {
-    $needWorkspaceLabel = monday_normalize_kpi_label($needWorkspaceLabel);
-    $target = '';
-    if ($needWorkspaceLabel === 'besoinclientparis') {
-        $target = 'viviercandidatparis';
-    } elseif ($needWorkspaceLabel === 'besoinclientlille') {
-        $target = 'viviercandidatslille';
+    $configuredIdMap = monday_parse_workspace_id_map(monday_get_global_string('MONDAY_CANDIDATE_SOURCE_WORKSPACE_IDS', ''));
+    if (isset($configuredIdMap[(int) $needWorkspaceId])) {
+        return $configuredIdMap[(int) $needWorkspaceId];
     }
 
-    if ($target === '') {
+    $needWorkspaceLabel = monday_normalize_kpi_label($needWorkspaceLabel);
+    $configuredLabelMap = monday_parse_workspace_label_map(monday_get_global_string(
+        'MONDAY_CANDIDATE_SOURCE_WORKSPACE_LABELS',
+        'Besoin client Paris:Vivier candidat Paris,Besoin client Lille:Vivier candidats Lille'
+    ));
+
+    if (empty($configuredLabelMap[$needWorkspaceLabel])) {
         return 0;
     }
 
-    $res = $db->query("SELECT rowid, label FROM llx_myworkspace ORDER BY rowid ASC");
-    while ($res && $workspace = $db->fetch_object($res)) {
-        if (monday_normalize_kpi_label($workspace->label) === $target) {
-            return (int) $workspace->rowid;
-        }
-    }
-
-    return 0;
+    return monday_find_workspace_id_by_labels($db, [$configuredLabelMap[$needWorkspaceLabel]]);
 }
 
-function monday_get_candidate_source_task_map($db, $workspaceId)
+function monday_get_candidate_source_task_map($db, $workspaceId, $candidateNames = [])
 {
     $workspaceId = (int) $workspaceId;
     if ($workspaceId <= 0) {
         return [];
+    }
+
+    $candidateKeys = [];
+    foreach ($candidateNames as $candidateName) {
+        $key = monday_normalize_kpi_label($candidateName);
+        if ($key !== '') {
+            $candidateKeys[$key] = true;
+        }
     }
 
     $sourceTasks = [];
@@ -388,6 +505,9 @@ function monday_get_candidate_source_task_map($db, $workspaceId)
     while ($res && $task = $db->fetch_object($res)) {
         $key = monday_normalize_kpi_label($task->label);
         if ($key === '') {
+            continue;
+        }
+        if (!empty($candidateKeys) && !isset($candidateKeys[$key])) {
             continue;
         }
 
@@ -613,6 +733,9 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['client_need_candidates_gr
     if (!isset($_GET['token']) || $_GET['token'] !== $_SESSION['newtoken']) {
         accessforbidden('CSRF token invalid');
     }
+    if (!monday_user_can_read_workspace()) {
+        accessforbidden('Permission denied');
+    }
 
     $gid = (int) $_GET['client_need_candidates_group_id'];
     $groupRes = $db->query("SELECT g.rowid, g.fk_workspace, w.label AS workspace_label
@@ -620,7 +743,7 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['client_need_candidates_gr
                               JOIN llx_myworkspace w ON w.rowid = g.fk_workspace
                              WHERE g.rowid = ".$gid);
     $group = $groupRes ? $db->fetch_object($groupRes) : null;
-    if (!$group || !monday_is_client_need_workspace_label($group->workspace_label)) {
+    if (!$group || !monday_is_client_need_workspace((int) $group->fk_workspace, $group->workspace_label)) {
         header('Content-Type: application/json');
         echo json_encode(['enabled' => false, 'candidates_by_need' => []]);
         exit;
@@ -628,6 +751,7 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['client_need_candidates_gr
 
     $needs = [];
     $clients = [];
+    $needsByClient = [];
     $currentClientId = 0;
     $taskRes = $db->query("SELECT rowid, label, parent_task_id, level_depth
                              FROM llx_myworkspace_task
@@ -657,6 +781,15 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['client_need_candidates_gr
                 'candidates' => [],
                 'candidate_ids' => [],
             ];
+            if (isset($clients[$parentId])) {
+                $clientKey = $clients[$parentId]['normalized'];
+                if ($clientKey !== '') {
+                    if (!isset($needsByClient[$clientKey])) {
+                        $needsByClient[$clientKey] = [];
+                    }
+                    $needsByClient[$clientKey][] = $taskId;
+                }
+            }
         }
     }
 
@@ -671,9 +804,6 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['client_need_candidates_gr
         echo json_encode(['enabled' => true, 'candidates_by_need' => $emptyNeedsById]);
         exit;
     }
-
-    $sourceWorkspaceId = monday_get_candidate_source_workspace_id($db, $group->workspace_label);
-    $sourceTaskByName = monday_get_candidate_source_task_map($db, $sourceWorkspaceId);
 
     list($kpiColumns, $options, $columnsByGroup, $dataGroupIds) = monday_get_kpi_context($db, $kpiWorkspaceId);
     $eligibleGroupIds = [];
@@ -728,6 +858,7 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['client_need_candidates_gr
         }
     }
 
+    $matchedCandidateNames = [];
     foreach ($candidateTasks as $candidateTask) {
         $groupColumns = isset($columnsByGroup[$candidateTask['group_id']]) ? $columnsByGroup[$candidateTask['group_id']] : [];
         $clientColumnId = isset($groupColumns['client']) ? (int) $groupColumns['client'] : 0;
@@ -742,6 +873,9 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['client_need_candidates_gr
         if ($clientKey === '') {
             continue;
         }
+        if (empty($needsByClient[$clientKey])) {
+            continue;
+        }
 
         $needValue = isset($candidateTask['cells'][$needColumnId]) ? $candidateTask['cells'][$needColumnId] : '';
         $candidateNeedLabels = monday_split_kpi_needs(monday_get_kpi_cell_label($needValue, $options));
@@ -749,34 +883,57 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['client_need_candidates_gr
             continue;
         }
 
-        $sourceKey = monday_normalize_kpi_label($candidateTask['name']);
-        $sourceTaskId = isset($sourceTaskByName[$sourceKey]) ? (int) $sourceTaskByName[$sourceKey]['id'] : 0;
         $sentColumnId = isset($groupColumns['date_envoie_client']) ? (int) $groupColumns['date_envoie_client'] : 0;
         $actionColumnId = isset($groupColumns['action_client']) ? (int) $groupColumns['action_client'] : 0;
         $candidate = [
-            'id' => $sourceTaskId > 0 ? $sourceTaskId : $candidateTask['id'],
+            'id' => $candidateTask['id'],
             'kpi_id' => $candidateTask['id'],
             'name' => $candidateTask['name'],
             'date_envoie_client' => $sentColumnId && isset($candidateTask['cells'][$sentColumnId]) ? monday_format_client_need_candidate_date($candidateTask['cells'][$sentColumnId]) : '',
             'action_client' => $actionColumnId && isset($candidateTask['cells'][$actionColumnId]) ? monday_get_kpi_cell_label($candidateTask['cells'][$actionColumnId], $options) : '',
         ];
 
-        foreach ($needs as $needId => &$need) {
-            $parentId = (int) $need['parent_id'];
-            if (!isset($clients[$parentId]) || $clients[$parentId]['normalized'] !== $clientKey) {
+        foreach ($needsByClient[$clientKey] as $needId) {
+            if (empty($needs[$needId])) {
                 continue;
             }
 
             foreach ($candidateNeedLabels as $candidateNeedLabel) {
-                if (!monday_need_label_matches($need['label'], $candidateNeedLabel)) {
+                if (!monday_need_label_matches($needs[$needId]['label'], $candidateNeedLabel)) {
                     continue;
                 }
-                if (!isset($need['candidate_ids'][$candidate['id']])) {
-                    $need['candidate_ids'][$candidate['id']] = true;
-                    $need['candidates'][] = $candidate;
+                if (!isset($needs[$needId]['candidate_ids'][$candidate['id']])) {
+                    $needs[$needId]['candidate_ids'][$candidate['id']] = true;
+                    $needs[$needId]['candidates'][] = $candidate;
+                    $matchedCandidateNames[$candidate['id']] = $candidate['name'];
                 }
                 break;
             }
+        }
+    }
+
+    if (!empty($matchedCandidateNames)) {
+        $sourceWorkspaceId = monday_get_candidate_source_workspace_id($db, (int) $group->fk_workspace, $group->workspace_label);
+        $sourceTaskByName = monday_get_candidate_source_task_map($db, $sourceWorkspaceId, array_values($matchedCandidateNames));
+        foreach ($needs as &$need) {
+            foreach ($need['candidates'] as &$candidate) {
+                $sourceKey = monday_normalize_kpi_label($candidate['name']);
+                if (!empty($sourceTaskByName[$sourceKey]['id'])) {
+                    $candidate['id'] = (int) $sourceTaskByName[$sourceKey]['id'];
+                }
+            }
+            unset($candidate);
+
+            $uniqueCandidates = [];
+            $seenCandidateIds = [];
+            foreach ($need['candidates'] as $candidate) {
+                if (isset($seenCandidateIds[$candidate['id']])) {
+                    continue;
+                }
+                $seenCandidateIds[$candidate['id']] = true;
+                $uniqueCandidates[] = $candidate;
+            }
+            $need['candidates'] = $uniqueCandidates;
         }
         unset($need);
     }
