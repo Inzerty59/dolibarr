@@ -1255,6 +1255,23 @@ $(function(){
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#039;');
   }
+
+  function highlightEscapedText(value, regex) {
+    const text = String(value ?? '');
+    let lastIndex = 0;
+    let highlighted = '';
+
+    text.replace(regex, (match, ...args) => {
+      const offset = args[args.length - 2];
+      highlighted += escapeHtml(text.slice(lastIndex, offset));
+      highlighted += `<span class="search-highlight">${escapeHtml(match)}</span>`;
+      lastIndex = offset + match.length;
+      return match;
+    });
+
+    return highlighted + escapeHtml(text.slice(lastIndex));
+  }
+
   function getClientNeedCandidateRows(taskId, candidatesByNeed) {
     const key = String(taskId);
     if (!Object.prototype.hasOwnProperty.call(candidatesByNeed, key)) {
@@ -2925,7 +2942,7 @@ $(function(){
                     if ($candidateCell.find('.candidate-detail-link').length > 0) {
                       const $candidateLink = $candidateCell.find('.candidate-detail-link').first();
                       const candidateLinkText = $candidateLink.text().trim();
-                      $candidateLink.html(candidateLinkText.replace(searchRegex, '<span class="search-highlight">$&</span>'));
+                      $candidateLink.html(highlightEscapedText(candidateLinkText, searchRegex));
                     } else {
                       $candidateCell.css('background-color', '#fff3cd');
                     }
