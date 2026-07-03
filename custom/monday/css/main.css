@@ -2118,3 +2118,102 @@ th[title="Glisser pour réorganiser"]:hover {
     min-width: 100%;
   }
 }
+.candidate-mail-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.candidate-mail-dialog {
+  width: min(720px, calc(100vw - 32px));
+  background: #fff;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+}
+
+.candidate-mail-dialog label {
+  display: block;
+  margin-top: 12px;
+  font-weight: 600;
+}
+
+.candidate-mail-dialog input,
+.candidate-mail-dialog textarea {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 6px;
+}
+
+.candidate-mail-dialog textarea {
+  min-height: 220px;
+  resize: vertical;
+}
+
+.candidate-mail-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.candidate-mail-feedback {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-weight: 600;
+}
+
+.candidate-mail-feedback-success {
+  color: #166534;
+  background: #dcfce7;
+  border: 1px solid #86efac;
+}
+
+.candidate-mail-feedback-error {
+  color: #991b1b;
+  background: #fee2e2;
+  border: 1px solid #fca5a5;
+}
+
+.candidate-mail-notifications {
+  position: fixed;
+  top: 72px;
+  right: 18px;
+  z-index: 11000;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: min(420px, calc(100vw - 36px));
+}
+
+.candidate-mail-notification {
+  padding: 12px 14px;
+  border-radius: 6px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+  font-weight: 600;
+  opacity: 0;
+  transform: translateX(16px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.candidate-mail-notification.visible {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.candidate-mail-notification-success {
+  color: #166534;
+  background: #dcfce7;
+  border: 1px solid #86efac;
+}
+
+.candidate-mail-notification-error {
+  color: #991b1b;
+  background: #fee2e2;
+  border: 1px solid #fca5a5;
+}
