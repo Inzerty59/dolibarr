@@ -1645,6 +1645,7 @@ $(function(){
                       </div>
                     </div>
                     <div class="group-body" style="padding:10px;">
+                      <button class="add-row-btn" style="padding:4px 8px; margin-bottom: 8px;">+ Ajouter ${g.task_column_label || 'tâche'}</button>
                       <table style="width:100%;border-collapse:collapse;margin-bottom:8px;">
                         <thead>
                           <tr style="background:#fafafa;">
@@ -1653,7 +1654,6 @@ $(function(){
                         </thead>
                         <tbody></tbody>
                       </table>
-                      <button class="add-row-btn" style="padding:4px 8px;">+ Ajouter ${g.task_column_label || 'tâche'}</button>
                     </div>
                   </div>
                 `);
