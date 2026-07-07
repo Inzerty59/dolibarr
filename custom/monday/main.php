@@ -1022,87 +1022,60 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['rename_group_id'],$_POS
     exit;
 }
 
-// Dupliquer un groupe avec ses colonnes
-if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['duplicate_group_id'],$_POST['new_group_label'])) {
+// Dupliquer un groupe vers un autre workspace
+if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['duplicate_group_id'], $_POST['target_workspace_id'])) {
     if ($_POST['token']!==$_SESSION['newtoken']) accessforbidden('CSRF token invalid');
-    
-    $oldGroupId = (int)$_POST['duplicate_group_id'];
-    $newLabel = $db->escape($_POST['new_group_label']);
-    
-    // Récupérer le groupe original
-    $res = $db->query("SELECT fk_workspace, task_column_label FROM llx_myworkspace_group WHERE rowid = $oldGroupId");
-    if (!$o = $db->fetch_object($res)) {
+
+    $oldGroupId = (int) $_POST['duplicate_group_id'];
+    $targetWorkspaceId = (int) $_POST['target_workspace_id'];
+
+    $res = $db->query("SELECT fk_workspace, label, task_column_label FROM llx_myworkspace_group WHERE rowid = $oldGroupId");
+    if (!$res || !($sourceGroup = $db->fetch_object($res))) {
         http_response_code(404);
         exit;
     }
-    
-    $workspaceId = $o->fk_workspace;
-    $taskColumnLabel = $o->task_column_label;
-    
-    // Récupérer la position max
-    $res = $db->query("SELECT MAX(position) as m FROM llx_myworkspace_group WHERE fk_workspace = $workspaceId");
-    $p = ($res && $row = $db->fetch_object($res)) ? $row->m + 1 : 0;
-    
-    // Créer le nouveau groupe
-    $db->query("INSERT INTO llx_myworkspace_group (fk_workspace, label, position, task_column_label) 
-               VALUES ($workspaceId, '$newLabel', $p, '".$db->escape($taskColumnLabel)."')");
-    
-    $newGroupId = $db->last_insert_id('llx_myworkspace_group');
-    
-    // Copier les colonnes du groupe original
-    $resColumns = $db->query("SELECT rowid, label, type FROM llx_myworkspace_column WHERE fk_group = $oldGroupId ORDER BY position ASC");
-    
-    if ($resColumns) {
-        // Récupérer toutes les colonnes d'abord
-        $columns = [];
-        while ($col = $db->fetch_object($resColumns)) {
-            $columns[] = $col;
-        }
-        
-        // Ensuite les traiter (évite les problèmes de curseur)
-        foreach ($columns as $col) {
-            $colLabel = $db->escape($col->label);
-            $colType = $db->escape($col->type);
-            
-            // Obtenir la position max des colonnes du nouveau groupe
-            $resPos = $db->query("SELECT MAX(position) as m FROM llx_myworkspace_column WHERE fk_group = $newGroupId");
-            $colPos = 0;
-            if ($resPos && $rowPos = $db->fetch_object($resPos)) {
-                $colPos = (int)$rowPos->m + 1;
-            }
-            
-            // Insérer la colonne
-            $db->query("INSERT INTO llx_myworkspace_column (fk_workspace, fk_group, label, type, position) 
-                       VALUES ($workspaceId, $newGroupId, '$colLabel', '$colType', $colPos)");
-            
-            $newColId = $db->last_insert_id('llx_myworkspace_column');
-            
-            // Copier les options de cette colonne
-            $resOptions = $db->query("SELECT label, color FROM llx_myworkspace_column_option WHERE fk_column = ".$col->rowid." ORDER BY position ASC");
-            if ($resOptions) {
-                $options = [];
-                while ($opt = $db->fetch_object($resOptions)) {
-                    $options[] = $opt;
-                }
-                
-                foreach ($options as $opt) {
-                    $optLabel = $db->escape($opt->label);
-                    $optColor = $db->escape($opt->color);
-                    
-                    // Obtenir position max
-                    $resOptPos = $db->query("SELECT MAX(position) as m FROM llx_myworkspace_column_option WHERE fk_column = $newColId");
-                    $optPos = 0;
-                    if ($resOptPos && $rowOptPos = $db->fetch_object($resOptPos)) {
-                        $optPos = (int)$rowOptPos->m + 1;
-                    }
-                    
-                    $db->query("INSERT INTO llx_myworkspace_column_option (fk_column, label, color, position) 
-                               VALUES ($newColId, '$optLabel', '$optColor', $optPos)");
-                }
-            }
+
+    if ($targetWorkspaceId <= 0) {
+        http_response_code(400);
+        exit;
+    }
+
+    $resTarget = $db->query("SELECT rowid FROM llx_myworkspace WHERE rowid = $targetWorkspaceId");
+    if (!$resTarget || !$db->fetch_object($resTarget)) {
+        http_response_code(404);
+        exit;
+    }
+
+    $resPos = $db->query("SELECT MAX(position) as m FROM llx_myworkspace_group WHERE fk_workspace = $targetWorkspaceId");
+    $newGroupPos = ($resPos && ($rowPos = $db->fetch_object($resPos))) ? ((int) $rowPos->m + 1) : 0;
+
+    $newGroupLabel = isset($_POST['new_group_label']) && trim($_POST['new_group_label']) !== '' 
+    ? $db->escape(trim($_POST['new_group_label'])) 
+    : $db->escape($sourceGroup->label);
+    $taskColumnLabel = $db->escape($sourceGroup->task_column_label);
+
+    $db->query("INSERT INTO llx_myworkspace_group (fk_workspace, label, position, task_column_label) VALUES ($targetWorkspaceId, '$newGroupLabel', $newGroupPos, '$taskColumnLabel')");
+    $newGroupId = (int) $db->last_insert_id('llx_myworkspace_group');
+
+    $columnMap = [];
+    $resColumns = $db->query("SELECT rowid, label, type, position FROM llx_myworkspace_column WHERE fk_group = $oldGroupId ORDER BY position ASC, rowid ASC");
+    while ($resColumns && $column = $db->fetch_object($resColumns)) {
+        $colLabel = $db->escape($column->label);
+        $colType = $db->escape($column->type);
+        $colPosition = (int) $column->position;
+
+        $db->query("INSERT INTO llx_myworkspace_column (fk_workspace, fk_group, label, type, position) VALUES ($targetWorkspaceId, $newGroupId, '$colLabel', '$colType', $colPosition)");
+        $newColId = (int) $db->last_insert_id('llx_myworkspace_column');
+        $columnMap[(int) $column->rowid] = $newColId;
+
+        $resOptions = $db->query("SELECT label, color, position FROM llx_myworkspace_column_option WHERE fk_column = ".(int) $column->rowid." ORDER BY position ASC, rowid ASC");
+        while ($resOptions && $option = $db->fetch_object($resOptions)) {
+            $optLabel = $db->escape($option->label);
+            $optColor = $db->escape($option->color);
+            $optPosition = (int) $option->position;
+            $db->query("INSERT INTO llx_myworkspace_column_option (fk_column, label, color, position) VALUES ($newColId, '$optLabel', '$optColor', $optPosition)");
         }
     }
-    
     exit;
 }
 
