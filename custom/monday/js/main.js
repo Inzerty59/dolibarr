@@ -2,16 +2,259 @@ $(function(){
   $('.side-nav .vmenu').prepend(window.leftmenu || '');
   const token = window.formtoken;
   const userId = window.userId;
+
+  function showPlanityMessage(message, type = 'ok') {
+    $('#planity-event-message').remove();
+
+    const $message = $(`
+      <div id="planity-event-message" class="planity-event-message ${type}">
+        ${message}
+      </div>
+    `);
+
+    $('#main-content').prepend($message);
+
+    setTimeout(() => {
+      $message.fadeOut(250, function() {
+        $(this).remove();
+      });
+    }, 3500);
+  }
+
+  function decodeHtmlEntities(value) {
+    const textarea = document.createElement('textarea');
+    let decoded = String(value || '');
+
+    for (let i = 0; i < 3; i++) {
+      textarea.innerHTML = decoded;
+      const next = textarea.value;
+      if (next === decoded) {
+        break;
+      }
+      decoded = next;
+    }
+
+    return decoded;
+  }
   
   // State pour gérer les tâches collapsées
   const taskCollapseState = new Set();
   
-  // Cache pour les données fréquemment utilisées
+  // Cache pour les données fréquemment utilisées 
   const dataCache = {
     users: null,
     columnOptions: {}
   };
-  
+  const pendingColumnOptions = {};
+    const groupSplitState = new Map();
+
+  function getSplitableColumns(cols) {
+    return cols.filter(c => c.type === 'select');
+  }
+
+  function escapeSplitHtml(value) {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function buildGroupTableHtml(headerCells, extraClass = '') {
+    return `
+      <table class="planity-group-table ${extraClass}" style="width:100%;border-collapse:collapse;margin-bottom:8px;">
+        <thead>
+          <tr style="background:#fafafa;">
+            ${headerCells}
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    `;
+  }
+
+  function buildSplitToolbarHtml(g, cols) {
+    const splitableColumns = getSplitableColumns(cols);
+
+    if (!splitableColumns.length) {
+      return '';
+    }
+
+    const activeSplitId = String(groupSplitState.get(g.id) || '__base__');
+    const optionsHtml = [
+      `<option value="__base__" ${activeSplitId === '__base__' ? 'selected' : ''}>Vue initiale</option>`,
+      ...splitableColumns.map(c => `
+        <option value="${c.id}" ${String(c.id) === activeSplitId ? 'selected' : ''}>
+          ${escapeSplitHtml(c.label)}
+        </option>
+      `)
+    ].join('');
+
+
+    return `
+      <div class="group-split-toolbar">
+        <span class="group-split-label">Trier par :</span>
+        <select class="group-split-select" data-gid="${g.id}">
+          ${optionsHtml}
+        </select>
+      </div>
+    `;
+  }
+
+  function buildSplitSections(taskRows, splitColumnId, splitOptions) {
+    const sections = splitOptions.map(opt => ({
+      key: String(opt.id),
+      label: opt.label,
+      color: opt.color || '#c8c8c8',
+      rows: []
+    }));
+
+    const sectionsByKey = new Map(sections.map(section => [section.key, section]));
+
+    const emptySection = {
+      key: '__empty__',
+      label: 'Sans valeur',
+      color: '#c8c8c8',
+      rows: []
+    };
+
+    taskRows.forEach($row => {
+      const cellValues = $row.data('cellValues') || {};
+      const key = String(cellValues[splitColumnId] || '');
+
+      if (sectionsByKey.has(key)) {
+        sectionsByKey.get(key).rows.push($row);
+      } else {
+        emptySection.rows.push($row);
+      }
+    });
+
+    if (emptySection.rows.length) {
+      sections.push(emptySection);
+    }
+
+    return sections;
+  }
+
+  function getColumnOptions(columnId) {
+    const cachedOptions = dataCache.columnOptions[columnId];
+    if (cachedOptions !== undefined) {
+      return Promise.resolve(cachedOptions);
+    }
+
+    if (!pendingColumnOptions[columnId]) {
+      pendingColumnOptions[columnId] = fetch(`?column_options=${columnId}`)
+        .then(r => r.json())
+        .then(options => {
+          dataCache.columnOptions[columnId] = options;
+          return options;
+        })
+        .finally(() => {
+          delete pendingColumnOptions[columnId];
+        });
+    }
+
+    return pendingColumnOptions[columnId];
+  }
+
+  function renderGroupTables($grp, g, cols, headerCells, taskRows) {
+    const wsId = getActiveWorkspaceId();
+    const $toolbarHost = $grp.find('.group-body-toolbar');
+    const $tablesContainer = $grp.find('.group-tables-container');
+    const splitableColumns = getSplitableColumns(cols);
+    const activeSplitId = String(groupSplitState.get(g.id) || '__base__');
+    $grp.find('.group-body-toolbar > .add-row-btn').toggle(activeSplitId === '__base__');
+    $toolbarHost.find('.group-split-toolbar').remove();
+
+    if (splitableColumns.length) {
+      $toolbarHost.append(buildSplitToolbarHtml(g, cols));
+    }
+
+    $tablesContainer.empty();
+
+    if (activeSplitId === '__base__') {
+      const $table = $(buildGroupTableHtml(headerCells, 'group-base-table'));
+      taskRows.forEach($row => {
+        $table.find('tbody').append($row);
+      });
+      $tablesContainer.append($table);
+      return;
+    }
+
+    const splitColumn = splitableColumns.find(c => String(c.id) === String(activeSplitId));
+    if (!splitColumn) {
+      groupSplitState.delete(g.id);
+
+      const $table = $(buildGroupTableHtml(headerCells, 'group-base-table'));
+      taskRows.forEach($row => {
+        $table.find('tbody').append($row);
+      });
+      $tablesContainer.append($table);
+      return;
+    }
+
+    const splitOptions = dataCache.columnOptions[splitColumn.id];
+
+    if (!splitOptions) {
+      getColumnOptions(splitColumn.id).then(() => {
+        if (String(groupSplitState.get(g.id) || '__base__') === String(splitColumn.id) && wsId) {
+          loadGroups(wsId);
+        }
+      });
+      const $table = $(buildGroupTableHtml(headerCells, 'group-base-table'));
+      taskRows.forEach($row => {
+        $table.find('tbody').append($row);
+      });
+      $tablesContainer.append($table);
+      return;
+    }
+
+    if (!splitOptions.length) {
+      const $table = $(buildGroupTableHtml(headerCells, 'group-base-table'));
+      taskRows.forEach($row => {
+        $table.find('tbody').append($row);
+      });
+      $tablesContainer.append($table);
+      return;
+    }
+
+    const splitSections = buildSplitSections(taskRows, splitColumn.id, splitOptions);
+    const taskLabel = (g.task_column_label || 'élément').toLowerCase();
+
+    splitSections.forEach(section => {
+      const countLabel = `${section.rows.length} ${taskLabel}${section.rows.length > 1 ? 's' : ''}`;
+
+      const $section = $(`
+        <div class="group-split-section">
+          <div class="group-split-section-header">
+            <div class =" gpr">
+              <span class="group-split-dot" style="background:${section.color};"></span>
+              <span class="group-split-section-title">${escapeSplitHtml(section.label)}</span>
+              <span class="group-split-section-count">${countLabel}</span>
+            </div>
+            <button
+              class="add-row-btn"
+              data-split-column-id="${splitColumn.id}"
+              data-split-option-id="${section.key === '__empty__' ? '' : escapeSplitHtml(section.key)}"
+              type="button">
+              + Ajouter ${g.task_column_label || 'tâche'}
+            </button>
+          </div>
+        </div>
+      `);
+
+      const $table = $(buildGroupTableHtml(headerCells, 'split-view-table'));
+
+      section.rows.forEach($row => {
+        $table.find('tbody').append($row);
+      });
+
+      $section.append($table);
+      $tablesContainer.append($section);
+    });
+  }
+
   // Pré-charger les utilisateurs une seule fois au démarrage
   fetch('?users_list')
     .then(r=>r.json())
@@ -57,8 +300,11 @@ $(function(){
         }
       })
       .then(data => {
-        const newItem = `<li class="workspace-item" data-id="${data.id}">${data.label}</li>`;
-        $('#workspace-list').append(newItem);
+        const $newItem = $('<li>', {
+          class: 'workspace-item',
+          'data-id': data.id
+        }).text(decodeHtmlEntities(data.label));
+        $('#workspace-list').append($newItem);
         
         newWorkspaceInput.val('');
         
@@ -67,8 +313,11 @@ $(function(){
       .catch(error => {
         console.error('Erreur lors de l\'ajout de l\'espace:', error);
         const newId = Date.now();
-        const newItem = `<li class="workspace-item" data-id="${newId}">${workspaceName}</li>`;
-        $('#workspace-list').append(newItem);
+        const $newItem = $('<li>', {
+          class: 'workspace-item',
+          'data-id': newId
+        }).text(decodeHtmlEntities(workspaceName));
+        $('#workspace-list').append($newItem);
         newWorkspaceInput.val('');
         
         setTimeout(() => location.reload(), 500);
@@ -78,24 +327,64 @@ $(function(){
 
   let currentTaskId = null;
   let currentTaskColumnLabel = 'tâche';
+  function getActiveWorkspaceId() {
+    const $activeWorkspace = $('.workspace-item.active');
 
-  window.saveCellValue = function(input) {
-    const taskId = $(input).data('task');
-    const columnId = $(input).data('column');
-    const value = $(input).val();
-    
-    if($(input).is('select')) {
-      applySelectColor($(input));
+    if ($activeWorkspace.length > 0) {
+      return $activeWorkspace.data('id');
     }
-    
+
+    const $fallbackWorkspace = $('.workspace-item').filter(function() {
+      const $this = $(this);
+      return $this.css('background-color') === 'rgb(0, 124, 186)' ||
+             $this.css('font-weight') === 'bold' ||
+             $this.css('font-weight') === '700';
+    }).first();
+
+    return $fallbackWorkspace.length ? $fallbackWorkspace.data('id') : null;
+  }
+  window.saveCellValue = function(input) {
+    const $input = $(input);
+    const taskId = $input.data('task');
+    const columnId = String($input.data('column'));
+    const value = $input.val();
+
+    if ($input.is('select')) {
+      applySelectColor($input);
+    }
+
+    const $group = $input.closest('.group');
+    const groupId = $group.data('id');
+    const activeSplitId = String(groupSplitState.get(groupId) || '');
+    const wsId = getActiveWorkspaceId();
+
     const fd = new FormData();
     fd.append('save_cell_task', taskId);
     fd.append('save_cell_column', columnId);
     fd.append('save_cell_value', value);
     fd.append('token', token);
-    
-    fetch('', {method: 'POST', body: fd});
+
+    fetch('', { method: 'POST', body: fd })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        return response.text();
+      })
+      .then(() => {
+        if (!$input.is('select')) return;
+        if (!activeSplitId) return;
+        if (activeSplitId !== columnId) return;
+
+        if (wsId) {
+          loadGroups(wsId);
+        }
+      })
+      .catch(error => {
+        console.error('Erreur saveCellValue:', error);
+      });
   };
+
 
   window.validateNumberInput = function(input) {
     const value = input.value;
@@ -104,6 +393,72 @@ $(function(){
     if (!allowedPattern.test(value)) {
       input.value = value.replace(/[^0-9€$.,\s-]/g, '');
     }
+  };
+  /*le comportement de textera : s’agrandit en hauteur selon son contenu */
+  window.autoResizeTextarea = function(el) {
+    el.style.height = 'auto';
+    el.style.height = el.scrollHeight + 'px';
+  };
+
+  const CELL_COLLAPSED_LINES = 4;
+
+  window.getCollapsedTextareaHeight = function(textarea) {
+    const computed = window.getComputedStyle(textarea);
+    let lineHeight = parseFloat(computed.lineHeight);
+
+    if (Number.isNaN(lineHeight)) {
+      lineHeight = parseFloat(computed.fontSize) * 1.4;
+    }
+
+    const paddingTop = parseFloat(computed.paddingTop) || 0;
+    const paddingBottom = parseFloat(computed.paddingBottom) || 0;
+    const borderTop = parseFloat(computed.borderTopWidth) || 0;
+    const borderBottom = parseFloat(computed.borderBottomWidth) || 0;
+
+    return Math.ceil((lineHeight * CELL_COLLAPSED_LINES) + paddingTop + paddingBottom + borderTop + borderBottom);
+  };
+
+  window.updateExpandableTextarea = function(textarea) {
+    const $wrapper = $(textarea).closest('.cell-expandable');
+    const $toggle = $wrapper.find('.cell-expandable-toggle');
+    const expanded = $wrapper.attr('data-expanded') === '1';
+
+    textarea.style.height = 'auto';
+    const fullHeight = textarea.scrollHeight;
+    const collapsedHeight = getCollapsedTextareaHeight(textarea);
+    const hasOverflow = fullHeight > collapsedHeight + 1;
+
+    if (expanded || !hasOverflow) {
+      textarea.style.height = `${fullHeight}px`;
+    } else {
+      textarea.style.height = `${collapsedHeight}px`;
+      textarea.scrollTop = 0;
+    }
+
+    if (hasOverflow) {
+      $toggle.text(expanded ? 'voir moins' : 'voir plus').show();
+    } else {
+      $toggle.hide();
+    }
+  };
+
+  window.handleExpandableTextareaInput = function(textarea, isNumber) {
+    if (isNumber) {
+      validateNumberInput(textarea);
+    }
+    updateExpandableTextarea(textarea);
+  };
+
+  window.toggleCellPreview = function(toggle, event) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const $wrapper = $(toggle).closest('.cell-expandable');
+    const textarea = $wrapper.find('textarea')[0];
+    const expanded = $wrapper.attr('data-expanded') === '1';
+
+    $wrapper.attr('data-expanded', expanded ? '0' : '1');
+    updateExpandableTextarea(textarea);
   };
 
   window.openUserSelector = function(cell) {
@@ -137,10 +492,10 @@ $(function(){
                   const initials = user.name.split(' ').map(n => n[0]).join('').substr(0, 2).toUpperCase();
                   return `
                     <div class="user-option ${isSelected ? 'selected' : ''}" data-user-id="${user.id}" style="display:flex;align-items:center;gap:10px;margin-bottom:8px;padding:10px;border:2px solid ${isSelected ? '#007cba' : 'transparent'};background:${isSelected ? '#f0f8ff' : '#f9f9f9'};border-radius:6px;cursor:pointer;">
-                      <div class="user-avatar" title="${user.name}">${initials}</div>
+                      <div class="user-avatar" title="${escapeHtml(user.name)}">${escapeHtml(initials)}</div>
                       <div>
-                        <div style="font-weight:bold;">${user.name}</div>
-                        <div style="font-size:12px;color:#666;">${user.email || user.login}</div>
+                        <div style="font-weight:bold;">${escapeHtml(user.name)}</div>
+                        <div style="font-size:12px;color:#666;">${escapeHtml(user.email || user.login)}</div>
                       </div>
                     </div>
                   `;
@@ -241,7 +596,7 @@ $(function(){
                     console.log(`Option ${opt.label} (ID: ${opt.id}) - Sélectionnée: ${isSelected}`); // Debug
                     return `
                       <div class="tag-option ${isSelected ? 'selected' : ''}" data-tag-id="${opt.id}" style="display:inline-block;margin:5px;padding:8px 16px;background:${opt.color || '#87CEEB'};color:white;border-radius:20px;cursor:pointer;border:3px solid ${isSelected ? '#0073ea' : 'transparent'};font-weight:500;font-size:14px;transition:all 0.2s ease;">
-                        ${opt.label}
+                        ${escapeHtml(decodeHtmlEntities(opt.label))}
                       </div>
                     `;
                   }).join('')}
@@ -307,7 +662,7 @@ $(function(){
                 if(tag) {
                     tagsHtml += `
                       <span class="tag-item" data-tag-id="${tag.id}" style="background:${tag.color || '#87CEEB'};color:white;padding:2px 6px;border-radius:12px;font-size:11px;display:flex;align-items:center;gap:4px;">
-                        ${tag.label}
+                        ${escapeHtml(decodeHtmlEntities(tag.label))}
                         <span class="remove-tag" onclick="removeTag(event, this)" style="cursor:pointer;font-weight:bold;">×</span>
                       </span>
                     `;
@@ -592,10 +947,10 @@ $(function(){
           const $comment = $(`
             <div class="comment-item" data-comment-id="${comment.id}">
               <div class="comment-header">
-                <span class="comment-author">${comment.user_name}</span>
+                <span class="comment-author">${escapeHtml(comment.user_name || '')}</span>
                 <span class="comment-date">${formattedDate}</span>
               </div>
-              <div class="comment-text" style="${commentStyle}">${comment.comment}</div>
+              <div class="comment-text" style="${commentStyle}">${escapeHtml(comment.comment || '')}</div>
               <div class="comment-actions">
                 <button class="comment-action-btn edit-comment-btn" data-comment-id="${comment.id}">Modifier</button>
                 <button class="comment-action-btn delete-comment-btn" data-comment-id="${comment.id}">Supprimer</button>
@@ -637,10 +992,10 @@ $(function(){
             const $fileItem = $(`
               <div class="task-file-item" data-file-id="${file.rowid}">
                 <div class="task-file-info">
-                  <a href="#" class="task-file-name" onclick="viewTaskFile(${file.rowid}, '${file.original_name}', '${file.mimetype}'); return false;">
-                    ${fileIcon} ${file.original_name}
+                  <a href="#" class="task-file-name" onclick="viewTaskFile(${file.rowid}, ${escapeHtml(JSON.stringify(file.original_name || ''))}, ${escapeHtml(JSON.stringify(file.mimetype || ''))}); return false;">
+                    ${fileIcon} ${escapeHtml(file.original_name || '')}
                   </a>
-                  <div class="task-file-meta">${fileSize} • ${file.user_name || 'Inconnu'}</div>
+                  <div class="task-file-meta">${fileSize} • ${escapeHtml(file.user_name || 'Inconnu')}</div>
                 </div>
                 <div class="task-file-actions">
                   <button class="task-delete-file" onclick="deleteTaskFile(${file.rowid})" title="Supprimer">×</button>
@@ -1111,106 +1466,298 @@ $(function(){
     $(this).val('');
   });
 
-  $('#workspace-list').sortable({
-    cursor:'pointer',
-    update(){
-      const order = $('#workspace-list .workspace-item').map((_,el)=>el.dataset.id).get();
-      fetch('',{method:'POST',body:new URLSearchParams({
-        reorder_workspaces: JSON.stringify(order),
-        token: token
-      })});
+  function escapeHtml(value) {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  function buildKpiQuery() {
+    const params = new URLSearchParams();
+    params.set('kpi_recruitment', '1');
+    params.set('token', token);
+
+    const year = $('#kpi-year').val();
+    const startDate = $('#kpi-start-date').val();
+    const endDate = $('#kpi-end-date').val();
+    const client = $('#kpi-client').val();
+
+    if (year) {
+      params.set('year', year);
+    } else {
+      if (startDate) params.set('start_date', startDate);
+      if (endDate) params.set('end_date', endDate);
     }
-  }).disableSelection();
+    if (client) params.set('client', client);
 
-  function initGroupSortable(){
-    $('#group-list').sortable({
-      cursor:'pointer',
-      update(){
-        const order = $('#group-list .group').map((_,el)=>el.dataset.id).get();
-        fetch('',{method:'POST',body:new URLSearchParams({
-          reorder_groups: JSON.stringify(order),
-          token: token
-        })});
-      }
-    }).disableSelection();
-  }
-  
-  function initTaskSortable(){
-    $('.group-body tbody').sortable({
-      cursor:'pointer',
-      update(){
-        const order = $(this).children().map((_,tr)=>tr.dataset.id).get();
-        fetch('',{method:'POST',body:new URLSearchParams({
-          reorder_tasks: JSON.stringify(order),
-          token: token
-        })});
-      }
-    }).disableSelection();
+    return params.toString();
   }
 
-  function initColumnSortable(){
-    $('.group-body thead tr').each(function(){
-      const $tr = $(this);
-      const $group = $tr.closest('.group');
-      const groupId = $group.data('id');
-      
-      $tr.sortable({
-        items: 'th:not(:first-child):not(:last-child)',
-        cursor: 'move',
-        axis: 'x',
-        helper: 'clone',
-        placeholder: 'ui-sortable-placeholder',
-        tolerance: 'pointer',
-        distance: 10,
-        cancel: '.column-menu-btn, .column-menu',
-        start: function(event, ui) {
-          ui.placeholder.height(ui.item.height());
-          ui.placeholder.css({
-            'background': '#e3f2fd',
-            'border': '2px dashed #2196f3',
-            'opacity': '0.7'
-          });
-          
-          $('.column-menu').removeClass('show').hide();
-        },
-        update: function(event, ui) {
-          const columnOrder = [];
-          $tr.find('th:not(:first-child):not(:last-child)').each(function() {
-            const $span = $(this).find('.column-label');
-            if ($span.length > 0) {
-              const columnId = $span.data('cid');
-              if (columnId) {
-                columnOrder.push(parseInt(columnId));
-              }
-            }
-          });
-          
-          if (columnOrder.length > 0) {
-            fetch('', {
-              method: 'POST',
-              body: new URLSearchParams({
-                reorder_columns: JSON.stringify(columnOrder),
-                token: token
-              })
-            }).then(() => {
-              setTimeout(() => {
-                const workspaceId = $('.workspace-item.active').data('id');
-                if (workspaceId) {
-                  loadGroups(workspaceId);
-                }
-              }, 200);
-            }).catch(error => {
-              console.error('Erreur lors de la réorganisation des colonnes:', error);
-            });
-          }
-        }
-      }).disableSelection();
+  function formatKpiPercent(value) {
+    return `${Number(value || 0).toLocaleString('fr-FR', { maximumFractionDigits: 1 })}%`;
+  }
+
+  function buildPieGradient(series) {
+    if (!series.length) {
+      return '#eef1f4';
+    }
+
+    let cursor = 0;
+    const stops = [];
+    series.forEach(item => {
+      const start = cursor;
+      const end = cursor + Number(item.percentage || 0);
+      stops.push(`${item.color || '#cccccc'} ${start}% ${end}%`);
+      cursor = end;
     });
+
+    if (cursor < 100) {
+      stops.push(`#f2f4f7 ${cursor}% 100%`);
+    }
+
+    return `conic-gradient(${stops.join(', ')})`;
   }
+
+  function renderKpiChart(metric) {
+    const series = metric.series || [];
+    const legend = series.map(item => `
+      <div class="kpi-legend-row">
+        <span class="kpi-legend-color" style="background:${escapeHtml(item.color || '#cccccc')}"></span>
+        <span class="kpi-legend-label">${escapeHtml(item.label)}</span>
+        <strong>${formatKpiPercent(item.percentage)}</strong>
+        <span class="kpi-legend-count">${item.count}</span>
+      </div>
+    `).join('');
+
+    const labels = series
+      .filter(item => Number(item.percentage) >= 5)
+      .map(item => `<span style="background:${escapeHtml(item.color || '#cccccc')}">${formatKpiPercent(item.percentage)}</span>`)
+      .join('');
+
+    return `
+      <section class="kpi-card">
+        <h3>${escapeHtml(metric.title)}</h3>
+        <div class="kpi-chart-body">
+          <div class="kpi-donut-wrap">
+            <div class="kpi-donut" style="background:${buildPieGradient(series)}">
+              <div class="kpi-donut-hole"></div>
+            </div>
+            <div class="kpi-donut-labels">${labels}</div>
+          </div>
+          <div class="kpi-legend">
+            ${legend || '<div class="kpi-empty">Aucune donnée</div>'}
+          </div>
+        </div>
+      </section>
+    `;
+  }
+
+  function renderKpiBars(series) {
+    return series.map(item => {
+      const percentage = Number(item.percentage || 0);
+      const width = Math.max(percentage, percentage > 0 ? 5 : 0);
+      return `
+        <div class="kpi-bar-row">
+          <span class="kpi-bar-label" title="${escapeHtml(item.label)}">${escapeHtml(item.label)}</span>
+          <div class="kpi-bar-track">
+            <div class="kpi-bar-fill" style="width:${width}%;background:${escapeHtml(item.color || '#6b5fad')}"></div>
+          </div>
+          <strong title="${item.count} ligne${Number(item.count || 0) > 1 ? 's' : ''}">${formatKpiPercent(percentage)}</strong>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function renderResponseDelaySection(delay) {
+    const series = delay?.series || [];
+    return `
+      <section class="kpi-wide-card">
+        <div class="kpi-section-title">
+          <h3>${escapeHtml(delay?.title || 'Délai moyen de réponse client')}</h3>
+          <span>${Number(delay?.valid_rows || 0)} lignes avec deux dates valides</span>
+        </div>
+          <div class="kpi-delay-layout">
+          <div class="kpi-stat-tile">
+            <strong>${escapeHtml(delay?.average_label || 'Aucune donnée')}</strong>
+            <span>Délai moyen exact</span>
+          </div>
+          <div class="kpi-top-bars">
+            ${series.length ? renderKpiBars(series) : '<div class="kpi-empty">Aucune ligne avec date envoie client et date retour.</div>'}
+          </div>
+        </div>
+      </section>
+    `;
+  }
+
+  function renderActionCorrectiveSection(actionCorrective) {
+    const series = actionCorrective?.series || [];
+    return `
+      <section class="kpi-wide-card">
+        <div class="kpi-section-title">
+          <h3>${escapeHtml(actionCorrective?.title || 'Actions correctives')}</h3>
+          <span>${Number(actionCorrective?.filled || 0)} / ${Number(actionCorrective?.total || 0)} lignes renseignées</span>
+        </div>
+        <div class="kpi-top-bars kpi-scroll-bars">
+          ${series.length ? renderKpiBars(series) : '<div class="kpi-empty">Aucune action corrective renseignée.</div>'}
+        </div>
+      </section>
+    `;
+  }
+
+  function renderKpiExportSection() {
+    return `
+      <section class="kpi-export-card">
+        <div class="kpi-section-title">
+          <h3>Export KPI recrutement</h3>
+          <span>CSV compatible Excel</span>
+        </div>
+        <div class="kpi-export-controls">
+          <select id="kpi-export-group">
+            <option value="all">Tous les tableaux</option>
+          </select>
+          <button id="kpi-export-btn" type="button">Exporter</button>
+        </div>
+      </section>
+    `;
+  }
+
+  function loadKpiExportGroups() {
+    const params = new URLSearchParams();
+    params.set('kpi_export_groups', '1');
+    params.set('token', token);
+
+    fetch(`?${params.toString()}`)
+      .then(r => r.json())
+      .then(groups => {
+        const options = (groups || []).map(group => `
+          <option value="${group.id}">${escapeHtml(decodeHtmlEntities(group.label))}</option>
+        `).join('');
+        $('#kpi-export-group').html(`<option value="all">Tous les tableaux</option>${options}`);
+      })
+      .catch(error => console.error('Erreur chargement exports KPI:', error));
+  }
+
+  function buildKpiExportUrl() {
+    const params = new URLSearchParams();
+    params.set('kpi_export_csv', $('#kpi-export-group').val() || 'all');
+    params.set('token', token);
+    return `?${params.toString()}`;
+  }
+
+  function loadKpiDashboard() {
+    $('#kpi-results').html('<div class="kpi-loading">Chargement des KPI...</div>');
+
+    fetch(`?${buildKpiQuery()}`)
+      .then(r => r.json())
+      .then(data => {
+        const selectedClient = $('#kpi-client').val();
+        const clients = data.clients || [];
+        $('#kpi-client').html(`
+          <option value="">Tous les clients</option>
+          ${clients.map(client => `<option value="${escapeHtml(client)}" ${client === selectedClient ? 'selected' : ''}>${escapeHtml(client)}</option>`).join('')}
+        `);
+
+        const metricCards = (data.metrics || []).map(renderKpiChart).join('');
+        $('#kpi-results').html(`
+          <div class="kpi-summary">
+            <strong>${data.total || 0}</strong>
+            <span>lignes utilisées pour ces KPI</span>
+          </div>
+          <div class="kpi-grid">
+            ${metricCards}
+          </div>
+          <div class="kpi-analytics-grid">
+            ${renderResponseDelaySection(data.response_delay)}
+            ${renderActionCorrectiveSection(data.action_corrective)}
+          </div>
+          ${renderKpiExportSection()}
+        `);
+        loadKpiExportGroups();
+        $('#kpi-export-btn').on('click', function() {
+          window.location.href = buildKpiExportUrl();
+        });
+      })
+      .catch(error => {
+        console.error('Erreur KPI:', error);
+        $('#kpi-results').html('<div class="kpi-error">Impossible de charger les KPI.</div>');
+      });
+  }
+
+  function showKpiDashboard() {
+    $('.workspace-item').removeClass('active').css({
+      'background-color': '',
+      'color': '',
+      'font-weight': ''
+    });
+    $('.workspace-kpi-entry').addClass('active');
+
+    const currentYear = new Date().getFullYear();
+    const years = [];
+    for (let year = currentYear + 1; year >= currentYear - 6; year--) {
+      years.push(year);
+    }
+
+    $('#main-content').html(`
+      <div class="kpi-page">
+        <div class="kpi-header">
+          <h2>KPI recrutement</h2>
+        </div>
+        <div class="kpi-filters">
+          <label>
+            <span>Année</span>
+            <select id="kpi-year">
+              <option value="">Période personnalisée</option>
+              ${years.map(year => `<option value="${year}">${year}</option>`).join('')}
+            </select>
+          </label>
+          <label>
+            <span>Date de début</span>
+            <input type="date" id="kpi-start-date">
+          </label>
+          <label>
+            <span>Date de fin</span>
+            <input type="date" id="kpi-end-date">
+          </label>
+          <label>
+            <span>Client</span>
+            <select id="kpi-client">
+              <option value="">Tous les clients</option>
+            </select>
+          </label>
+          <button id="kpi-apply-filter">Appliquer</button>
+          <button id="kpi-reset-filter" type="button">Réinitialiser</button>
+        </div>
+        <div id="kpi-results"></div>
+      </div>
+    `);
+
+    $('#kpi-year').on('change', function() {
+      const disabled = Boolean($(this).val());
+      $('#kpi-start-date, #kpi-end-date').prop('disabled', disabled);
+      loadKpiDashboard();
+    });
+    $('#kpi-client').on('change', loadKpiDashboard);
+    $('#kpi-apply-filter').on('click', loadKpiDashboard);
+    $('#kpi-reset-filter').on('click', function() {
+      $('#kpi-year, #kpi-start-date, #kpi-end-date, #kpi-client').val('');
+      $('#kpi-start-date, #kpi-end-date').prop('disabled', false);
+      loadKpiDashboard();
+    });
+
+    loadKpiDashboard();
+  }
+
+  $(document).on('click', '.workspace-kpi-entry', function() {
+    showKpiDashboard();
+  });
 
   $(document).on('click','.workspace-item', function(){
     const wsId    = this.dataset.id;
     const wsLabel = this.textContent;
+    $('.workspace-kpi-entry').removeClass('active');
     
     $('.workspace-item').removeClass('active').css({
       'background-color': '',
@@ -1276,7 +1823,6 @@ $(function(){
         console.log('Suppression de l\'espace:', wsId);
         
         fetch('',{method:'POST',body:fd})
-        fetch('',{method:'POST',body:fd})
           .then(response => {
             console.log('Réponse du serveur pour suppression:', response.status);
             return response.text();
@@ -1299,7 +1845,10 @@ $(function(){
         if(!n) return;
         const fd=new FormData(); fd.append('add_group_workspace_id',wsId);
         fd.append('group_label',n); fd.append('token',token);
-        fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wsId));
+      fetch('',{method:'POST',body:fd}).then(()=>{
+        loadGroups(wsId);
+        loadKpiExportGroups();
+      });
       }, '', 'Ajouter un groupe');
     });
 
@@ -1315,19 +1864,23 @@ $(function(){
       fetch(`get_groups.php?wid=${wid}`)
         .then(r=>r.json()).then(groups=>{
           $('#group-list').empty();
+          const $groupList = $('#group-list');
+          groups.forEach(function(g) {
+            $groupList.append('<div class="group-slot" data-id="' + g.id + '" style="min-height:160px;"></div>');
+          });
           groups.forEach(g=>{
             fetch(`?columns_group_id=${g.id}`)
               .then(r=>r.json())
               .then(cols=>{
                 let ths = `
                   <th style="border:1px solid #ddd;padding:4px;position:relative;">
-                    <span class="task-column-label" data-gid="${g.id}" style="cursor:pointer;" title="Cliquer pour modifier">${g.task_column_label || 'Tâche'}</span>
+                    <span class="task-column-label" data-gid="${g.id}" style="cursor:pointer;" title="Cliquer pour modifier"></span>
                   </th>
                 `;
                 cols.forEach(c=>{
                   ths += `<th style="border:1px solid #ddd;padding:4px;position:relative;cursor:move;" title="Glisser pour réorganiser">
-                            <span class="column-label" data-cid="${c.id}" style="cursor:pointer;">${c.label}<span class="column-sort-indicator" data-cid="${c.id}"></span></span>
-                            <button class="column-menu-btn" data-cid="${c.id}">⋮</button>
+                            <span class="column-label" data-cid="${c.id}" style="cursor:pointer;"></span><span class="column-sort-indicator" data-cid="${c.id}"></span>
+                            <button class="column-menu-btn" data-cid="${c.id}" type="button" aria-label="Menu de colonne">⋮</button>
                             <div class="column-menu" style="display:none;position:absolute;right:0;top:22px;z-index:10;">
                               <button class="sort-asc-btn" data-cid="${c.id}" data-type="${c.type}">Trier croissant ↑</button>
                               <button class="sort-desc-btn" data-cid="${c.id}" data-type="${c.type}">Trier décroissant ↓</button>
@@ -1346,24 +1899,22 @@ $(function(){
                     <div class="group-header" style="display:flex;justify-content:space-between;padding:8px;background:#f3f3f3;">
                       <div style="display:flex;align-items:center;gap:8px;">
                         <span class="group-toggle">▼</span>
-                        <span class="group-label">${g.label}</span>
+                        <span class="group-label"></span>
                       </div>
                       <div>
                         <button class="rename-group">✎</button>
-                        <button class="duplicate-group">⧉</button>
                         <button class="delete-group">✖</button>
                       </div>
                     </div>
                     <div class="group-body" style="padding:10px;">
-                      <table style="width:100%;border-collapse:collapse;margin-bottom:8px;">
-                        <thead>
-                          <tr style="background:#fafafa;">
-                            ${ths}
-                          </tr>
-                        </thead>
-                        <tbody></tbody>
-                      </table>
-                      <button class="add-row-btn" style="padding:4px 8px;">+ Ajouter ${g.task_column_label || 'tâche'}</button>
+                      <div class="group-body-toolbar">
+                        <button class="add-row-btn" type="button"></button>
+                        <button class="duplicate-table-btn" data-gid="${g.id}" type="button">
+                          <span class="duplicate-table-icon">▦</span>
+                          Dupliquer ce tableau
+                        </button>
+                      </div>
+                      <div class="group-tables-container"></div>
                     </div>
                   </div>
                 `);
@@ -1373,7 +1924,15 @@ $(function(){
                   $grp.find('.group-toggle').text('►');
                 }
 
-                $('#group-list').append($grp);
+                $grp.find('.group-label').text(decodeHtmlEntities(g.label));
+                $grp.find('.add-row-btn').text(`+ Ajouter ${decodeHtmlEntities(g.task_column_label || 'tâche')}`);
+
+                const $slot = $groupList.find('.group-slot[data-id="' + g.id + '"]');
+                if ($slot.length) {
+                  $slot.replaceWith($grp);
+                } else {
+                  $groupList.append($grp);
+                }
 
                 // Pré-charger les options des colonnes select/tags en parallèle
                 const optionFetches = cols
@@ -1390,16 +1949,14 @@ $(function(){
                 fetch(`?tasks_group_id_with_cells=${g.id}`)
                   .then(r=>r.json())
                   .then(tasks=>{
-                    // Trier les tâches de manière hiérarchique (parent suivi de ses enfants)
                     const sortedTasks = sortTasksHierarchically(tasks);
-                    
                     const taskPromises = sortedTasks.map(t=>{
                       return new Promise((resolve) => {
                         const indentPx = (t.level_depth || 0) * 20;
                         const indentStyle = `padding-left: ${4 + indentPx}px;`;
                         
                         // Vérifier si cette tâche a des enfants
-                        const hasChildren = sortedTasks.some(task => task.parent_task_id === t.id);
+                        const hasChildren = tasks.some(task => task.parent_task_id === t.id);
                         const isCollapsed = taskCollapseState.has(t.id);
                         const collapseBtn = hasChildren 
                           ? `<button class="collapse-toggle" data-task-id="${t.id}" onclick="window.toggleCollapse(${t.id})" style="width:16px;background:none;border:none;cursor:pointer;padding:0;font-size:12px;">${isCollapsed ? '▶' : '▼'}</button>`
@@ -1411,12 +1968,12 @@ $(function(){
                         const checkboxHtml = t.level_depth > 0 ? `<input type="checkbox" class="task-completion-checkbox" data-task-id="${t.id}" ${isCompleted} style="cursor:pointer;width:16px;height:16px;" onchange="window.toggleTaskCompletion(${t.id}, this.checked)">` : '';
                         
                         let tds = `
-                          <td style="border:1px solid #ddd;${indentStyle}" class="task-cell" data-level="${t.level_depth || 0}">
+                          <td style="border:1px solid #ddd;${indentStyle}" class="task-cell task-name-cell" data-level="${t.level_depth || 0}">
                             <div style="display: flex; align-items: center; gap: 5px;">
                               ${collapseBtn}
                               <span style="color: #999; font-family: monospace;">${subtaskIndicator}</span>
                               ${checkboxHtml}
-                              <span class="task-label" style="${completedStyle}">${t.label}</span>
+                              <span class="task-label" style="${completedStyle}">${escapeHtml(decodeHtmlEntities(t.label))}</span>
                               <button class="add-subtask-btn" data-task-id="${t.id}" style="opacity: 0; transition: opacity 0.2s; background: none; border: none; cursor: pointer; color: #007cba; font-size: 12px;" title="Ajouter une sous-tâche">+</button>
                             </div>
                           </td>
@@ -1425,9 +1982,10 @@ $(function(){
                         // Les cellules sont déjà incluses dans la réponse du nouvel endpoint
                         const cells = t.cells || {};
                         let cellPromises = [];
+                        const rowCellValues = {};
                         cols.forEach(c=>{
                           const cellValue = cells[c.id] || '';
-                          
+                          rowCellValues[c.id] = String(cellValue || '');
                           if(c.type === 'select') {
                               const promise = (dataCache.columnOptions[c.id]
                                 ? Promise.resolve(dataCache.columnOptions[c.id])
@@ -1445,23 +2003,31 @@ $(function(){
                                   options.forEach(opt=>{
                                     const selected = cellValue == opt.id ? 'selected' : '';
                                     const optionColor = opt.color || '#87CEEB';
-                                    selectHtml += `<option value="${opt.id}" ${selected} style="background:${optionColor};">${opt.label}</option>`;
+                                    selectHtml += `<option value="${opt.id}" ${selected} style="background:${optionColor};">${escapeHtml(decodeHtmlEntities(opt.label))}</option>`;
                                   });
-                                  selectHtml += '</select>';
+                                  selectHtml += '</select>'; 
                                   return selectHtml;
                                 });
                               cellPromises.push(promise);
                             } else if(c.type === 'number') {
-                              const inputHtml = `<input type="text" class="cell-input cell-number" 
-                                data-task="${t.id}" 
-                                data-column="${c.id}" 
-                                value="${cellValue}" 
-                                style="border:none;background:transparent;width:100%;padding:2px;text-align:right;"
-                                pattern="[0-9€$.,\\s-]*"
-                                onblur="saveCellValue(this)"
-                                onkeydown="if(event.key==='Enter') saveCellValue(this)"
-                                oninput="validateNumberInput(this)">`;
-                              cellPromises.push(Promise.resolve(inputHtml));
+                                const value = String(cellValue || '')
+                                  .replace(/&/g, '&amp;')
+                                  .replace(/</g, '&lt;')
+                                  .replace(/>/g, '&gt;');
+
+                                const inputHtml = `
+                                  <div class="cell-expandable" data-expanded="0">
+                                    <textarea class="cell-input cell-number cell-number-textarea"
+                                      data-task="${t.id}"
+                                      data-column="${c.id}"
+                                      rows="1"
+                                      inputmode="numeric"
+                                      oninput="handleExpandableTextareaInput(this, true)"
+                                      onkeydown="if(event.key==='Enter'){event.preventDefault();saveCellValue(this)}"
+                                      onblur="saveCellValue(this)">${value}</textarea>
+                                    <span class="cell-expandable-toggle" onclick="toggleCellPreview(this, event)" style="display:none;"></span>
+                                  </div>`;
+                                cellPromises.push(Promise.resolve(inputHtml));
                             } else if(c.type === 'tags') {
                               const promise = (dataCache.columnOptions[c.id]
                                 ? Promise.resolve(dataCache.columnOptions[c.id])
@@ -1484,7 +2050,7 @@ $(function(){
                                     if(tag) {
                                       tagsHtml += `
                                         <span class="tag-item" data-tag-id="${tag.id}" style="background:${tag.color || '#87CEEB'};color:white;padding:2px 6px;border-radius:12px;font-size:11px;display:flex;align-items:center;gap:4px;">
-                                          ${tag.label}
+                                          ${escapeHtml(decodeHtmlEntities(tag.label))}
                                           <span class="remove-tag" onclick="removeTag(event, this)" style="cursor:pointer;font-weight:bold;">×</span>
                                         </span>
                                       `;
@@ -1554,7 +2120,7 @@ $(function(){
                                                      <option value="">-- Non assigné --</option>`;
                                   users.forEach(user=>{
                                     const selected = cellValue == user.id ? 'selected' : '';
-                                    selectHtml += `<option value="${user.id}" ${selected}>${user.name}</option>`;
+                                    selectHtml += `<option value="${user.id}" ${selected}>${escapeHtml(user.name)}</option>`;
                                   });
                                   selectHtml += '</select>';
                                   
@@ -1564,8 +2130,8 @@ $(function(){
                                       const initials = selectedUser.name.split(' ').map(n => n[0]).join('').substr(0, 2).toUpperCase();
                                       return `
                                         <div class="user-cell" data-task="${t.id}" data-column="${c.id}" style="cursor:pointer;" onclick="openUserSelector(this)">
-                                          <div class="user-avatar" title="${selectedUser.name}">${initials}</div>
-                                          <span>${selectedUser.name}</span>
+                                          <div class="user-avatar" title="${escapeHtml(selectedUser.name)}">${escapeHtml(initials)}</div>
+                                          <span>${escapeHtml(selectedUser.name)}</span>
                                           ${selectHtml.replace('style="', 'style="display:none;')}
                                         </div>
                                       `;
@@ -1584,16 +2150,25 @@ $(function(){
                                                         onblur="saveCellValue(this)"
                                                         onchange="saveCellValue(this)">`;
                               cellPromises.push(Promise.resolve(inputHtml));
-                            } else {
-                              const inputHtml = `<input type="text" class="cell-input" 
-                                                        data-task="${t.id}" 
-                                                        data-column="${c.id}" 
-                                                        value="${cellValue}" 
-                                                        style="border:none;background:transparent;width:100%;padding:2px;"
-                                                        onblur="saveCellValue(this)"
-                                                        onkeydown="if(event.key==='Enter') saveCellValue(this)">`;
+                            }else {
+                              const value = String(cellValue || '')
+                                .replace(/&/g, '&amp;')
+                                .replace(/</g, '&lt;')
+                                .replace(/>/g, '&gt;');
+
+                              const inputHtml = `
+                                <div class="cell-expandable" data-expanded="0">
+                                  <textarea class="cell-input cell-textarea"
+                                    data-task="${t.id}"
+                                    data-column="${c.id}"
+                                    rows="1"
+                                    oninput="handleExpandableTextareaInput(this, false)"
+                                    onblur="saveCellValue(this)">${value}</textarea>
+                                  <span class="cell-expandable-toggle" onclick="toggleCellPreview(this, event)" style="display:none;"></span>
+                                </div>`;
                               cellPromises.push(Promise.resolve(inputHtml));
                             }
+
                           });
                         
                         Promise.all(cellPromises).then(cellsHtml=>{
@@ -1602,13 +2177,13 @@ $(function(){
                           });
                           tds += `<td style="border:1px solid #ddd;padding:4px;"></td>`;
                           const $taskRow = $(`<tr class="task-row" data-id="${t.id}" data-parent-id="${t.parent_task_id || ''}" style="cursor:pointer;">${tds}</tr>`);
-                          
+                          $taskRow.data('cellValues', rowCellValues);
                           $taskRow.find('td:nth-child(1)').click(function(e) {
                             if ($(e.target).is('button')) return;
                             
                             const taskName = $(this).text();
                             const groupName = $grp.find('.group-label').text();
-                            const taskColumnLabel = $grp.find('.task-column-label').text();
+                            const taskColumnLabel = $grp.find('.task-column-label').first().text();
                             openTaskDetail(t.id, taskName, groupName, taskColumnLabel);
                           });
                           
@@ -1616,29 +2191,38 @@ $(function(){
                         });
                       });
                     });
-                    
                     Promise.all(taskPromises).then((taskRows) => {
-                      taskRows.forEach($row => {
-                        $grp.find('tbody').append($row);
+                      renderGroupTables($grp, g, cols, ths, taskRows);
+
+                      $grp.find('.task-column-label').text(decodeHtmlEntities(g.task_column_label || 'Tâche'));
+                      $grp.find('.column-label').each(function(index) {
+                        const col = cols[index];
+                        if (col) {
+                          $(this).text(decodeHtmlEntities(col.label));
+                        }
                       });
-                      
-                      $grp.find('select.cell-select').each(function(){
+
+                      $grp.find('textarea.cell-textarea, textarea.cell-number-textarea').each(function() {
+                        updateExpandableTextarea(this);
+                      });
+
+                      $grp.find('select.cell-select').each(function() {
                         applySelectColor($(this));
                       });
-                      
+
                       initTaskSortable();
                       initColumnSortable();
-                      updateCollapsedRows(); // Appliquer l'état collapse après le rendu
+                      updateCollapsedRows();
                     });
                   });
               });
           });
 
           initGroupSortable();
-
           attachEventHandlers(wid);
-          
           setTimeout(function() {
+            
+             
             if ($('#workspace-search').length && $('#workspace-search').val().trim()) {
               const searchTerm = $('#workspace-search').val();
               $('#workspace-search').trigger('input');
@@ -1649,6 +2233,14 @@ $(function(){
   }
 
   function attachEventHandlers(wid) {
+    $('#group-list').off('change','.group-split-select').on('change','.group-split-select',function(){
+      const gid = $(this).data('gid');
+      const columnId = String($(this).val() || '__base__');
+
+      groupSplitState.set(gid, columnId);
+      loadGroups(wid);
+    })
+
     $('#group-list').off('click','.add-column-btn').on('click','.add-column-btn',function(e){
       e.stopPropagation();
       const gid = $(this).data('gid');
@@ -1749,6 +2341,7 @@ $(function(){
         fetch('',{method:'POST',body:fd}).then(()=>{
           typeModal.remove();
           loadGroups(wid);
+          loadKpiExportGroups();
         });
       });
       
@@ -1764,11 +2357,16 @@ $(function(){
       }, '', 'Ajouter une colonne');
     });
 
-    $('.group-toggle').off('click').on('click',function(e){
+    $('#group-list').off('click','.group-toggle').on('click','.group-toggle',function(e){
       e.stopPropagation();
       const $g    = $(this).closest('.group');
       const $body = $g.find('.group-body');
       $body.toggle();
+      if ($body.is(':visible')) {
+        $body.find('textarea.cell-textarea, textarea.cell-number-textarea').each(function() {
+          updateExpandableTextarea(this);
+        });
+      }
       $(this).text($body.is(':visible') ? '▼' : '►');
       const newState = $body.is(':visible') ? 0 : 1;
       const fd = new FormData();
@@ -1789,21 +2387,99 @@ $(function(){
           fd.append('rename_group_id',gid);
           fd.append('group_label',nw);
           fd.append('token',token);
-          fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
+          fetch('',{method:'POST',body:fd}).then(()=>{
+            loadGroups(wid);
+            loadKpiExportGroups();
+          });
         }, old, 'Renommer le groupe');
       })
-      .off('click','.duplicate-group').on('click','.duplicate-group',function(){
-        const $g=$(this).closest('.group');
-        const gid=$g.data('id');
-        const old=$g.find('.group-label').text();
-        CustomPopup.prompt('Nom du nouveau groupe :', function(nw) {
-          if(!nw) return;
-          const fd=new FormData();
-          fd.append('duplicate_group_id',gid);
-          fd.append('new_group_label',nw);
-          fd.append('token',token);
-          fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
-        }, old+' (copie)', 'Dupliquer le groupe');
+      .off('click', '.duplicate-table-btn').on('click', '.duplicate-table-btn', function() {
+        const $group = $(this).closest('.group');
+        const gid = $group.data('id');
+        const groupLabel = $group.find('.group-label').text().trim();
+        const activeWorkspaceId = String($('.workspace-item.active').data('id') || '');
+        let selectedWorkspaceId = '';
+
+        const choices = $('.workspace-item').map(function() {
+          const workspaceId = String($(this).data('id'));
+          const workspaceName = decodeHtmlEntities($(this).text().trim()) + (workspaceId === activeWorkspaceId ? ' (espace actuel)' : '');
+          const $choice = $('<button>', {
+            class: 'duplicate-workspace-choice',
+            type: 'button'
+          }).attr('data-workspace-id', workspaceId).text(workspaceName);
+
+          return $('<div>').append($choice).html();
+        }).get().join('');
+
+        CustomPopup.show({
+          popupClass: 'duplicate-table-popup',
+          title: `<strong>Dupliquer le tableau : ${escapeHtml(decodeHtmlEntities(groupLabel))}</strong>`,
+          message: `
+            <strong class="duplicate-popup-help">Sélectionnez l'espace de travail destination</strong>
+            <div class="duplicate-workspace-list">
+              ${choices || '<span class="duplicate-workspace-empty">Aucun autre espace disponible</span>'}
+            </div>
+            <div style="margin-top:15px;">
+              <label style="display:block;margin-bottom:5px;font-weight:bold;">Nom du tableau</label>
+              <input type="text" id="duplicate-group-name" value="${escapeHtml(decodeHtmlEntities(groupLabel))} (copie)"
+                    style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:14px;">
+            </div>
+          `,
+          buttons: [
+            {
+              text: 'Annuler',
+              class: 'custom-popup-btn-secondary'
+            },
+            {
+              text: 'Dupliquer',
+              class: 'custom-popup-btn-primary',
+              callback: function() {
+                if (!selectedWorkspaceId) {
+                  $('.duplicate-workspace-list').addClass('needs-selection');
+                  return false;
+                }
+
+                const fd = new FormData();
+                const newGroupName = $('#duplicate-group-name').val().trim() || groupLabel;
+                fd.append('duplicate_group_id', gid);
+                fd.append('target_workspace_id', selectedWorkspaceId);
+                fd.append('new_group_label', newGroupName);
+                fd.append('token', token);
+
+                fetch('', { method: 'POST', body: fd })
+                  .then(r => {
+                    if (!r.ok) throw new Error('Erreur duplication');
+                    return r.text();
+                  })
+                  .then(() => {
+                    CustomPopup.hide();
+                    showPlanityMessage('La duplication du tableau a réussi.', 'ok');
+                    loadGroups(wid);
+                  })
+                  .catch(() => {
+                    CustomPopup.hide();
+                    showPlanityMessage('Impossible de dupliquer ce tableau.', 'error');
+                  });
+
+                return false;
+              }
+            }
+          ]
+        });
+
+        $('.duplicate-table-popup .custom-popup-btn-primary').prop('disabled', true);
+
+        $('.custom-popup-overlay')
+          .off('click', '.duplicate-workspace-choice')
+          .on('click', '.duplicate-workspace-choice', function() {
+            selectedWorkspaceId = String($(this).data('workspace-id') || '');
+
+            $('.duplicate-workspace-choice').removeClass('is-selected');
+            $(this).addClass('is-selected');
+
+            $('.duplicate-workspace-list').removeClass('needs-selection');
+            $('.duplicate-table-popup .custom-popup-btn-primary').prop('disabled', false);
+          });
       })
       .off('click','.delete-group').on('click','.delete-group',function(){
         const $g=$(this).closest('.group');
@@ -1813,19 +2489,32 @@ $(function(){
           const fd=new FormData();
           fd.append('delete_group_id',gid);
           fd.append('token',token);
-          fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
+          fetch('',{method:'POST',body:fd}).then(()=>{
+            loadGroups(wid);
+            loadKpiExportGroups();
+          });
         });
       })
       .off('click','.add-row-btn').on('click','.add-row-btn',function(){
-        const gid=$(this).closest('.group').data('id');
-        const taskColumnLabel = $(this).closest('.group').find('.task-column-label').text().toLowerCase();
+        const $button = $(this);
+        const gid = $button.closest('.group').data('id');
+        const splitColumnId = $button.data('split-column-id');
+        const splitOptionId = String($button.attr('data-split-option-id') || '');
+        const taskColumnLabel = $(this).closest('.group').find('.task-column-label').first().text().toLowerCase();
         CustomPopup.prompt(`Nom de ${taskColumnLabel} :`, function(lbl) {
           if(!lbl) return;
           const fd=new FormData();
           fd.append('add_task_group_id',gid);
           fd.append('task_label',lbl);
           fd.append('token',token);
-          fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
+          if (splitColumnId && splitOptionId) {
+            fd.append('split_column_id', splitColumnId);
+            fd.append('split_option_id', splitOptionId);
+          }
+          fetch('',{method:'POST',body:fd}).then(()=>{
+            loadGroups(wid);
+            loadKpiExportGroups();
+          });
         }, '', `Ajouter une ${taskColumnLabel}`);
       })
       .off('click','.add-subtask-btn').on('click','.add-subtask-btn',function(e){
@@ -1841,8 +2530,9 @@ $(function(){
           fd.append('task_label', lbl);
           fd.append('parent_task_id', parentTaskId);
           fd.append('token', token);
-          fetch('', {method:'POST', body:fd}).then(() => {
+        fetch('', {method:'POST', body:fd}).then(() => {
             loadGroups(wid);
+            loadKpiExportGroups();
           });
         }, '', 'Ajouter une sous-tâche');
       })
@@ -1866,7 +2556,13 @@ $(function(){
           });
         }, currentLabel, 'Modifier le nom de la colonne');
       })
-      .off('click','.rename-column-btn').on('click','.rename-column-btn',function(e){
+      .off('click','.column-menu').on('click','.column-menu',function(e){
+        e.stopPropagation();
+      });
+
+    $(document)
+      .off('click', '.rename-column-btn')
+      .on('click', '.rename-column-btn', function(e){
         e.stopPropagation();
         const cid = $(this).data('cid');
         const old = $(this).closest('.column-menu').siblings('.column-label').text();
@@ -1876,10 +2572,14 @@ $(function(){
           fd.append('rename_column_id', cid);
           fd.append('rename_column_label', nw);
           fd.append('token', token);
-          fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
+          fetch('',{method:'POST',body:fd}).then(()=>{
+            loadGroups(wid);
+            loadKpiExportGroups();
+          });
         }, old, 'Renommer la colonne');
       })
-      .off('click','.delete-column-btn').on('click','.delete-column-btn',function(e){
+      .off('click', '.delete-column-btn')
+      .on('click', '.delete-column-btn', function(e){
         e.stopPropagation();
         const cid = $(this).data('cid');
         CustomPopup.confirm('Supprimer cette colonne ?', function(result) {
@@ -1887,42 +2587,51 @@ $(function(){
           const fd = new FormData();
           fd.append('delete_column_id', cid);
           fd.append('token', token);
-          fetch('',{method:'POST',body:fd}).then(()=>loadGroups(wid));
+          fetch('',{method:'POST',body:fd}).then(()=>{
+            loadGroups(wid);
+            loadKpiExportGroups();
+          });
         });
       })
-      .off('click','.manage-options-btn').on('click','.manage-options-btn',function(e){
+      .off('click', '.manage-options-btn')
+      .on('click', '.manage-options-btn', function(e){
         e.stopPropagation();
         const cid = $(this).data('cid');
         
         manageColumnOptions(cid, token, () => loadGroups(wid));
       })
-      .off('click','.sort-asc-btn').on('click','.sort-asc-btn',function(e){
+      .off('click', '.sort-asc-btn')
+      .on('click', '.sort-asc-btn', function(e){
         e.stopPropagation();
         const cid = $(this).data('cid');
         const type = $(this).data('type');
         const $group = $(this).closest('.group');
-        sortColumn($group, cid, type, 'asc');
-        
-        $group.find('.column-sort-indicator').text('').removeClass('asc desc');
-        $group.find(`[data-cid="${cid}"].column-sort-indicator`).text('↑').addClass('asc');
-        
+        const $table = $(this).closest('table');
+        sortColumn($group, $table, cid, type, 'asc');
+
+        $table.find('.column-sort-indicator').text('').removeClass('asc desc');
+        $table.find(`[data-cid="${cid}"].column-sort-indicator`).text('↑').addClass('asc');
+
         $('.column-menu').removeClass('show');
         setTimeout(() => $('.column-menu').hide(), 200);
       })
-      .off('click','.sort-desc-btn').on('click','.sort-desc-btn',function(e){
+      .off('click', '.sort-desc-btn')
+      .on('click', '.sort-desc-btn', function(e){
         e.stopPropagation();
         const cid = $(this).data('cid');
         const type = $(this).data('type');
         const $group = $(this).closest('.group');
-        sortColumn($group, cid, type, 'desc');
-        
-        $group.find('.column-sort-indicator').text('').removeClass('asc desc');
-        $group.find(`[data-cid="${cid}"].column-sort-indicator`).text('↓').addClass('desc');
-        
+        const $table = $(this).closest('table');
+        sortColumn($group, $table, cid, type, 'desc');
+
+        $table.find('.column-sort-indicator').text('').removeClass('asc desc');
+        $table.find(`[data-cid="${cid}"].column-sort-indicator`).text('↓').addClass('desc');
+
         $('.column-menu').removeClass('show');
         setTimeout(() => $('.column-menu').hide(), 200);
       })
-      .off('click','.column-menu-btn').on('click','.column-menu-btn',function(e){
+      .off('click', '.column-menu-btn')
+      .on('click', '.column-menu-btn', function(e){
         e.stopPropagation();
         $('.column-menu').removeClass('show');
         setTimeout(() => {
@@ -1930,9 +2639,6 @@ $(function(){
           menu.show();
           setTimeout(() => menu.addClass('show'), 10);
         }, 200);
-      })
-      .off('click','.column-menu').on('click','.column-menu',function(e){
-        e.stopPropagation();
       });
       
     $(document).on('click', function(e) {
@@ -1943,11 +2649,11 @@ $(function(){
     });
   }
 
-  function sortColumn($group, columnId, columnType, direction) {
-    const $tbody = $group.find('tbody');
+  function sortColumn($group, $table, columnId, columnType, direction) {
+    const $tbody = $table.find('tbody').first();
     const $rows = $tbody.find('tr').toArray();
-    
-    const $headers = $group.find('th');
+
+    const $headers = $table.find('th');
     let columnIndex = -1;
     
     $headers.each(function(index) {
@@ -1969,16 +2675,16 @@ $(function(){
       
       switch(columnType) {
         case 'text':
-          valueA = $cellA.find('input').val() || $cellA.text() || '';
-          valueB = $cellB.find('input').val() || $cellB.text() || '';
+          valueA = $cellA.find('input,  textarea').val() || $cellA.text() || '';
+          valueB = $cellB.find('input,  textarea').val() || $cellB.text() || '';
           valueA = valueA.toLowerCase();
           valueB = valueB.toLowerCase();
           break;
           
         case 'number':
-          valueA = parseFloat($cellA.find('input').val() || '0') || 0;
-          valueB = parseFloat($cellB.find('input').val() || '0') || 0;
-          break;
+            valueA = parseFloat(($cellA.find('input, textarea').val() || '0').replace(/\s+/g, '').replace(',', '.')) || 0;
+            valueB = parseFloat(($cellB.find('input, textarea').val() || '0').replace(/\s+/g, '').replace(',', '.')) || 0;
+            break;
           
         case 'date':
         case 'deadline':
@@ -2041,7 +2747,7 @@ $(function(){
         
         const taskName = $(this).text();
         const groupName = $group.find('.group-label').text();
-        const taskColumnLabel = $group.find('.task-column-label').text();
+        const taskColumnLabel = $group.find('.task-column-label').first().text();
         openTaskDetail(taskId, taskName, groupName, taskColumnLabel);
       });
       
@@ -2066,7 +2772,7 @@ $(function(){
                   ${options.map(opt => `
                     <div class="option-item" data-option-id="${opt.id}" style="display:flex;align-items:center;gap:12px;margin-bottom:12px;padding:12px;border:1px solid #e9ecef;border-radius:8px;background:#fff;transition:all 0.2s ease;">
                       <div class="color-preview" style="width:24px;height:24px;border-radius:6px;background:${opt.color || '#87CEEB'};border:2px solid #e9ecef;cursor:pointer;transition:all 0.2s ease;" title="Cliquer pour changer la couleur"></div>
-                      <span class="option-label-display" style="flex:1;padding:8px;font-weight:500;color:#333;">${opt.label}</span>
+                      <span class="option-label-display" style="flex:1;padding:8px;font-weight:500;color:#333;">${escapeHtml(decodeHtmlEntities(opt.label))}</span>
                       <button class="edit-option-btn modal-btn modal-btn-edit" data-option-id="${opt.id}" style="padding:6px 10px;background:#0073ea;color:white;border:none;cursor:pointer;border-radius:4px;font-size:12px;transition:all 0.2s ease;">✎</button>
                       <button class="delete-option-btn modal-btn modal-btn-danger" data-option-id="${opt.id}" style="padding:6px 10px;background:#e2445c;color:white;border:none;cursor:pointer;border-radius:4px;font-size:12px;transition:all 0.2s ease;">✖</button>
                     </div>
@@ -2268,7 +2974,7 @@ $(function(){
               const newOption = $(`
                 <div class="option-item" data-option-id="temp_${tempId}" style="display:flex;align-items:center;gap:10px;margin-bottom:10px;padding:10px;border:1px solid #ddd;border-radius:4px;">
                   <div class="color-preview" style="width:20px;height:20px;border-radius:4px;background:${selectedColor};border:1px solid #ccc;cursor:pointer;" title="Cliquer pour changer la couleur"></div>
-                  <span class="option-label-display" style="flex:1;padding:4px;">${label}</span>
+                  <span class="option-label-display" style="flex:1;padding:4px;">${escapeHtml(label)}</span>
                   <button class="edit-option-btn" data-option-id="temp_${tempId}" style="padding:4px 8px;background:#007cba;color:white;border:none;cursor:pointer;border-radius:3px;">✎</button>
                   <button class="delete-option-btn" data-option-id="temp_${tempId}" style="padding:4px 8px;background:#dc3545;color:white;border:none;cursor:pointer;border-radius:3px;">✖</button>
                 </div>
@@ -2327,8 +3033,103 @@ $(function(){
       }
     });
   }
+  
+  $('#workspace-list').sortable({
+    cursor:'pointer',
+    update(){
+      const order = $('#workspace-list .workspace-item').map((_,el)=>el.dataset.id).get();
+      fetch('',{method:'POST',body:new URLSearchParams({
+        reorder_workspaces: JSON.stringify(order),
+        token: token
+      })});
+    }
+  }).disableSelection();
+  function initGroupSortable(){
+    $('#group-list').sortable({
+      cursor:'pointer',
+      update(){
+        const order = $('#group-list .group').map((_,el)=>el.dataset.id).get();
+        fetch('',{method:'POST',body:new URLSearchParams({
+          reorder_groups: JSON.stringify(order),
+          token: token
+        })});
+      }
+    }).disableSelection();
+  }
+  
+  function initTaskSortable(){
+    $('.group-body tbody').sortable({
+      cursor:'pointer',
+      update(){
+        const order = $(this).children().map((_,tr)=>tr.dataset.id).get();
+        fetch('',{method:'POST',body:new URLSearchParams({
+          reorder_tasks: JSON.stringify(order),
+          token: token
+        })});
+      }
+    }).disableSelection();
+  }
 
-  // Trier les tâches de manière hiérarchique (parent suivi de ses enfants)
+  function initColumnSortable(){
+    $('.group-body thead tr').each(function(){
+      const $tr = $(this);
+      const $group = $tr.closest('.group');
+      const groupId = $group.data('id');
+      
+      $tr.sortable({
+        items: 'th:not(:first-child):not(:last-child)',
+        cursor: 'move',
+        axis: 'x',
+        helper: 'clone',
+        placeholder: 'ui-sortable-placeholder',
+        tolerance: 'pointer',
+        distance: 10,
+        cancel: '.column-menu-btn, .column-menu',
+        start: function(event, ui) {
+          ui.placeholder.height(ui.item.height());
+          ui.placeholder.css({
+            'background': '#e3f2fd',
+            'border': '2px dashed #2196f3',
+            'opacity': '0.7'
+          });
+          
+          $('.column-menu').removeClass('show').hide();
+        },
+        update: function(event, ui) {
+          const columnOrder = [];
+          $tr.find('th:not(:first-child):not(:last-child)').each(function() {
+            const $span = $(this).find('.column-label');
+            if ($span.length > 0) {
+              const columnId = $span.data('cid');
+              if (columnId) {
+                columnOrder.push(parseInt(columnId));
+              }
+            }
+          });
+          
+          if (columnOrder.length > 0) {
+            fetch('', {
+              method: 'POST',
+              body: new URLSearchParams({
+                reorder_columns: JSON.stringify(columnOrder),
+                token: token
+              })
+            }).then(() => {
+              setTimeout(() => {
+                const workspaceId = $('.workspace-item.active').data('id');
+                if (workspaceId) {
+                  loadGroups(workspaceId);
+                }
+              }, 200);
+            }).catch(error => {
+              console.error('Erreur lors de la réorganisation des colonnes:', error);
+            });
+          }
+        }
+      }).disableSelection();
+    });
+  }
+
   function sortTasksHierarchically(tasks) {
     const result = [];
     const taskMap = new Map(tasks.map(t => [t.id, t]));
@@ -2343,14 +3144,12 @@ $(function(){
       processed.add(taskId);
       result.push(task);
       
-      // Ajouter tous les enfants de cette tâche
       tasks
         .filter(t => t.parent_task_id === taskId)
         .sort((a, b) => (a.position || 0) - (b.position || 0))
         .forEach(t => addTaskAndChildren(t.id));
     }
     
-    // Commencer par les tâches sans parent (triées par position)
     tasks
       .filter(t => !t.parent_task_id)
       .sort((a, b) => (a.position || 0) - (b.position || 0))
@@ -2515,11 +3314,6 @@ $(function(){
       }
     }
     
-    function escapeHtml(text) {
-      const div = document.createElement('div');
-      div.textContent = text;
-      return div.innerHTML;
-    }
     
     $searchInput.on('input', function() {
       clearTimeout(searchTimeout);
@@ -2600,10 +3394,12 @@ $(function(){
       config.buttons.forEach(button => {
         buttonsHtml += `<button class="custom-popup-btn ${button.class}" data-action="${button.text.toLowerCase()}">${button.text}</button>`;
       });
+
+      const popupClass = config.popupClass ? ` ${config.popupClass}` : '';
       
       const popupHtml = `
         <div class="custom-popup-overlay">
-          <div class="custom-popup">
+          <div class="custom-popup${popupClass}">
             <div class="custom-popup-header ${headerClass}">
               <h3 class="custom-popup-title">${config.title}</h3>
             </div>
