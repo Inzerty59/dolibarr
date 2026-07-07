@@ -2,6 +2,8 @@ $(function(){
   $('.side-nav .vmenu').prepend(window.leftmenu || '');
   const token = window.formtoken;
   const userId = window.userId;
+  const planityKanbanUrl = window.planityKanbanUrl || 'ajax/planity_kanban.php';
+  const planityKanbanIsAdmin = !!window.planityKanbanIsAdmin;
 
   function showPlanityMessage(message, type = 'ok') {
     $('#planity-event-message').remove();
@@ -1521,6 +1523,24 @@ $(function(){
     return `conic-gradient(${stops.join(', ')})`;
   }
 
+  $(document).on('click', '#planity-kanban-item', function(e){
+    e.preventDefault();
+    e.stopPropagation();
+
+    $('.workspace-item').removeClass('active').css({
+      'background-color': '',
+      'color': '',
+      'font-weight': ''
+    });
+    $(this).addClass('active').css({
+      'background-color': '#007cba',
+      'color': 'white',
+      'font-weight': 'bold'
+    });
+
+    loadPlanityKanban();
+  });
+
   function renderKpiChart(metric) {
     const series = metric.series || [];
     const legend = series.map(item => `
@@ -1755,6 +1775,7 @@ $(function(){
   });
 
   $(document).on('click','.workspace-item', function(){
+    if (this.id === 'planity-kanban-item') return;
     const wsId    = this.dataset.id;
     const wsLabel = this.textContent;
     $('.workspace-kpi-entry').removeClass('active');
@@ -1859,6 +1880,161 @@ $(function(){
 
     loadGroups(wsId);
   });
+
+  function escapeHtml(value) {
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  function renderPlanityCard(card) {
+    const contacts = Array.isArray(card.contacts) && card.contacts.length
+      ? card.contacts.join(', ')
+      : 'Aucun contact selectionne';
+    let dateText = card.date_start_label || '';
+    const endDate = card.date_end_label || '';
+    if (endDate && endDate !== dateText) dateText += ' - ' + endDate;
+    const status = card.status || 'pending';
+
+    return `
+      <div class="kanban-card planity-kanban-card" draggable="true" data-id="${card.id}" data-status="${escapeHtml(status)}">
+        <span class="kanban-task-label">Référence événement : ${escapeHtml(card.ref)}</span>
+        ${planityKanbanIsAdmin && card.recipient_name ? `<span class="kanban-task-user">Destinataire : ${escapeHtml(card.recipient_name)}</span>` : ''}
+        <span class="kanban-task-user">Tiers : ${escapeHtml(card.thirdparty_name || ('#' + card.socid))}</span>
+        <span class="kanban-task-progress">Événement : ${escapeHtml(card.label || card.ref)}</span>
+        ${dateText ? `<span class="kanban-task-progress">Date : ${escapeHtml(dateText)}</span>` : ''}
+        <span class="kanban-task-priority">Contacts concernés : ${escapeHtml(contacts)}</span>
+        <label class="planity-kanban-status-control">
+          <span>Statut</span>
+          <select class="planity-kanban-status-select">
+            <option value="pending" ${status === 'pending' ? 'selected' : ''}>En attente</option>
+            <option value="running" ${status === 'running' ? 'selected' : ''}>En cours</option>
+            <option value="archived" ${status === 'archived' ? 'selected' : ''}>Archives</option>
+          </select>
+        </label>
+      </div>
+    `;
+  }
+
+  function loadPlanityKanban() {
+    const statuses = {
+      pending: {label: 'En attente', color: '#C9D8EE'},
+      running: {label: 'En cours', color: '#A6BFE2'},
+      archived: {label: 'Archives', color: '#84A6D7'}
+    };
+
+    $('#main-content').html(`
+      <h2>Kanban planity</h2>
+      <div id="kanban-board" class="planity-kanban-board">
+        ${Object.keys(statuses).map(status => `
+          <div class="kanban-column" data-status="${status}" style="background:${statuses[status].color};">
+            <div class="kanban-column-title">${statuses[status].label}</div>
+            <div class="planity-kanban-dropzone"></div>
+          </div>
+        `).join('')}
+      </div>
+    `);
+
+    fetch(`${planityKanbanUrl}?action=list`, {credentials: 'same-origin'})
+      .then(r => r.json().then(json => {
+        if (!r.ok || json.success === false) throw new Error(json.error || 'Erreur serveur');
+        return json;
+      }))
+      .then(cardsByStatus => {
+        Object.keys(statuses).forEach(status => {
+          const cards = cardsByStatus[status] || [];
+          const $zone = $(`.kanban-column[data-status="${status}"] .planity-kanban-dropzone`);
+          if (!cards.length) {
+            $zone.html('<div class="kanban-card planity-kanban-empty" style="opacity:0.5;">Aucune etiquette</div>');
+            return;
+          }
+          $zone.html(cards.map(renderPlanityCard).join(''));
+        });
+        initPlanityKanbanDragDrop();
+        initPlanityKanbanStatusSelect();
+      })
+      .catch(error => {
+        $('#main-content').append(`<div class="error">${escapeHtml(error.message)}</div>`);
+      });
+  }
+
+  function initPlanityKanbanDragDrop() {
+    let draggedCard = null;
+
+    document.querySelectorAll('.planity-kanban-card').forEach(card => {
+      card.addEventListener('dragstart', () => {
+        draggedCard = card;
+        setTimeout(() => card.style.display = 'none', 0);
+      });
+      card.addEventListener('dragend', () => {
+        if (draggedCard) draggedCard.style.display = 'flex';
+        draggedCard = null;
+      });
+    });
+
+    document.querySelectorAll('#kanban-board .kanban-column').forEach(column => {
+      column.addEventListener('dragover', event => event.preventDefault());
+      column.addEventListener('drop', event => {
+        event.preventDefault();
+        if (!draggedCard) return;
+
+        const status = column.dataset.status;
+        if (!status || draggedCard.dataset.status === status) return;
+
+        savePlanityKanbanStatus(draggedCard, status)
+          .then(() => loadPlanityKanban())
+          .catch(error => {
+            console.error('Erreur déplacement Kanban planity:', error);
+            loadPlanityKanban();
+          });
+      });
+    });
+  }
+
+  function savePlanityKanbanStatus(card, status) {
+    const fd = new FormData();
+    fd.append('planity_kanban_card_id', card.dataset.id);
+    fd.append('planity_kanban_status', status);
+    fd.append('action', 'update_status');
+    fd.append('token', token);
+    return fetch(planityKanbanUrl, {method: 'POST', body: fd, credentials: 'same-origin'}).then(response => {
+      return response.json().then(json => {
+        if (!response.ok || json.success === false) throw new Error(json.error || 'Erreur serveur');
+        card.dataset.status = status;
+        const select = card.querySelector('.planity-kanban-status-select');
+        if (select && select.value !== status) select.value = status;
+        return json;
+      });
+    });
+  }
+
+  function initPlanityKanbanStatusSelect() {
+    document.querySelectorAll('.planity-kanban-status-select').forEach(select => {
+      select.addEventListener('mousedown', event => event.stopPropagation());
+      select.addEventListener('click', event => event.stopPropagation());
+      select.addEventListener('change', event => {
+        const card = event.target.closest('.planity-kanban-card');
+        const status = event.target.value;
+        if (!card || !status || card.dataset.status === status) return;
+
+        const previousStatus = card.dataset.status;
+        event.target.value = previousStatus;
+        event.target.disabled = true;
+        savePlanityKanbanStatus(card, status)
+          .then(() => loadPlanityKanban())
+          .catch(error => {
+            console.error('Erreur changement statut Kanban planity:', error);
+            event.target.value = previousStatus;
+          })
+          .finally(() => {
+            event.target.disabled = false;
+          });
+      });
+    });
+  }
 
   function loadGroups(wid){
       fetch(`get_groups.php?wid=${wid}`)

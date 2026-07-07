@@ -2,9 +2,7 @@
 require '../../main.inc.php';
 require_once DOL_DOCUMENT_ROOT.'/core/lib/admin.lib.php';
 require_once DOL_DOCUMENT_ROOT.'/core/lib/functions.lib.php';
-
-ini_set('display_errors', 1);
-error_reporting(E_ALL);
+require_once __DIR__.'/planity_kanban.php';
 
 $langs->load("mymodule@mymodule");
 
@@ -1651,6 +1649,7 @@ foreach ($workspaces as $w) {
 }
 $leftmenu .= '</ul>'
     . '<div class="workspace-kpi-entry" id="kpi-dashboard-link">Tableaux KPI</div>';
+$leftmenu .= planity_kanban_render_left_menu();
 
 ob_start();
 ?>
@@ -1729,6 +1728,8 @@ ob_start();
 window.leftmenu = <?php echo json_encode($leftmenu); ?>;
 window.formtoken = <?php echo json_encode($formtoken); ?>;
 window.userId = <?php echo $user->id; ?>;
+window.planityKanbanUrl = <?php echo json_encode(DOL_URL_ROOT.'/custom/monday/ajax/planity_kanban.php'); ?>;
+window.planityKanbanIsAdmin = <?php echo planity_kanban_user_is_admin($user) ? 'true' : 'false'; ?>;
 </script>
 <script src="<?php echo DOL_URL_ROOT ?>/custom/monday/js/main.js?v=<?php echo time(); ?>"></script>
 

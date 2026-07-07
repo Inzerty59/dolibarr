@@ -206,6 +206,83 @@
 .remove-tag:hover {
   opacity: 1;
 }
+
+#kanban-board.planity-kanban-board {
+  display: flex;
+  gap: 20px;
+  margin: 30px 0;
+}
+
+#kanban-board.planity-kanban-board .kanban-column {
+  border: 1px solid #9fb3cf;
+  border-radius: 6px;
+  width: 300px;
+  min-height: 300px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+}
+
+#kanban-board.planity-kanban-board .kanban-column-title {
+  font-weight: bold;
+  margin-bottom: 10px;
+}
+
+#kanban-board.planity-kanban-board .planity-kanban-dropzone {
+  min-height: 250px;
+}
+
+#kanban-board.planity-kanban-board .kanban-card {
+  background: #fff;
+  border: 1px solid #bbb;
+  border-radius: 4px;
+  padding: 8px;
+  margin-bottom: 10px;
+  box-shadow: 1px 1px 2px #eee;
+  cursor: grab;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+#kanban-board.planity-kanban-board .kanban-task-label {
+  font-weight: bold;
+}
+
+#kanban-board.planity-kanban-board .kanban-task-user {
+  font-size: 0.9em;
+  color: #555;
+}
+
+#kanban-board.planity-kanban-board .kanban-task-progress {
+  font-size: 0.9em;
+  color: #007bff;
+}
+
+#kanban-board.planity-kanban-board .kanban-task-priority {
+  font-size: 0.9em;
+  color: #e67e22;
+  font-weight: bold;
+}
+
+#kanban-board.planity-kanban-board .planity-kanban-status-control {
+  align-self: flex-end;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: #555;
+}
+
+#kanban-board.planity-kanban-board .planity-kanban-status-select {
+  max-width: 130px;
+  min-height: 28px;
+  border: 1px solid #b9c4d3;
+  border-radius: 4px;
+  background: #fff;
+  font-size: 12px;
+}
 .tag-option {
   transition: all 0.2s ease;
 }
@@ -1807,6 +1884,7 @@ form[method="POST"] input[name="new_workspace"]:focus {
   color: #453c32;
 }
 
+.planity-kanban-item,
 .workspace-kpi-entry {
   margin-top: 14px;
   padding: 10px;
@@ -1818,6 +1896,8 @@ form[method="POST"] input[name="new_workspace"]:focus {
   color: #172b4d;
 }
 
+.planity-kanban-item:hover,
+.planity-kanban-item.active,
 .workspace-kpi-entry:hover,
 .workspace-kpi-entry.active {
   background: #007cba;
