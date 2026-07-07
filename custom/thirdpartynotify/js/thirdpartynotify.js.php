@@ -75,16 +75,15 @@ $config = array(
 	}
 
 	function buildAdminPanel() {
-		if (!config.isAdmin || currentPath().indexOf('/societe/admin/societe.php') === -1) {
+		if (!config.isAdmin || currentPath().indexOf('/thirdpartynotify/admin/setup.php') === -1) {
 			return;
 		}
 		if (document.getElementById('thirdpartynotify-admin-panel')) {
 			return;
 		}
 
-		var actionInput = document.querySelector('input[name="action"][value="updateoptions"]');
-		var targetForm = actionInput ? actionInput.closest('form') : null;
-		if (!targetForm || !targetForm.parentNode) {
+		var mount = document.getElementById('thirdpartynotify-admin-panel-mount');
+		if (!mount) {
 			return;
 		}
 
@@ -115,7 +114,7 @@ $config = array(
 			'</div>'
 		].join('');
 
-		targetForm.parentNode.insertBefore(panel, targetForm.nextSibling);
+		mount.appendChild(panel);
 
 		var select = panel.querySelector('#thirdpartynotify-user-select');
 		var selectedContainer = panel.querySelector('#thirdpartynotify-selected-users');

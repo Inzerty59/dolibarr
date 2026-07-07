@@ -22,7 +22,7 @@ print '<div class="info">';
 print $langs->trans('ThirdpartynotifySetupHelp');
 print '</div>';
 print '<br>';
-print '<a class="button" href="'.DOL_URL_ROOT.'/societe/admin/societe.php">'.$langs->trans('OpenThirdpartySetup').'</a>';
+print '<div id="thirdpartynotify-admin-panel-mount"></div>';
 
 llxFooter();
 $db->close();
