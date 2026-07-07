@@ -66,6 +66,7 @@ class ActionsTickets
 		?>
 		<script type="text/javascript">
 		(function() {
+			<?php if ($forced_project_id > 0) { ?>
 			function hideNotifyThirdpartyCheckbox() {
 				var checkbox = document.getElementById('notify_tiers_at_create');
 				if (!checkbox) {
@@ -82,7 +83,6 @@ class ActionsTickets
 			hideNotifyThirdpartyCheckbox();
 			window.addEventListener('load', hideNotifyThirdpartyCheckbox);
 
-			<?php if ($forced_project_id > 0) { ?>
 			console.log('Hook Tickets: Verrouillage du projet <?php echo $forced_project_id; ?>');
 			
 			function lockProjectField() {
