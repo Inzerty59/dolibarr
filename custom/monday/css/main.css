@@ -1790,7 +1790,7 @@ th[title="Glisser pour réorganiser"]:hover {
   word-break: break-all;
   box-sizing: border-box;
   line-height: 1.4;
-  /* text-align: left; */
+  text-align: right;
   border: none;
   background: transparent;
   padding: 2px;

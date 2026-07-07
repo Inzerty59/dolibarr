@@ -125,6 +125,7 @@ $(function(){
   }
 
   function renderGroupTables($grp, g, cols, headerCells, taskRows) {
+    const wsId = getActiveWorkspaceId();
     const $toolbarHost = $grp.find('.group-body-toolbar');
     const $tablesContainer = $grp.find('.group-tables-container');
     const splitableColumns = getSplitableColumns(cols);
@@ -163,8 +164,8 @@ $(function(){
 
     if (!splitOptions) {
       getColumnOptions(splitColumn.id).then(() => {
-        if (String(groupSplitState.get(g.id) || '__base__') === String(splitColumn.id)) {
-          loadGroups(getActiveWorkspaceId());
+        if (String(groupSplitState.get(g.id) || '__base__') === String(splitColumn.id) && wsId) {
+          loadGroups(wsId);
         }
       });
       const $table = $(buildGroupTableHtml(headerCells, 'group-base-table'));
@@ -315,6 +316,7 @@ $(function(){
     const $group = $input.closest('.group');
     const groupId = $group.data('id');
     const activeSplitId = String(groupSplitState.get(groupId) || '');
+    const wsId = getActiveWorkspaceId();
 
     const fd = new FormData();
     fd.append('save_cell_task', taskId);
@@ -334,7 +336,6 @@ $(function(){
         if (!activeSplitId) return;
         if (activeSplitId !== columnId) return;
 
-        const wsId = getActiveWorkspaceId();
         if (wsId) {
           loadGroups(wsId);
         }
@@ -1450,7 +1451,7 @@ $(function(){
   }
   
   function initTaskSortable(){
-    $('.group-body .group-base-table tbody').sortable({
+    $('.group-body .group-base-table tbody, .group-body .split-view-table tbody').sortable({
       cursor:'pointer',
       update(){
         const order = $(this).children().map((_,tr)=>tr.dataset.id).get();
@@ -2114,6 +2115,11 @@ $(function(){
       const $g    = $(this).closest('.group');
       const $body = $g.find('.group-body');
       $body.toggle();
+      if ($body.is(':visible')) {
+        $body.find('textarea.cell-textarea, textarea.cell-number-textarea').each(function() {
+          updateExpandableTextarea(this);
+        });
+      }
       $(this).text($body.is(':visible') ? '▼' : '►');
       const newState = $body.is(':visible') ? 0 : 1;
       const fd = new FormData();
