@@ -1,35 +1,36 @@
 <?php
+/*
+ * T6 - Hook class alias.
+ *
+ * Dolibarr loads hook classes by module naming convention. This lightweight
+ * class exposes ActionsTickets under the expected custom module hook class
+ * while keeping the real implementation in actions_tickets.class.php.
+ */
 
-class ActionsTickets
+require_once __DIR__.'/actions_tickets.class.php';
+
+class TicketsHooks extends ActionsTickets
 {
-	public $error = '';
-	public $errors = array();
-	public $resprints = '';
-	public $results = array();
-
-	public function __construct($db)
-	{
-		$this->db = $db;
-	}
-
 	public function addMoreActionsButtons($parameters, &$object, &$action, $hookmanager)
 	{
 		global $conf, $db, $user;
-		
+
 		// Injecter le JS pour verrouiller le projet
 		$this->injectProjectLockJS();
-		
+
 		return 0;
 	}
 
 	public function formObjectOptions($parameters, &$object, &$action, $hookmanager)
 	{
 		global $conf, $db, $user;
-		
+
+		$result = parent::formObjectOptions($parameters, $object, $action, $hookmanager);
+
 		// Injecter le JS pour verrouiller le projet
 		$this->injectProjectLockJS();
-		
-		return 0;
+
+		return $result;
 	}
 
 	private function injectProjectLockJS()
@@ -47,20 +48,18 @@ class ActionsTickets
 		
 		$forced_project_id = isset($_SESSION['ticket_forced_project']) ? intval($_SESSION['ticket_forced_project']) : 0;
 		
-		if ($forced_project_id <= 0) {
-			return;
-		}
-		
 		// Récupérer les infos du projet
 		$forced_project_ref = '';
 		$forced_project_title = '';
 		
-		$sql = "SELECT ref, title FROM ".MAIN_DB_PREFIX."projet WHERE rowid = ".$forced_project_id;
-		$resql = $db->query($sql);
-		if ($resql && $db->num_rows($resql) > 0) {
-			$obj = $db->fetch_object($resql);
-			$forced_project_ref = addslashes($obj->ref);
-			$forced_project_title = addslashes($obj->title);
+		if ($forced_project_id > 0) {
+			$sql = "SELECT ref, title FROM ".MAIN_DB_PREFIX."projet WHERE rowid = ".$forced_project_id;
+			$resql = $db->query($sql);
+			if ($resql && $db->num_rows($resql) > 0) {
+				$obj = $db->fetch_object($resql);
+				$forced_project_ref = addslashes($obj->ref);
+				$forced_project_title = addslashes($obj->title);
+			}
 		}
 		
 		$already_injected = true;
@@ -68,6 +67,23 @@ class ActionsTickets
 		?>
 		<script type="text/javascript">
 		(function() {
+			<?php if ($forced_project_id > 0) { ?>
+			function hideNotifyThirdpartyCheckbox() {
+				var checkbox = document.getElementById('notify_tiers_at_create');
+				if (!checkbox) {
+					return;
+				}
+
+				var row = checkbox.closest('tr');
+				if (row) {
+					row.style.display = 'none';
+				}
+				checkbox.checked = false;
+			}
+
+			hideNotifyThirdpartyCheckbox();
+			window.addEventListener('load', hideNotifyThirdpartyCheckbox);
+
 			console.log('Hook Tickets: Verrouillage du projet <?php echo $forced_project_id; ?>');
 			
 			function lockProjectField() {
@@ -133,6 +149,7 @@ class ActionsTickets
 			window.addEventListener('load', function() {
 				setTimeout(lockProjectField, 500);
 			});
+			<?php } ?>
 		})();
 		</script>
 		<?php
