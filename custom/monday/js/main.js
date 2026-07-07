@@ -2,6 +2,7 @@ $(function(){
   $('.side-nav .vmenu').prepend(window.leftmenu || '');
   const token = window.formtoken;
   const userId = window.userId;
+  const mondayConfig = window.mondayConfig || {};
   
   // State pour gérer les tâches collapsées
   const taskCollapseState = new Set();
@@ -24,7 +25,11 @@ $(function(){
 
   function isClientNeedWorkspaceLabel(label) {
     const normalizedWorkspace = normalizeKpiLabel(label);
-    return normalizedWorkspace === 'besoinclientlille' || normalizedWorkspace === 'besoinclientparis';
+    const configuredLabels = Array.isArray(mondayConfig.clientNeedWorkspaceLabels)
+      ? mondayConfig.clientNeedWorkspaceLabels
+      : [];
+
+    return configuredLabels.includes(normalizedWorkspace);
   }
 
   // Pré-charger les utilisateurs une seule fois au démarrage
@@ -72,7 +77,7 @@ $(function(){
         }
       })
       .then(data => {
-        const newItem = `<li class="workspace-item" data-id="${data.id}">${data.label}</li>`;
+        const newItem = `<li class="workspace-item" data-id="${Number(data.id)}">${escapeHtml(data.label)}</li>`;
         $('#workspace-list').append(newItem);
         
         newWorkspaceInput.val('');
@@ -82,7 +87,7 @@ $(function(){
       .catch(error => {
         console.error('Erreur lors de l\'ajout de l\'espace:', error);
         const newId = Date.now();
-        const newItem = `<li class="workspace-item" data-id="${newId}">${workspaceName}</li>`;
+        const newItem = `<li class="workspace-item" data-id="${newId}">${escapeHtml(workspaceName)}</li>`;
         $('#workspace-list').append(newItem);
         newWorkspaceInput.val('');
         
@@ -1629,6 +1634,7 @@ $(function(){
   $(document).on('click','.workspace-item', function(){
     const wsId    = this.dataset.id;
     const wsLabel = this.textContent;
+    const escapedWsLabel = escapeHtml(wsLabel);
     closeTaskDetail({ immediate: true });
     currentWorkspaceLabel = wsLabel;
     $('.workspace-kpi-entry').removeClass('active');
@@ -1646,7 +1652,7 @@ $(function(){
     
     $('#main-content').html(`
       <div style="display:flex;align-items:center;gap:10px;">
-        <h2 style="margin:0;cursor:pointer;">${wsLabel}</h2>
+        <h2 style="margin:0;cursor:pointer;">${escapedWsLabel}</h2>
         <button id="rename-btn" style="padding:2px 6px;">✎</button>
         <button id="delete-btn" style="padding:2px 6px;">✖</button>
       </div>
@@ -1741,36 +1747,42 @@ $(function(){
           groups.forEach(g=>{
             fetch(`?columns_group_id=${g.id}`)
               .then(r=>r.json())
-              .then(cols=>{
-                let ths = `
-                  <th style="border:1px solid #ddd;padding:4px;position:relative;">
-                    <span class="task-column-label" data-gid="${g.id}" style="cursor:pointer;" title="Cliquer pour modifier">${g.task_column_label || 'Tâche'}</span>
-                  </th>
-                `;
-                cols.forEach(c=>{
-                  ths += `<th style="border:1px solid #ddd;padding:4px;position:relative;cursor:move;" title="Glisser pour réorganiser">
-                            <span class="column-label" data-cid="${c.id}" style="cursor:pointer;">${c.label}<span class="column-sort-indicator" data-cid="${c.id}"></span></span>
-                            <button class="column-menu-btn" data-cid="${c.id}">⋮</button>
-                            <div class="column-menu" style="display:none;position:absolute;right:0;top:22px;z-index:10;">
-                              <button class="sort-asc-btn" data-cid="${c.id}" data-type="${c.type}">Trier croissant ↑</button>
-                              <button class="sort-desc-btn" data-cid="${c.id}" data-type="${c.type}">Trier décroissant ↓</button>
-                              <button class="rename-column-btn" data-cid="${c.id}">Renommer</button>
-                              <button class="delete-column-btn" data-cid="${c.id}">Supprimer</button>
-                              ${(c.type === 'select' || c.type === 'tags') ? `<button class="manage-options-btn" data-cid="${c.id}">Gérer options</button>` : ''}
-                            </div>
-                         </th>`;
-                });
-                ths += `<th style="border:1px solid #ddd;padding:4px;">
-                          <button class="add-column-btn" data-gid="${g.id}" style="padding:2px 6px;">+</button>
-                        </th>`;
+	              .then(cols=>{
+                const taskColumnLabel = g.task_column_label || 'Tâche';
+                const escapedTaskColumnLabel = escapeHtml(taskColumnLabel);
+                const escapedGroupLabel = escapeHtml(g.label);
+	                let ths = `
+	                  <th style="border:1px solid #ddd;padding:4px;position:relative;">
+	                    <span class="task-column-label" data-gid="${Number(g.id)}" style="cursor:pointer;" title="Cliquer pour modifier">${escapedTaskColumnLabel}</span>
+	                  </th>
+	                `;
+	                cols.forEach(c=>{
+                  const columnId = Number(c.id);
+                  const escapedColumnLabel = escapeHtml(c.label);
+                  const escapedColumnType = escapeHtml(c.type);
+	                  ths += `<th style="border:1px solid #ddd;padding:4px;position:relative;cursor:move;" title="Glisser pour réorganiser">
+	                            <span class="column-label" data-cid="${columnId}" style="cursor:pointer;">${escapedColumnLabel}<span class="column-sort-indicator" data-cid="${columnId}"></span></span>
+	                            <button class="column-menu-btn" data-cid="${columnId}">⋮</button>
+	                            <div class="column-menu" style="display:none;position:absolute;right:0;top:22px;z-index:10;">
+	                              <button class="sort-asc-btn" data-cid="${columnId}" data-type="${escapedColumnType}">Trier croissant ↑</button>
+	                              <button class="sort-desc-btn" data-cid="${columnId}" data-type="${escapedColumnType}">Trier décroissant ↓</button>
+	                              <button class="rename-column-btn" data-cid="${columnId}">Renommer</button>
+	                              <button class="delete-column-btn" data-cid="${columnId}">Supprimer</button>
+	                              ${(c.type === 'select' || c.type === 'tags') ? `<button class="manage-options-btn" data-cid="${columnId}">Gérer options</button>` : ''}
+	                            </div>
+	                         </th>`;
+	                });
+	                ths += `<th style="border:1px solid #ddd;padding:4px;">
+	                          <button class="add-column-btn" data-gid="${Number(g.id)}" style="padding:2px 6px;">+</button>
+	                        </th>`;
 
-                const $grp = $(`
-                  <div class="group" data-id="${g.id}">
-                    <div class="group-header" style="display:flex;justify-content:space-between;padding:8px;background:#f3f3f3;">
-                      <div style="display:flex;align-items:center;gap:8px;">
-                        <span class="group-toggle">▼</span>
-                        <span class="group-label">${g.label}</span>
-                      </div>
+	                const $grp = $(`
+	                  <div class="group" data-id="${Number(g.id)}">
+	                    <div class="group-header" style="display:flex;justify-content:space-between;padding:8px;background:#f3f3f3;">
+	                      <div style="display:flex;align-items:center;gap:8px;">
+	                        <span class="group-toggle">▼</span>
+	                        <span class="group-label">${escapedGroupLabel}</span>
+	                      </div>
                       <div>
                         <button class="rename-group">✎</button>
                         <button class="duplicate-group">⧉</button>
@@ -1779,14 +1791,14 @@ $(function(){
                     </div>
                     <div class="group-body" style="padding:10px;">
                       <table class="tasks-table" style="width:100%;border-collapse:collapse;margin-bottom:8px;">
-                        <thead>
+	                        <thead>
                           <tr style="background:#fafafa;">
                             ${ths}
                           </tr>
                         </thead>
                         <tbody class="tasks-tbody"></tbody>
                       </table>
-                      <button class="add-row-btn" style="padding:4px 8px;">+ Ajouter ${g.task_column_label || 'tâche'}</button>
+	                      <button class="add-row-btn" style="padding:4px 8px;">+ Ajouter ${escapeHtml(g.task_column_label || 'tâche')}</button>
                     </div>
                   </div>
                 `);
@@ -1820,50 +1832,52 @@ $(function(){
 	                    const flattenNeedRows = isClientNeedWorkspaceLabel(currentWorkspaceLabel);
 	                    const sortedTasks = sortTasksHierarchically(tasks);
 	                    
-	                    const taskPromises = sortedTasks.map(t=>{
-	                      return new Promise((resolve) => {
-	                        const displayLevel = flattenNeedRows ? (Number(t.level_depth || 0) > 0 ? 1 : 0) : (t.level_depth || 0);
-	                        const indentPx = displayLevel * 20;
-	                        const indentStyle = `padding-left: ${4 + indentPx}px;`;
-	                        
-	                        // Vérifier si cette tâche a des enfants
-	                        const hasChildren = !flattenNeedRows && sortedTasks.some(task => Number(task.parent_task_id || 0) === Number(t.id || 0));
-	                        const isCollapsed = taskCollapseState.has(t.id);
-	                        const collapseBtn = hasChildren 
-	                          ? `<button class="collapse-toggle" data-task-id="${t.id}" onclick="window.toggleCollapse(${t.id})" style="width:16px;background:none;border:none;cursor:pointer;padding:0;font-size:12px;">${isCollapsed ? '▶' : '▼'}</button>`
-	                          : `<span style="width:16px;display:inline-block;"></span>`;
-	                        
-	                        const subtaskIndicator = !flattenNeedRows && t.level_depth > 0 ? '└─ ' : '';
-                        const isCompleted = t.is_completed ? 'checked' : '';
-                        const completedStyle = t.is_completed ? 'text-decoration: line-through; color: #999;' : '';
-                        const checkboxHtml = t.level_depth > 0 ? `<input type="checkbox" class="task-completion-checkbox" data-task-id="${t.id}" ${isCompleted} style="cursor:pointer;width:16px;height:16px;" onchange="window.toggleTaskCompletion(${t.id}, this.checked)">` : '';
-                        
-                        const needCandidates = needsCandidatesEnabled ? getClientNeedCandidateRows(t.id, candidatesByNeed) : null;
-                        const candidatesToggle = needCandidates ? renderClientNeedCandidatesToggle(t.id, needCandidates.length) : '';
-                        const candidatesPanel = needCandidates ? renderClientNeedCandidatesPanel(t.id, needCandidates) : '';
+		                    const taskPromises = sortedTasks.map(t=>{
+		                      return new Promise((resolve) => {
+                            const taskId = Number(t.id);
+                            const parentTaskId = Number(t.parent_task_id || 0);
+		                        const displayLevel = flattenNeedRows ? (Number(t.level_depth || 0) > 0 ? 1 : 0) : (t.level_depth || 0);
+		                        const indentPx = displayLevel * 20;
+		                        const indentStyle = `padding-left: ${4 + indentPx}px;`;
 
-                        let tds = `
-                          <td style="border:1px solid #ddd;${indentStyle}" class="task-cell" data-level="${t.level_depth || 0}">
-                            <div style="display: flex; align-items: center; gap: 5px;">
-                              ${collapseBtn}
-                              <span style="color: #999; font-family: monospace;">${subtaskIndicator}</span>
-                              ${checkboxHtml}
-                              <span class="task-label" style="${completedStyle}">${t.label}</span>
-                              ${candidatesToggle}
-                              <button class="add-subtask-btn" data-task-id="${t.id}" style="opacity: 0; transition: opacity 0.2s; background: none; border: none; cursor: pointer; color: #007cba; font-size: 12px;" title="Ajouter une sous-tâche">+</button>
-                            </div>
-                            ${candidatesPanel}
-                          </td>
-                        `;
-                        
-                        // Les cellules sont déjà incluses dans la réponse du nouvel endpoint
-                        const cells = t.cells || {};
-                        let cellPromises = [];
-                        cols.forEach(c=>{
-                          const cellValue = cells[c.id] || '';
-                          
-                          if(c.type === 'select') {
-                              const promise = (dataCache.columnOptions[c.id]
+		                        // Vérifier si cette tâche a des enfants
+		                        const hasChildren = !flattenNeedRows && sortedTasks.some(task => Number(task.parent_task_id || 0) === taskId);
+		                        const isCollapsed = taskCollapseState.has(t.id);
+		                        const collapseBtn = hasChildren
+		                          ? `<button class="collapse-toggle" data-task-id="${taskId}" onclick="window.toggleCollapse(${taskId})" style="width:16px;background:none;border:none;cursor:pointer;padding:0;font-size:12px;">${isCollapsed ? '▶' : '▼'}</button>`
+		                          : `<span style="width:16px;display:inline-block;"></span>`;
+
+		                        const subtaskIndicator = !flattenNeedRows && t.level_depth > 0 ? '└─ ' : '';
+	                        const isCompleted = t.is_completed ? 'checked' : '';
+	                        const completedStyle = t.is_completed ? 'text-decoration: line-through; color: #999;' : '';
+	                        const checkboxHtml = t.level_depth > 0 ? `<input type="checkbox" class="task-completion-checkbox" data-task-id="${taskId}" ${isCompleted} style="cursor:pointer;width:16px;height:16px;" onchange="window.toggleTaskCompletion(${taskId}, this.checked)">` : '';
+
+	                        const needCandidates = needsCandidatesEnabled ? getClientNeedCandidateRows(taskId, candidatesByNeed) : null;
+	                        const candidatesToggle = needCandidates ? renderClientNeedCandidatesToggle(taskId, needCandidates.length) : '';
+	                        const candidatesPanel = needCandidates ? renderClientNeedCandidatesPanel(taskId, needCandidates) : '';
+
+	                        let tds = `
+	                          <td style="border:1px solid #ddd;${indentStyle}" class="task-cell" data-level="${t.level_depth || 0}">
+	                            <div style="display: flex; align-items: center; gap: 5px;">
+	                              ${collapseBtn}
+	                              <span style="color: #999; font-family: monospace;">${subtaskIndicator}</span>
+	                              ${checkboxHtml}
+	                              <span class="task-label" style="${completedStyle}">${escapeHtml(t.label)}</span>
+	                              ${candidatesToggle}
+	                              <button class="add-subtask-btn" data-task-id="${taskId}" style="opacity: 0; transition: opacity 0.2s; background: none; border: none; cursor: pointer; color: #007cba; font-size: 12px;" title="Ajouter une sous-tâche">+</button>
+	                            </div>
+	                            ${candidatesPanel}
+	                          </td>
+	                        `;
+
+	                        // Les cellules sont déjà incluses dans la réponse du nouvel endpoint
+	                        const cells = t.cells || {};
+	                        let cellPromises = [];
+	                        cols.forEach(c=>{
+	                          const cellValue = cells[c.id] || '';
+
+	                          if(c.type === 'select') {
+	                              const promise = (dataCache.columnOptions[c.id]
                                 ? Promise.resolve(dataCache.columnOptions[c.id])
                                 : fetch(`?column_options=${c.id}`)
                                     .then(r=>r.json())
@@ -1871,26 +1885,26 @@ $(function(){
                                       dataCache.columnOptions[c.id] = options;
                                       return options;
                                     }))
-                                .then(options=>{
-                                  let selectHtml = `<select class="cell-select" data-task="${t.id}" data-column="${c.id}" 
-                                                           style="border:none;background:transparent;width:100%;padding:2px;"
-                                                           onchange="saveCellValue(this)">
-                                                     <option value="">-- Choisir --</option>`;
-                                  options.forEach(opt=>{
-                                    const selected = cellValue == opt.id ? 'selected' : '';
-                                    const optionColor = opt.color || '#87CEEB';
-                                    selectHtml += `<option value="${opt.id}" ${selected} style="background:${optionColor};">${opt.label}</option>`;
-                                  });
+	                                .then(options=>{
+	                                  let selectHtml = `<select class="cell-select" data-task="${taskId}" data-column="${Number(c.id)}"
+	                                                           style="border:none;background:transparent;width:100%;padding:2px;"
+	                                                           onchange="saveCellValue(this)">
+	                                                     <option value="">-- Choisir --</option>`;
+	                                  options.forEach(opt=>{
+	                                    const selected = cellValue == opt.id ? 'selected' : '';
+	                                    const optionColor = opt.color || '#87CEEB';
+	                                    selectHtml += `<option value="${Number(opt.id)}" ${selected} style="background:${escapeHtml(optionColor)};">${escapeHtml(opt.label)}</option>`;
+	                                  });
                                   selectHtml += '</select>';
                                   return selectHtml;
                                 });
                               cellPromises.push(promise);
                             } else if(c.type === 'number') {
-                              const inputHtml = `<input type="text" class="cell-input cell-number" 
-                                data-task="${t.id}" 
-                                data-column="${c.id}" 
-                                value="${cellValue}" 
-                                style="border:none;background:transparent;width:100%;padding:2px;text-align:right;"
+		                              const inputHtml = `<input type="text" class="cell-input cell-number"
+	                                data-task="${taskId}"
+	                                data-column="${Number(c.id)}"
+	                                value="${escapeHtml(cellValue)}"
+	                                style="border:none;background:transparent;width:100%;padding:2px;text-align:right;"
                                 onblur="saveCellValue(this)"
                                 onkeydown="if(event.key==='Enter') saveCellValue(this)"
                                 oninput="validateNumberInput(this)">`;
@@ -1904,22 +1918,27 @@ $(function(){
                                       dataCache.columnOptions[c.id] = options;
                                       return options;
                                     }))
-                                .then(options=>{
-                                  const selectedTags = cellValue ? JSON.parse(cellValue) : [];
-                                  
-                                  let tagsHtml = `
-                                    <div class="tags-cell" data-task="${t.id}" data-column="${c.id}" style="min-height:30px;padding:3px;border:1px dashed #ddd;cursor:pointer;" onclick="openTagsSelector(this)">
-                                      <div class="selected-tags" style="display:flex;flex-wrap:wrap;gap:3px;margin-bottom:5px;">
-                                  `;
-                                  
-                                  selectedTags.forEach(tagId => {
-                                    const tag = options.find(opt => opt.id == tagId);
-                                    if(tag) {
-                                      tagsHtml += `
-                                        <span class="tag-item" data-tag-id="${tag.id}" style="background:${tag.color || '#87CEEB'};color:white;padding:2px 6px;border-radius:12px;font-size:11px;display:flex;align-items:center;gap:4px;">
-                                          ${tag.label}
-                                          <span class="remove-tag" onclick="removeTag(event, this)" style="cursor:pointer;font-weight:bold;">×</span>
-                                        </span>
+	                                .then(options=>{
+	                                  let selectedTags = [];
+	                                  try {
+	                                    selectedTags = cellValue ? JSON.parse(cellValue) : [];
+	                                  } catch (e) {
+	                                    selectedTags = [];
+	                                  }
+
+	                                  let tagsHtml = `
+	                                    <div class="tags-cell" data-task="${taskId}" data-column="${Number(c.id)}" style="min-height:30px;padding:3px;border:1px dashed #ddd;cursor:pointer;" onclick="openTagsSelector(this)">
+	                                      <div class="selected-tags" style="display:flex;flex-wrap:wrap;gap:3px;margin-bottom:5px;">
+	                                  `;
+
+	                                  selectedTags.forEach(tagId => {
+	                                    const tag = options.find(opt => opt.id == tagId);
+	                                    if(tag) {
+	                                      tagsHtml += `
+	                                        <span class="tag-item" data-tag-id="${Number(tag.id)}" style="background:${escapeHtml(tag.color || '#87CEEB')};color:white;padding:2px 6px;border-radius:12px;font-size:11px;display:flex;align-items:center;gap:4px;">
+	                                          ${escapeHtml(tag.label)}
+	                                          <span class="remove-tag" onclick="removeTag(event, this)" style="cursor:pointer;font-weight:bold;">×</span>
+	                                        </span>
                                       `;
                                     }
                                   });
@@ -1958,19 +1977,19 @@ $(function(){
                               }
                               
                               const inputHtml = `
-                                <div class="deadline-cell" data-task="${t.id}" data-column="${c.id}">
-                                  <div style="display:flex;gap:5px;margin-bottom:3px;">
-                                    <input type="date" class="deadline-start" value="${startDate}" 
-                                           style="border:1px solid #ddd;padding:2px;font-size:10px;width:48%;"
-                                           placeholder="Début"
-                                           onchange="updateDeadline(this)">
-                                    <input type="date" class="deadline-end" value="${endDate}" 
-                                           style="border:1px solid #ddd;padding:2px;font-size:10px;width:48%;"
+	                                <div class="deadline-cell" data-task="${taskId}" data-column="${Number(c.id)}">
+	                                  <div style="display:flex;gap:5px;margin-bottom:3px;">
+	                                    <input type="date" class="deadline-start" value="${escapeHtml(startDate)}"
+	                                           style="border:1px solid #ddd;padding:2px;font-size:10px;width:48%;"
+	                                           placeholder="Début"
+	                                           onchange="updateDeadline(this)">
+	                                    <input type="date" class="deadline-end" value="${escapeHtml(endDate)}"
+	                                           style="border:1px solid #ddd;padding:2px;font-size:10px;width:48%;"
                                            placeholder="Fin"
                                            onchange="updateDeadline(this)">
                                   </div>
-                                  <div class="days-remaining ${daysClass}" style="font-size:11px;text-align:center;font-weight:bold;">${daysText}</div>
-                                </div>
+	                                  <div class="days-remaining ${daysClass}" style="font-size:11px;text-align:center;font-weight:bold;">${escapeHtml(daysText)}</div>
+	                                </div>
                               `;
                               cellPromises.push(Promise.resolve(inputHtml));
                             } else if(c.type === 'user') {
@@ -1981,47 +2000,47 @@ $(function(){
                                     return users;
                                   }))
                                 .then(users=>{
-                                  let selectHtml = `<select class="cell-select user-select" data-task="${t.id}" data-column="${c.id}" 
-                                                           style="border:none;background:transparent;width:100%;padding:2px;"
-                                                           onchange="saveCellValue(this)">
-                                                     <option value="">-- Non assigné --</option>`;
-                                  users.forEach(user=>{
-                                    const selected = cellValue == user.id ? 'selected' : '';
-                                    selectHtml += `<option value="${user.id}" ${selected}>${user.name}</option>`;
-                                  });
+	                                  let selectHtml = `<select class="cell-select user-select" data-task="${taskId}" data-column="${Number(c.id)}"
+	                                                           style="border:none;background:transparent;width:100%;padding:2px;"
+	                                                           onchange="saveCellValue(this)">
+	                                                     <option value="">-- Non assigné --</option>`;
+	                                  users.forEach(user=>{
+	                                    const selected = cellValue == user.id ? 'selected' : '';
+	                                    selectHtml += `<option value="${Number(user.id)}" ${selected}>${escapeHtml(user.name)}</option>`;
+	                                  });
                                   selectHtml += '</select>';
                                   
                                   if (cellValue) {
                                     const selectedUser = users.find(u => u.id == cellValue);
                                     if (selectedUser) {
-                                      const initials = selectedUser.name.split(' ').map(n => n[0]).join('').substr(0, 2).toUpperCase();
-                                      return `
-                                        <div class="user-cell" data-task="${t.id}" data-column="${c.id}" style="cursor:pointer;" onclick="openUserSelector(this)">
-                                          <div class="user-avatar" title="${selectedUser.name}">${initials}</div>
-                                          <span>${selectedUser.name}</span>
-                                          ${selectHtml.replace('style="', 'style="display:none;')}
-                                        </div>
+	                                      const initials = selectedUser.name.split(' ').map(n => n[0]).join('').substr(0, 2).toUpperCase();
+	                                      return `
+	                                        <div class="user-cell" data-task="${taskId}" data-column="${Number(c.id)}" style="cursor:pointer;" onclick="openUserSelector(this)">
+	                                          <div class="user-avatar" title="${escapeHtml(selectedUser.name)}">${escapeHtml(initials)}</div>
+	                                          <span>${escapeHtml(selectedUser.name)}</span>
+	                                          ${selectHtml.replace('style="', 'style="display:none;')}
+	                                        </div>
                                       `;
                                     }
                                   }
                                   
-                                  return `<div class="user-cell unassigned" data-task="${t.id}" data-column="${c.id}" style="cursor:pointer;" onclick="openUserSelector(this)">${selectHtml}</div>`;
-                                });
+	                                  return `<div class="user-cell unassigned" data-task="${taskId}" data-column="${Number(c.id)}" style="cursor:pointer;" onclick="openUserSelector(this)">${selectHtml}</div>`;
+	                                });
                               cellPromises.push(promise);
                             } else if(c.type === 'date') {
-                              const inputHtml = `<input type="date" class="cell-input cell-date" 
-                                                        data-task="${t.id}" 
-                                                        data-column="${c.id}" 
-                                                        value="${cellValue}" 
+		                              const inputHtml = `<input type="date" class="cell-input cell-date"
+	                                                        data-task="${taskId}"
+	                                                        data-column="${Number(c.id)}"
+	                                                        value="${escapeHtml(cellValue)}"
                                                         style="border:none;background:transparent;width:100%;padding:2px;cursor:pointer;"
                                                         onblur="saveCellValue(this)"
                                                         onchange="saveCellValue(this)">`;
                               cellPromises.push(Promise.resolve(inputHtml));
                             } else {
-                              const inputHtml = `<input type="text" class="cell-input" 
-                                                        data-task="${t.id}" 
-                                                        data-column="${c.id}" 
-                                                        value="${cellValue}" 
+		                              const inputHtml = `<input type="text" class="cell-input"
+	                                                        data-task="${taskId}"
+	                                                        data-column="${Number(c.id)}"
+	                                                        value="${escapeHtml(cellValue)}"
                                                         style="border:none;background:transparent;width:100%;padding:2px;"
                                                         onblur="saveCellValue(this)"
                                                         onkeydown="if(event.key==='Enter') saveCellValue(this)">`;
@@ -2034,7 +2053,7 @@ $(function(){
                             tds += `<td style="border:1px solid #ddd;padding:4px;">${cellHtml}</td>`;
                           });
                           tds += `<td style="border:1px solid #ddd;padding:4px;"></td>`;
-                          const $taskRow = $(`<tr class="task-row" data-id="${t.id}" data-parent-id="${t.parent_task_id || ''}" style="cursor:pointer;">${tds}</tr>`);
+	                          const $taskRow = $(`<tr class="task-row" data-id="${taskId}" data-parent-id="${parentTaskId || ''}" style="cursor:pointer;">${tds}</tr>`);
 
                           $taskRow.find('td:nth-child(1)').click(function(e) {
                             if ($(e.target).closest('button').length) return;
@@ -2892,7 +2911,7 @@ $(function(){
         const $groupLabel = $group.find('.group-label');
         const groupLabelText = $groupLabel.text().trim();
         if (normalizeText(groupLabelText).includes(normalizedSearchTerm)) {
-          const highlightedText = groupLabelText.replace(searchRegex, '<span class="search-highlight">$&</span>');
+          const highlightedText = highlightEscapedText(groupLabelText, searchRegex);
           $groupLabel.html(highlightedText);
           hasMatchInGroup = true;
           totalItems++;
@@ -2952,7 +2971,7 @@ $(function(){
                   $cell.find('select').length === 0 && 
                   $cell.find('.tag-item').length === 0 && 
                   $cell.find('.user-cell').length === 0) {
-                const highlightedText = cellText.replace(searchRegex, '<span class="search-highlight">$&</span>');
+                const highlightedText = highlightEscapedText(cellText, searchRegex);
                 $cell.html(highlightedText);
               } else if ($cell.find('select').length > 0) {
                 $cell.css('background-color', '#fff3cd');
@@ -2961,7 +2980,7 @@ $(function(){
                   const $tag = $(this);
                   const tagText = $tag.text().replace('×', '').trim();
                   if (normalizeText(tagText).includes(normalizedSearchTerm)) {
-                    const highlightedTagText = tagText.replace(searchRegex, '<span class="search-highlight">$&</span>');
+                    const highlightedTagText = highlightEscapedText(tagText, searchRegex);
                     $tag.html(highlightedTagText + '<span class="remove-tag" onclick="removeTag(event, this)" style="cursor:pointer;font-weight:bold;">×</span>');
                   }
                 });
@@ -2988,7 +3007,7 @@ $(function(){
           const $colLabel = $(this);
           const colText = $colLabel.text().trim();
           if (normalizeText(colText).includes(normalizedSearchTerm)) {
-            const highlightedText = colText.replace(searchRegex, '<span class="search-highlight">$&</span>');
+            const highlightedText = highlightEscapedText(colText, searchRegex);
             $colLabel.html(highlightedText);
             hasMatchInGroup = true;
             totalItems++;

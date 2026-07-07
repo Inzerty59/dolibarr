@@ -13,49 +13,15 @@ function monday_normalize_kpi_label($label)
     return $label;
 }
 
-function monday_tokenize_need_label($label)
-{
-    $label = dol_string_unaccent((string) $label);
-    $label = strtolower($label);
-    preg_match_all('/[a-z0-9]+/', $label, $matches);
-    return isset($matches[0]) ? $matches[0] : [];
-}
-
 function monday_need_label_matches($needLabel, $candidateNeedLabel)
 {
-    $needWords = monday_tokenize_need_label($needLabel);
-    $candidateWords = monday_tokenize_need_label($candidateNeedLabel);
-    if (empty($needWords) || empty($candidateWords)) {
+    $needLabel = monday_normalize_kpi_label($needLabel);
+    $candidateNeedLabel = monday_normalize_kpi_label($candidateNeedLabel);
+    if ($needLabel === '' || $candidateNeedLabel === '') {
         return false;
     }
 
-    $noiseWords = [
-        'insertion' => true,
-        'prio' => true,
-        'prioritaire' => true,
-        'confirme' => true,
-        'confirmee' => true,
-        'junior' => true,
-        'senior' => true,
-    ];
-
-    if (count($candidateWords) > count($needWords)) {
-        return false;
-    }
-
-    foreach ($candidateWords as $index => $word) {
-        if (!isset($needWords[$index]) || $needWords[$index] !== $word) {
-            return false;
-        }
-    }
-
-    for ($i = count($candidateWords); $i < count($needWords); $i++) {
-        if (!isset($noiseWords[$needWords[$i]])) {
-            return false;
-        }
-    }
-
-    return true;
+    return $needLabel === $candidateNeedLabel;
 }
 
 function monday_split_kpi_needs($value)
@@ -80,10 +46,25 @@ function monday_format_client_need_candidate_date($value)
     return (string) $value;
 }
 
+function monday_get_default_client_need_workspace_labels()
+{
+    return ['Besoin client Lille', 'Besoin client Paris'];
+}
+
+function monday_get_default_kpi_recruitment_workspace_labels()
+{
+    return ['KPI Recrutement'];
+}
+
+function monday_get_default_candidate_source_workspace_labels()
+{
+    return 'Besoin client Paris:Vivier candidat Paris,Besoin client Lille:Vivier candidats Lille';
+}
+
 function monday_is_client_need_workspace_label($label)
 {
     $normalized = monday_normalize_kpi_label($label);
-    return in_array($normalized, monday_get_configured_workspace_labels('MONDAY_CLIENT_NEED_WORKSPACE_LABELS', ['Besoin client Lille', 'Besoin client Paris']), true);
+    return in_array($normalized, monday_get_configured_workspace_labels('MONDAY_CLIENT_NEED_WORKSPACE_LABELS', monday_get_default_client_need_workspace_labels()), true);
 }
 
 function monday_get_global_string($name, $default = '')
@@ -456,7 +437,7 @@ function monday_get_kpi_recruitment_workspace_id($db)
         return $configuredId;
     }
 
-    return monday_find_workspace_id_by_labels($db, monday_get_configured_workspace_labels('MONDAY_KPI_RECRUITMENT_WORKSPACE_LABELS', ['KPI Recrutement']));
+    return monday_find_workspace_id_by_labels($db, monday_get_configured_workspace_labels('MONDAY_KPI_RECRUITMENT_WORKSPACE_LABELS', monday_get_default_kpi_recruitment_workspace_labels()));
 }
 
 function monday_get_candidate_source_workspace_id($db, $needWorkspaceId, $needWorkspaceLabel)
@@ -469,7 +450,7 @@ function monday_get_candidate_source_workspace_id($db, $needWorkspaceId, $needWo
     $needWorkspaceLabel = monday_normalize_kpi_label($needWorkspaceLabel);
     $configuredLabelMap = monday_parse_workspace_label_map(monday_get_global_string(
         'MONDAY_CANDIDATE_SOURCE_WORKSPACE_LABELS',
-        'Besoin client Paris:Vivier candidat Paris,Besoin client Lille:Vivier candidats Lille'
+        monday_get_default_candidate_source_workspace_labels()
     ));
 
     if (empty($configuredLabelMap[$needWorkspaceLabel])) {
@@ -2124,6 +2105,9 @@ while ($res && $o=$db->fetch_object($res)) $workspaces[] = $o;
 
 llxHeader("", "Planity - Mes espaces", "");
 $formtoken = newToken();
+$mondayJsConfig = [
+    'clientNeedWorkspaceLabels' => monday_get_configured_workspace_labels('MONDAY_CLIENT_NEED_WORKSPACE_LABELS', monday_get_default_client_need_workspace_labels()),
+];
 
 $leftmenu = '<h3>Espaces de travail</h3>'
     . '<form method="POST" style="margin:10px 0;">'
@@ -2217,6 +2201,7 @@ ob_start();
 window.leftmenu = <?php echo json_encode($leftmenu); ?>;
 window.formtoken = <?php echo json_encode($formtoken); ?>;
 window.userId = <?php echo $user->id; ?>;
+window.mondayConfig = <?php echo json_encode($mondayJsConfig); ?>;
 </script>
 <script src="<?php echo DOL_URL_ROOT ?>/custom/monday/js/main.js?v=<?php echo time(); ?>"></script>
 
