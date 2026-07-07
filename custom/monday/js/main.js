@@ -634,7 +634,7 @@ $(function(){
                 <span class="comment-author">${escapeHtml(comment.user_name || '')}</span>
                 <span class="comment-date">${formattedDate}</span>
               </div>
-              <div class="comment-text" style="${commentStyle}">${comment.comment}</div>
+              <div class="comment-text" style="${commentStyle}">${escapeHtml(comment.comment || '')}</div>
               <div class="comment-actions">
                 <button class="comment-action-btn edit-comment-btn" data-comment-id="${comment.id}">Modifier</button>
                 <button class="comment-action-btn delete-comment-btn" data-comment-id="${comment.id}">Supprimer</button>
@@ -2102,6 +2102,7 @@ $(function(){
                   .then(() => {
                     CustomPopup.hide();
                     showPlanityMessage('La duplication du tableau a réussi.', 'ok');
+                    loadGroups(wid);
                   })
                   .catch(() => {
                     CustomPopup.hide();
