@@ -236,6 +236,551 @@ function monday_delete_workspace_data($db, $workspaceId)
     $db->query("DELETE FROM llx_myworkspace WHERE rowid = $workspaceId");
 }
 
+function monday_normalize_transfer_label($label)
+{
+    $label = html_entity_decode((string) $label, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    $label = dol_string_unaccent($label);
+    $label = strtolower($label);
+    return preg_replace('/[^a-z0-9]+/', '', $label);
+}
+
+function monday_transfer_label_matches($actualLabel, $expectedLabel)
+{
+    $actual = monday_normalize_transfer_label($actualLabel);
+    $expected = monday_normalize_transfer_label($expectedLabel);
+    if ($actual === $expected) {
+        return true;
+    }
+
+    $words = preg_split('/\s+/', trim(dol_string_unaccent(html_entity_decode((string) $expectedLabel, ENT_QUOTES | ENT_HTML5, 'UTF-8'))));
+    foreach ($words as $word) {
+        $word = monday_normalize_transfer_label($word);
+        if ($word === '') {
+            continue;
+        }
+        $singular = strlen($word) > 3 ? preg_replace('/s$/', '', $word) : $word;
+        if (strpos($actual, $word) === false && strpos($actual, $singular) === false) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+function monday_get_t24_transfer_config()
+{
+    // A modifier ici uniquement si les noms metier changent.
+    $sourceParisWorkspace = 'Candidatures à traiter IT PARIS';
+    $sourceLilleWorkspace = 'Candidatures à traiter IT LILLE';
+    $sourceGroup = 'Profils à contacter';
+    $targetParisWorkspace = 'Vivier candidat Paris';
+    $targetLilleWorkspace = 'Vivier Candidats Lille';
+    $columnStatut = 'Statut';
+    $columnPosteRecherche = 'Poste recherché';
+    $columnEligibleIae = 'Eligible IAE';
+    $columnMail = 'Mail';
+    $columnInsertion = 'Date enregistrement dans le vivier';
+    $statusContacte = 'Contacté';
+    $targetStatusEnCours = 'En cours';
+
+    return [
+        'columns' => [
+            'status' => [
+                'labels' => [$columnStatut],
+                'required' => true,
+                'copy' => false,
+            ],
+            'poste_recherche' => [
+                'labels' => [$columnPosteRecherche],
+                'required' => false,
+                'copy' => true,
+            ],
+            'eligible_iae' => [
+                'labels' => [$columnEligibleIae],
+                'required' => false,
+                'copy' => true,
+            ],
+            'mail' => [
+                'labels' => [$columnMail],
+                'required' => false,
+                'copy' => true,
+            ],
+            'insertion' => [
+                'labels' => [$columnInsertion],
+                'required' => false,
+                'copy' => true,
+            ],
+        ],
+        'eligible_status_labels' => [$statusContacte],
+        'default_target_status' => $targetStatusEnCours,
+        'pairs' => [
+            [
+                'source_workspace' => $sourceParisWorkspace,
+                'source_group' => $sourceGroup,
+                'target_workspace' => $targetParisWorkspace,
+            ],
+            [
+                'source_workspace' => $sourceLilleWorkspace,
+                'source_group' => $sourceGroup,
+                'target_workspace' => $targetLilleWorkspace,
+            ],
+        ],
+    ];
+}
+
+function monday_get_t24_transfer_client_config()
+{
+    $config = monday_get_t24_transfer_config();
+    return [
+        'status_column_labels' => $config['columns']['status']['labels'],
+        'eligible_status_labels' => $config['eligible_status_labels'],
+    ];
+}
+
+function monday_transfer_column_key($label)
+{
+    $config = monday_get_t24_transfer_config();
+    foreach ($config['columns'] as $key => $columnConfig) {
+        foreach ($columnConfig['labels'] as $columnLabel) {
+            if (monday_transfer_label_matches($label, $columnLabel)) {
+                return $key;
+            }
+        }
+    }
+    return '';
+}
+
+function monday_find_transfer_group($db, $workspaceLabel, $groupLabel)
+{
+    $res = $db->query("SELECT g.rowid, g.label, g.fk_workspace, w.label as workspace_label
+                         FROM llx_myworkspace_group g
+                         JOIN llx_myworkspace w ON w.rowid = g.fk_workspace
+                     ORDER BY w.position ASC, g.position ASC, g.rowid ASC");
+    while ($res && $group = $db->fetch_object($res)) {
+        if (monday_transfer_label_matches($group->workspace_label, $workspaceLabel)
+            && monday_transfer_label_matches($group->label, $groupLabel)) {
+            return [
+                'id' => (int) $group->rowid,
+                'label' => (string) $group->label,
+                'workspace_id' => (int) $group->fk_workspace,
+                'workspace_label' => (string) $group->workspace_label,
+            ];
+        }
+    }
+
+    return null;
+}
+
+function monday_find_transfer_workspace($db, $workspaceLabel)
+{
+    $res = $db->query("SELECT rowid, label
+                         FROM llx_myworkspace
+                     ORDER BY position ASC, rowid ASC");
+    while ($res && $workspace = $db->fetch_object($res)) {
+        if (monday_transfer_label_matches($workspace->label, $workspaceLabel)) {
+            return [
+                'id' => (int) $workspace->rowid,
+                'label' => (string) $workspace->label,
+            ];
+        }
+    }
+
+    return null;
+}
+
+function monday_get_transfer_group($db, $groupId)
+{
+    $groupId = (int) $groupId;
+    $res = $db->query("SELECT g.rowid, g.label, g.fk_workspace, w.label as workspace_label
+                         FROM llx_myworkspace_group g
+                         JOIN llx_myworkspace w ON w.rowid = g.fk_workspace
+                        WHERE g.rowid = $groupId");
+    if ($res && $group = $db->fetch_object($res)) {
+        return [
+            'id' => (int) $group->rowid,
+            'label' => (string) $group->label,
+            'workspace_id' => (int) $group->fk_workspace,
+            'workspace_label' => (string) $group->workspace_label,
+        ];
+    }
+
+    return null;
+}
+
+function monday_find_t24_pair_for_task($db, $taskId)
+{
+    $taskId = (int) $taskId;
+    $taskRes = $db->query("SELECT rowid, label, fk_group, parent_task_id
+                             FROM llx_myworkspace_task
+                            WHERE rowid = $taskId");
+    $task = $taskRes ? $db->fetch_object($taskRes) : null;
+    if (!$task) {
+        return [null, null, null];
+    }
+
+    $config = monday_get_t24_transfer_config();
+    foreach ($config['pairs'] as $pair) {
+        $sourceGroup = monday_find_transfer_group($db, $pair['source_workspace'], $pair['source_group']);
+        if ($sourceGroup && (int) $sourceGroup['id'] === (int) $task->fk_group) {
+            return [$task, $pair, $sourceGroup];
+        }
+    }
+
+    return [$task, null, null];
+}
+
+function monday_get_t24_destination_groups($db, $taskId)
+{
+    $result = ['success' => false, 'groups' => [], 'errors' => [], 'message' => ''];
+    list($task, $pair, $sourceGroup) = monday_find_t24_pair_for_task($db, $taskId);
+    if (!$task) {
+        $result['errors'][] = 'Candidature introuvable.';
+        return $result;
+    }
+    if (!$pair || !$sourceGroup) {
+        $result['message'] = 'Cette ligne ne fait pas partie des tableaux source T24.';
+        $result['success'] = true;
+        return $result;
+    }
+
+    $targetWorkspace = monday_find_transfer_workspace($db, $pair['target_workspace']);
+    if (!$targetWorkspace) {
+        $result['errors'][] = 'Espace destination introuvable: '.$pair['target_workspace'];
+        return $result;
+    }
+
+    $workspaceId = (int) $targetWorkspace['id'];
+    $res = $db->query("SELECT rowid, label
+                         FROM llx_myworkspace_group
+                        WHERE fk_workspace = $workspaceId
+                     ORDER BY position ASC, rowid ASC");
+    while ($res && $group = $db->fetch_object($res)) {
+        $result['groups'][] = [
+            'id' => (int) $group->rowid,
+            'label' => (string) $group->label,
+        ];
+    }
+
+    $result['success'] = true;
+    $result['workspace'] = $targetWorkspace;
+    $result['candidate'] = [
+        'id' => (int) $task->rowid,
+        'label' => (string) $task->label,
+    ];
+    return $result;
+}
+
+function monday_get_transfer_columns($db, $groupId)
+{
+    $columns = [];
+    $groupId = (int) $groupId;
+    $res = $db->query("SELECT rowid, label, type
+                         FROM llx_myworkspace_column
+                        WHERE fk_group = $groupId
+                     ORDER BY position ASC, rowid ASC");
+    while ($res && $column = $db->fetch_object($res)) {
+        $key = monday_transfer_column_key($column->label);
+        if ($key !== '' && !isset($columns[$key])) {
+            $columns[$key] = [
+                'id' => (int) $column->rowid,
+                'label' => (string) $column->label,
+                'type' => (string) $column->type,
+            ];
+        }
+    }
+    return $columns;
+}
+
+function monday_get_transfer_options($db, $columnIds)
+{
+    if (empty($columnIds)) {
+        return [];
+    }
+
+    $columnIds = array_map('intval', $columnIds);
+    $options = [];
+    $res = $db->query("SELECT rowid, fk_column, label, color
+                         FROM llx_myworkspace_column_option
+                        WHERE fk_column IN (".implode(',', $columnIds).")
+                     ORDER BY position ASC, rowid ASC");
+    while ($res && $option = $db->fetch_object($res)) {
+        $columnId = (int) $option->fk_column;
+        if (!isset($options[$columnId])) {
+            $options[$columnId] = ['by_id' => [], 'by_label' => []];
+        }
+        $data = [
+            'id' => (int) $option->rowid,
+            'label' => (string) $option->label,
+            'color' => monday_sanitize_kpi_color($option->color),
+        ];
+        $options[$columnId]['by_id'][$data['id']] = $data;
+        $options[$columnId]['by_label'][monday_normalize_transfer_label($data['label'])] = $data;
+    }
+    return $options;
+}
+
+function monday_get_transfer_option_label($value, $column, $optionsByColumn)
+{
+    $columnId = (int) $column['id'];
+    $optionId = (int) $value;
+    return isset($optionsByColumn[$columnId]['by_id'][$optionId])
+        ? $optionsByColumn[$columnId]['by_id'][$optionId]['label']
+        : (string) $value;
+}
+
+function monday_get_or_create_transfer_option($db, $targetColumn, $label, $color, &$targetOptions)
+{
+    $label = trim((string) $label);
+    if ($label === '') {
+        return 0;
+    }
+
+    $columnId = (int) $targetColumn['id'];
+    $normalized = monday_normalize_transfer_label($label);
+    if (isset($targetOptions[$columnId]['by_label'][$normalized])) {
+        return (int) $targetOptions[$columnId]['by_label'][$normalized]['id'];
+    }
+
+    $safeLabel = $db->escape($label);
+    $safeColor = $db->escape(monday_sanitize_kpi_color($color));
+    $res = $db->query("SELECT MAX(position) as m FROM llx_myworkspace_column_option WHERE fk_column = $columnId");
+    $position = ($res && $row = $db->fetch_object($res)) ? ((int) $row->m + 1) : 0;
+    $db->query("INSERT INTO llx_myworkspace_column_option (fk_column, label, color, position)
+                VALUES ($columnId, '$safeLabel', '$safeColor', $position)");
+    $optionId = (int) $db->last_insert_id('llx_myworkspace_column_option');
+    if ($optionId <= 0) {
+        $optionId = (int) $db->last_insert_id();
+    }
+    if ($optionId <= 0) {
+        $resExisting = $db->query("SELECT rowid
+                                     FROM llx_myworkspace_column_option
+                                    WHERE fk_column = $columnId
+                                      AND label = '$safeLabel'");
+        if ($resExisting && $existing = $db->fetch_object($resExisting)) {
+            $optionId = (int) $existing->rowid;
+        }
+    }
+    if ($optionId <= 0) {
+        return 0;
+    }
+
+    if (!isset($targetOptions[$columnId])) {
+        $targetOptions[$columnId] = ['by_id' => [], 'by_label' => []];
+    }
+    $targetOptions[$columnId]['by_id'][$optionId] = [
+        'id' => $optionId,
+        'label' => $label,
+        'color' => monday_sanitize_kpi_color($color),
+    ];
+    $targetOptions[$columnId]['by_label'][$normalized] = $targetOptions[$columnId]['by_id'][$optionId];
+
+    return $optionId;
+}
+
+function monday_get_transfer_tag_ids($value)
+{
+    $value = trim((string) $value);
+    if ($value === '') {
+        return [];
+    }
+
+    $decoded = json_decode($value, true);
+    if (is_array($decoded)) {
+        return array_values(array_filter(array_map('intval', $decoded), function ($id) {
+            return $id > 0;
+        }));
+    }
+
+    if (preg_match_all('/\d+/', $value, $matches)) {
+        return array_values(array_filter(array_map('intval', $matches[0]), function ($id) {
+            return $id > 0;
+        }));
+    }
+
+    return [];
+}
+
+function monday_convert_transfer_value($db, $value, $sourceColumn, $targetColumn, $sourceOptions, &$targetOptions)
+{
+    $value = (string) $value;
+    if ($value === '') {
+        return '';
+    }
+
+    if ($targetColumn['type'] === 'select') {
+        $label = $sourceColumn['type'] === 'select'
+            ? monday_get_transfer_option_label($value, $sourceColumn, $sourceOptions)
+            : $value;
+        $color = '#cccccc';
+        if ($sourceColumn['type'] === 'select') {
+            $sourceColumnId = (int) $sourceColumn['id'];
+            $sourceOptionId = (int) $value;
+            if (isset($sourceOptions[$sourceColumnId]['by_id'][$sourceOptionId])) {
+                $color = $sourceOptions[$sourceColumnId]['by_id'][$sourceOptionId]['color'];
+            }
+        }
+        $targetOptionId = monday_get_or_create_transfer_option($db, $targetColumn, $label, $color, $targetOptions);
+        return $targetOptionId > 0 ? (string) $targetOptionId : '';
+    }
+
+    if ($targetColumn['type'] === 'tags') {
+        $labels = [];
+        if ($sourceColumn['type'] === 'tags') {
+            $tagIds = monday_get_transfer_tag_ids($value);
+            $sourceColumnId = (int) $sourceColumn['id'];
+            foreach ($tagIds as $tagId) {
+                if (isset($sourceOptions[$sourceColumnId]['by_id'][$tagId])) {
+                    $labels[] = $sourceOptions[$sourceColumnId]['by_id'][$tagId];
+                }
+            }
+        } else {
+            $labels[] = ['label' => $value, 'color' => '#cccccc'];
+        }
+
+        $targetIds = [];
+        foreach ($labels as $option) {
+            $targetOptionId = monday_get_or_create_transfer_option($db, $targetColumn, $option['label'], $option['color'], $targetOptions);
+            if ($targetOptionId > 0) {
+                $targetIds[] = $targetOptionId;
+            }
+        }
+        return empty($targetIds) ? '' : json_encode($targetIds);
+    }
+
+    if ($sourceColumn['type'] === 'select') {
+        return monday_get_transfer_option_label($value, $sourceColumn, $sourceOptions);
+    }
+
+    return $value;
+}
+
+function monday_transfer_candidate_to_target($db, $taskId, $targetGroupId)
+{
+    $taskId = (int) $taskId;
+    $targetGroupId = (int) $targetGroupId;
+    $result = ['success' => false, 'moved' => false, 'errors' => [], 'message' => ''];
+
+    list($task, $matchedPair, $sourceGroup) = monday_find_t24_pair_for_task($db, $taskId);
+    if (!$task) {
+        $result['errors'][] = 'Candidature introuvable.';
+        return $result;
+    }
+    if ((int) $task->parent_task_id > 0) {
+        $result['message'] = 'Sous-tache ignoree.';
+        $result['success'] = true;
+        return $result;
+    }
+
+    if (!$matchedPair) {
+        $result['message'] = 'La ligne ne fait pas partie des tableaux source T24.';
+        $result['success'] = true;
+        return $result;
+    }
+
+    $config = monday_get_t24_transfer_config();
+    $targetWorkspace = monday_find_transfer_workspace($db, $matchedPair['target_workspace']);
+    $targetGroup = monday_get_transfer_group($db, $targetGroupId);
+    if (!$targetWorkspace) {
+        $result['errors'][] = 'Espace destination introuvable: '.$matchedPair['target_workspace'];
+        return $result;
+    }
+    if (!$targetGroup) {
+        $result['errors'][] = 'Tableau destination introuvable.';
+        return $result;
+    }
+    if ((int) $targetGroup['workspace_id'] !== (int) $targetWorkspace['id']) {
+        $result['errors'][] = 'Tableau destination invalide pour cet espace vivier.';
+        return $result;
+    }
+
+    $sourceColumns = monday_get_transfer_columns($db, $sourceGroup['id']);
+    $targetColumns = monday_get_transfer_columns($db, $targetGroup['id']);
+    $requiredColumnKeys = [];
+    $copyColumnKeys = [];
+    foreach ($config['columns'] as $key => $columnConfig) {
+        if (!empty($columnConfig['required'])) {
+            $requiredColumnKeys[] = $key;
+        }
+        if (!empty($columnConfig['copy'])) {
+            $copyColumnKeys[] = $key;
+        }
+    }
+
+    foreach ($requiredColumnKeys as $requiredKey) {
+        if (!isset($sourceColumns[$requiredKey])) {
+            $result['errors'][] = 'Colonne source manquante: '.$requiredKey;
+        }
+        if (!isset($targetColumns[$requiredKey])) {
+            $result['errors'][] = 'Colonne destination manquante: '.$requiredKey;
+        }
+    }
+    if (!empty($result['errors'])) {
+        return $result;
+    }
+
+    $sourceOptions = monday_get_transfer_options($db, array_column($sourceColumns, 'id'));
+    $targetOptions = monday_get_transfer_options($db, array_column($targetColumns, 'id'));
+    $sourceStatusColumn = $sourceColumns['status'];
+    $statusRes = $db->query("SELECT value FROM llx_myworkspace_cell WHERE fk_task = $taskId AND fk_column = ".(int) $sourceStatusColumn['id']);
+    $statusCell = $statusRes ? $db->fetch_object($statusRes) : null;
+    $statusLabel = $statusCell ? monday_get_transfer_option_label($statusCell->value, $sourceStatusColumn, $sourceOptions) : '';
+    $eligibleStatuses = array_map('monday_normalize_transfer_label', $config['eligible_status_labels']);
+    if (!in_array(monday_normalize_transfer_label($statusLabel), $eligibleStatuses, true)) {
+        $statusColumnLabel = isset($config['columns']['status']['labels'][0]) ? $config['columns']['status']['labels'][0] : 'Colonne statut';
+        $result['message'] = $statusColumnLabel.' non eligible: '.$statusLabel;
+        $result['success'] = true;
+        return $result;
+    }
+
+    $sourceCells = [];
+    $cellsRes = $db->query("SELECT fk_column, value FROM llx_myworkspace_cell WHERE fk_task = $taskId");
+    while ($cellsRes && $cell = $db->fetch_object($cellsRes)) {
+        $sourceCells[(int) $cell->fk_column] = (string) $cell->value;
+    }
+
+    $newCells = [];
+    foreach ($copyColumnKeys as $key) {
+        if (!isset($sourceColumns[$key], $targetColumns[$key])) {
+            continue;
+        }
+        $sourceColumn = $sourceColumns[$key];
+        $sourceValue = isset($sourceCells[$sourceColumn['id']]) ? $sourceCells[$sourceColumn['id']] : '';
+        $targetValue = monday_convert_transfer_value($db, $sourceValue, $sourceColumn, $targetColumns[$key], $sourceOptions, $targetOptions);
+        if ($targetValue !== '') {
+            $newCells[(int) $targetColumns[$key]['id']] = $targetValue;
+        }
+    }
+
+    $targetStatusId = monday_get_or_create_transfer_option($db, $targetColumns['status'], $config['default_target_status'], '#0073ea', $targetOptions);
+    if ($targetStatusId > 0) {
+        $newCells[(int) $targetColumns['status']['id']] = (string) $targetStatusId;
+    }
+
+    $targetGroupId = (int) $targetGroup['id'];
+    $db->begin();
+    $posRes = $db->query("SELECT MAX(position) as m FROM llx_myworkspace_task WHERE fk_group = $targetGroupId AND parent_task_id IS NULL");
+    $position = ($posRes && $row = $db->fetch_object($posRes)) ? ((int) $row->m + 1) : 0;
+    $db->query("DELETE FROM llx_myworkspace_cell WHERE fk_task = $taskId");
+    $db->query("UPDATE llx_myworkspace_task
+                   SET fk_group = $targetGroupId,
+                       position = $position,
+                       parent_task_id = NULL,
+                       level_depth = 0
+                 WHERE rowid = $taskId");
+    foreach ($newCells as $columnId => $value) {
+        $safeValue = $db->escape($value);
+        $db->query("INSERT INTO llx_myworkspace_cell (fk_task, fk_column, value)
+                    VALUES ($taskId, ".(int) $columnId.", '$safeValue')
+                    ON DUPLICATE KEY UPDATE value = '$safeValue'");
+    }
+    $db->commit();
+
+    $result['success'] = true;
+    $result['moved'] = true;
+    $result['message'] = 'Candidature deplacee vers '.$targetGroup['workspace_label'].' / '.$targetGroup['label'];
+    return $result;
+}
+
 function monday_get_kpi_context($db, $workspaceId = 0)
 {
     $kpiColumns = monday_get_kpi_columns($db, $workspaceId);
@@ -902,6 +1447,29 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['kpi_recruitment'])) {
             'series' => $actionSeries,
         ],
     ]);
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['transfer_t24_candidate'])) {
+    if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
+
+    $taskId = (int) $_POST['transfer_t24_candidate'];
+    $targetGroupId = isset($_POST['target_group_id']) ? (int) $_POST['target_group_id'] : 0;
+    $result = monday_transfer_candidate_to_target($db, $taskId, $targetGroupId);
+
+    header('Content-Type: application/json');
+    echo json_encode($result);
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['t24_destination_groups'])) {
+    if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
+
+    $taskId = (int) $_POST['t24_destination_groups'];
+    $result = monday_get_t24_destination_groups($db, $taskId);
+
+    header('Content-Type: application/json');
+    echo json_encode($result);
     exit;
 }
 
@@ -1744,6 +2312,7 @@ ob_start();
 window.leftmenu = <?php echo json_encode($leftmenu); ?>;
 window.formtoken = <?php echo json_encode($formtoken); ?>;
 window.userId = <?php echo $user->id; ?>;
+window.t24TransferConfig = <?php echo json_encode(monday_get_t24_transfer_client_config()); ?>;
 </script>
 <script src="<?php echo DOL_URL_ROOT ?>/custom/monday/js/main.js?v=<?php echo time(); ?>"></script>
 

@@ -93,8 +93,156 @@ $(function(){
     fd.append('save_cell_value', value);
     fd.append('token', token);
     
-    fetch('', {method: 'POST', body: fd});
+    fetch('', {method: 'POST', body: fd}).then(() => {
+      maybeTransferT24Candidate(input);
+    });
   };
+
+  function normalizeMondayLabel(label) {
+    return String(label || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '');
+  }
+
+  function isT24TransferStatusInput(input) {
+    const $input = $(input);
+    if (!$input.is('select')) {
+      return false;
+    }
+
+    const transferConfig = window.t24TransferConfig || {};
+    const statusColumnLabels = (transferConfig.status_column_labels || []).map(normalizeMondayLabel);
+    const eligibleStatusLabels = (transferConfig.eligible_status_labels || []).map(normalizeMondayLabel);
+    const columnIndex = $input.closest('td').index();
+    const headerText = $input.closest('table').find('thead th').eq(columnIndex).find('.column-label').text();
+    const normalizedHeader = normalizeMondayLabel(headerText);
+    if (!statusColumnLabels.includes(normalizedHeader)) {
+      return false;
+    }
+
+    const selectedLabel = $input.find('option:selected').text();
+    return eligibleStatusLabels.includes(normalizeMondayLabel(selectedLabel));
+  }
+
+  function maybeTransferT24Candidate(input) {
+    if (!isT24TransferStatusInput(input)) {
+      return;
+    }
+
+    const taskId = $(input).data('task');
+    showT24DestinationPopup(taskId);
+  }
+
+  function postT24DestinationGroups(taskId) {
+    const fd = new FormData();
+    fd.append('t24_destination_groups', taskId);
+    fd.append('token', token);
+
+    return fetch('', { method: 'POST', body: fd }).then(response => {
+      if (!response.ok) {
+        throw new Error(`Erreur HTTP ${response.status}`);
+      }
+      return response.json();
+    });
+  }
+
+  function postT24Transfer(taskId, targetGroupId) {
+    const fd = new FormData();
+    fd.append('transfer_t24_candidate', taskId);
+    fd.append('target_group_id', targetGroupId);
+    fd.append('token', token);
+
+    return fetch('', { method: 'POST', body: fd }).then(response => {
+      if (!response.ok) {
+        throw new Error(`Erreur HTTP ${response.status}`);
+      }
+      return response.json();
+    });
+  }
+
+  function escapeHtml(value) {
+    const div = document.createElement('div');
+    div.textContent = String(value || '');
+    return div.innerHTML;
+  }
+
+  function showT24DestinationPopup(taskId) {
+    postT24DestinationGroups(taskId)
+      .then(result => {
+        if (!result.success) {
+          CustomPopup.error((result.errors || ['Destination introuvable']).join('<br>'), 'Transfert T24');
+          return;
+        }
+        if (!result.groups || result.groups.length === 0) {
+          CustomPopup.error('Aucun tableau disponible dans cet espace destination.', 'Transfert T24');
+          return;
+        }
+
+        const workspaceLabel = result.workspace ? result.workspace.label : 'vivier';
+        const candidateLabel = result.candidate ? result.candidate.label : '';
+        const groupChoices = result.groups.map((group, index) => `
+          <label style="display:flex;align-items:center;gap:8px;margin:8px 0;padding:8px;border:1px solid #e5e7eb;border-radius:6px;cursor:pointer;">
+            <input type="radio" name="t24_target_group" value="${group.id}" ${index === 0 ? 'checked' : ''}>
+            <span>${escapeHtml(group.label)}</span>
+          </label>
+        `).join('');
+
+        CustomPopup.show({
+          type: 'info',
+          title: 'Choisir le tableau destination',
+          message: `
+            <div style="text-align:left;">
+              <div style="margin-bottom:10px;"><strong>${escapeHtml(candidateLabel)}</strong></div>
+              <div style="margin-bottom:10px;">Espace destination : ${escapeHtml(workspaceLabel)}</div>
+              <div>${groupChoices}</div>
+            </div>
+          `,
+          buttons: [
+            {
+              text: 'Annuler',
+              class: 'custom-popup-btn-secondary'
+            },
+            {
+              text: 'Transférer',
+              class: 'custom-popup-btn-primary',
+              callback: function() {
+                const targetGroupId = $('input[name="t24_target_group"]:checked').val();
+                if (!targetGroupId) {
+                  CustomPopup.error('Veuillez choisir un tableau destination.', 'Transfert T24');
+                  return false;
+                }
+                transferT24CandidateToGroup(taskId, targetGroupId);
+              }
+            }
+          ]
+        });
+      })
+      .catch(error => {
+        CustomPopup.error('Erreur pendant le chargement des destinations : ' + error.message, 'Transfert T24');
+      });
+  }
+
+  function transferT24CandidateToGroup(taskId, targetGroupId) {
+    const activeWorkspaceId = $('.workspace-item.active').data('id');
+    postT24Transfer(taskId, targetGroupId)
+      .then(result => {
+        if (!result.success) {
+          CustomPopup.error((result.errors || ['Transfert impossible']).join('<br>'), 'Transfert T24');
+          return;
+        }
+        if (result.moved) {
+          CustomPopup.success(result.message || 'Candidature déplacée.', 'Transfert T24');
+          if (activeWorkspaceId) {
+            loadGroups(activeWorkspaceId);
+          }
+        }
+      })
+      .catch(error => {
+        CustomPopup.error('Erreur pendant le transfert : ' + error.message, 'Transfert T24');
+      });
+  }
 
   window.validateNumberInput = function(input) {
     const value = input.value;
@@ -791,7 +939,7 @@ $(function(){
     
     fetch('', {method: 'POST', body: fd})
       .then(response => {
-        console.log('Statut de la réponse:', response.status);
+        console.log('Code de réponse:', response.status);
         const contentType = response.headers.get('content-type');
         console.log('Type de contenu:', contentType);
         
