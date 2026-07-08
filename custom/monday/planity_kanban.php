@@ -11,7 +11,7 @@ function planity_kanban_render_left_menu()
 {
 	return 
 		  '<ul id="planity-kanban-list" style="list-style:none;padding:0;">'
-		. '<li id="planity-kanban-item" class="workspace-item planity-kanban-item">Kanban planity</li>'
+		. '<li id="planity-kanban-item" class="planity-kanban-item">Kanban planity</li>'
 		. '</ul>';
 }
 
