@@ -26,7 +26,7 @@ function monday_need_label_matches($needLabel, $candidateNeedLabel)
 
 function monday_split_kpi_needs($value)
 {
-    $parts = preg_split('/\s*[,;\/\n]+\s*/', (string) $value);
+    $parts = preg_split('/\s*[,;\n]+\s*/', (string) $value);
     $needs = [];
     foreach ($parts as $part) {
         $part = trim(preg_replace('/\s+/', ' ', $part));
