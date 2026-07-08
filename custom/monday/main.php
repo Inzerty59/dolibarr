@@ -2106,6 +2106,7 @@ while ($res && $o=$db->fetch_object($res)) $workspaces[] = $o;
 llxHeader("", "Planity - Mes espaces", "");
 $formtoken = newToken();
 $mondayJsConfig = [
+    'clientNeedWorkspaceIds' => array_map('intval', array_keys(monday_parse_workspace_id_list(monday_get_global_string('MONDAY_CLIENT_NEED_WORKSPACE_IDS', '')))),
     'clientNeedWorkspaceLabels' => monday_get_configured_workspace_labels('MONDAY_CLIENT_NEED_WORKSPACE_LABELS', monday_get_default_client_need_workspace_labels()),
 ];
 

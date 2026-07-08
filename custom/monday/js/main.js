@@ -7,6 +7,7 @@ $(function(){
   // State pour gérer les tâches collapsées
   const taskCollapseState = new Set();
   const clientNeedCandidateState = new Set();
+  let currentWorkspaceId = 0;
   let currentWorkspaceLabel = '';
   
   // Cache pour les données fréquemment utilisées
@@ -23,7 +24,14 @@ $(function(){
       .replace(/[^a-z0-9]+/g, "");
   }
 
-  function isClientNeedWorkspaceLabel(label) {
+  function isClientNeedWorkspace(workspaceId, label) {
+    const configuredIds = Array.isArray(mondayConfig.clientNeedWorkspaceIds)
+      ? mondayConfig.clientNeedWorkspaceIds.map(id => Number(id)).filter(id => id > 0)
+      : [];
+    if (configuredIds.length > 0) {
+      return configuredIds.includes(Number(workspaceId));
+    }
+
     const normalizedWorkspace = normalizeKpiLabel(label);
     const configuredLabels = Array.isArray(mondayConfig.clientNeedWorkspaceLabels)
       ? mondayConfig.clientNeedWorkspaceLabels
@@ -1636,6 +1644,7 @@ $(function(){
     const wsLabel = this.textContent;
     const escapedWsLabel = escapeHtml(wsLabel);
     closeTaskDetail({ immediate: true });
+    currentWorkspaceId = Number(wsId) || 0;
     currentWorkspaceLabel = wsLabel;
     $('.workspace-kpi-entry').removeClass('active');
     
@@ -1829,7 +1838,7 @@ $(function(){
 	                  .then(([tasks, candidatePayload])=>{
 	                    const needsCandidatesEnabled = Boolean(candidatePayload && candidatePayload.enabled);
 	                    const candidatesByNeed = candidatePayload?.candidates_by_need || {};
-	                    const flattenNeedRows = isClientNeedWorkspaceLabel(currentWorkspaceLabel);
+	                    const flattenNeedRows = isClientNeedWorkspace(wid, currentWorkspaceLabel);
 	                    const sortedTasks = sortTasksHierarchically(tasks);
 	                    
 		                    const taskPromises = sortedTasks.map(t=>{
@@ -2795,7 +2804,7 @@ $(function(){
   };
 
   function updateCollapsedRows() {
-    const flattenNeedRows = isClientNeedWorkspaceLabel(currentWorkspaceLabel);
+    const flattenNeedRows = isClientNeedWorkspace(currentWorkspaceId, currentWorkspaceLabel);
 
     document.querySelectorAll('.task-row').forEach(row => {
       const taskId = row.dataset.id;
