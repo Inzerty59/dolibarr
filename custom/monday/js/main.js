@@ -2007,7 +2007,6 @@ $(function(){
                         <button class="add-row-btn" style="padding:4px 8px;">+ Ajouter ${g.task_column_label || 'tâche'}</button>
                       </div>
                       <div class="group-tables-container"></div>
-
                     </div>
                   </div>
                 `);
@@ -2518,7 +2517,6 @@ $(function(){
             fd.append('split_column_id', splitColumnId);
             fd.append('split_option_id', splitOptionId);
           }
-
           fetch('',{method:'POST',body:fd}).then(()=>{
             loadGroups(wid);
             loadKpiExportGroups();

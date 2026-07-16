@@ -1725,7 +1725,6 @@ th[title="Glisser pour réorganiser"]:hover {
   color: #999;
 }
 
-
 #group-list .group-body table th,
 #group-list .group-body table td {
   vertical-align: top;
@@ -2272,5 +2271,4 @@ th[title="Glisser pour réorganiser"]:hover {
   .kpi-filters label {
     min-width: 100%;
   }
-
 }
