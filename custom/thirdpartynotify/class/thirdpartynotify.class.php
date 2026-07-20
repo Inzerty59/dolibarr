@@ -200,7 +200,8 @@ class ThirdpartyNotify
 			$sql .= "event_label = VALUES(event_label), ";
 			$sql .= "event_date_start = VALUES(event_date_start), ";
 			$sql .= "event_date_end = VALUES(event_date_end), ";
-			$sql .= "contacts_json = VALUES(contacts_json)";
+			$sql .= "contacts_json = VALUES(contacts_json), ";
+			$sql .= "status = VALUES(status)";
 
 			if (!$this->db->query($sql)) {
 				return -1;
