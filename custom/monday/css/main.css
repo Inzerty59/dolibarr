@@ -1,4 +1,5 @@
- niv {
+
+.column-menu {
   min-width: 150px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12), 0 4px 8px rgba(0, 0, 0, 0.08);
   border-radius: 8px;
@@ -72,6 +73,18 @@
 }
 
 .column-menu .rename-column-btn:hover::before {
+  background: #0073ea;
+}
+
+.column-menu .sort-asc-btn:hover,
+.column-menu .sort-desc-btn:hover {
+  background: linear-gradient(90deg, #e3f2fd 0%, #f8f9fa 100%);
+  color: #0073ea;
+  padding-left: 20px;
+}
+
+.column-menu .sort-asc-btn:hover::before,
+.column-menu .sort-desc-btn:hover::before {
   background: #0073ea;
 }
 
@@ -1664,7 +1677,8 @@ form[method="POST"] input[name="new_workspace"]:focus {
   
 }
 
-#group-list .group-body > table {
+#group-list .group-body > table,
+#group-list .group-tables-container table {
   width: max-content !important;
   min-width: 100%;
   table-layout: auto;
@@ -1672,7 +1686,9 @@ form[method="POST"] input[name="new_workspace"]:focus {
 }
 
 #group-list .group-body > table th,
-#group-list .group-body > table td {
+#group-list .group-body > table td,
+#group-list .group-tables-container table th,
+#group-list .group-tables-container table td {
   min-width: 120px;
   vertical-align: top;
   box-sizing: border-box;
@@ -1687,7 +1703,35 @@ form[method="POST"] input[name="new_workspace"]:focus {
   min-width: 0;
 }
 
-#group-list .cell-textarea,
+#group-list .cell-expandable-toggle {
+  display: inline-block;
+  margin-top: 4px;
+  font-weight: 700;
+  font-size: inherit;
+  line-height: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+#group-list .cell-textarea {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 24px;
+  height: auto;
+  overflow: hidden;
+  resize: none;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  box-sizing: border-box;
+  border: none;
+  background: transparent;
+  padding: 2px;
+}
+
 #group-list .cell-number-textarea {
   display: block;
   width: 100%;
@@ -1699,7 +1743,10 @@ form[method="POST"] input[name="new_workspace"]:focus {
   resize: none;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+  word-break: break-all;
   box-sizing: border-box;
+  line-height: 1.4;
+  /* text-align: left; */
   border: none;
   background: transparent;
   padding: 2px;
@@ -1712,6 +1759,90 @@ form[method="POST"] input[name="new_workspace"]:focus {
 #group-list .cell-number-textarea {
   word-break: break-all;
   line-height: 1.4;
+}
+
+#group-list .group-body-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+#group-list .group-split-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+#group-list .group-split-label {
+  font-weight: 600;
+  color: #5b5248;
+  margin-left: 10px;
+}
+
+#group-list .group-split-select {
+  height: 32px;   
+  border: 1px dashed #cfc3ab;
+  background: #fffdf7;
+  color: #4c4338;
+  border-radius: 4px;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+
+#group-list .group-tables-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+#group-list .group-split-section {
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  border-radius: 0;
+  
+}
+
+#group-list .group-split-section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 4px 8px;
+  margin-top: 24px;
+  
+}
+
+#group-list .group-split-title-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  line-height: 1;
+}
+
+#group-list .group-split-dot {
+  display: block;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  flex: 0 0 14px;
+  transform: translateY(-1px);
+}
+
+#group-list .group-split-section-title,
+#group-list .group-split-section-count {
+  font-size: 14px;
+  font-weight: 700;
+  color: #453c32;
+  line-height: 1;
+
 }
 
 .workspace-kpi-entry {
