@@ -1919,8 +1919,9 @@ form[method="POST"] input[name="new_workspace"]:focus {
   font-weight: 700;
   color: #453c32;
   line-height: 1;
-
 }
+
+
 .planity-kanban-item,
 .workspace-kpi-entry {
   margin-top: 14px;
@@ -2433,4 +2434,3 @@ form[method="POST"] input[name="new_workspace"]:focus {
 .group-body-toolbar{
   padding-bottom: 8px;
 }
-

@@ -1829,14 +1829,11 @@ $(function(){
       'color': '',
       'font-weight': ''
     });
-
-    $(this).addClass('active').css({
-      'background-color': '#007cba',
-      'color': 'white',
-      'font-weight': 'bold'
+    $('#planity-kanban-item').removeClass('active').css({
+      'background-color': '',
+      'color': '',
+      'font-weight': ''
     });
-
-    loadPlanityKanban();
     $('.workspace-kpi-entry').addClass('active');
 
     const currentYear = new Date().getFullYear();
@@ -1899,14 +1896,37 @@ $(function(){
     showKpiDashboard();
   });
 
+  $(document).on('click', '#planity-kanban-item', function(e){
+    e.preventDefault();
+    e.stopPropagation();
+
+    $('.workspace-item').removeClass('active').css({
+      'background-color': '',
+      'color': '',
+      'font-weight': ''
+    });
+    $('.workspace-kpi-entry').removeClass('active');
+
+    $(this).addClass('active').css({
+      'background-color': '#007cba',
+      'color': 'white',
+      'font-weight': 'bold'
+    });
+
+    loadPlanityKanban();
+  });
+
   $(document).on('click','.workspace-item', function(){
     if (this.id === 'planity-kanban-item') return;
     const wsId    = this.dataset.id;
     const wsLabel = this.textContent;
     $('.workspace-kpi-entry').removeClass('active');
-      $(document).on('click', '#planity-kanban-item', function(e){
-  e.preventDefault();
-  e.stopPropagation();
+    $('#planity-kanban-item').removeClass('active').css({
+      'background-color': '',
+      'color': '',
+      'font-weight': ''
+    });
+
     $('.workspace-item').removeClass('active').css({
       'background-color': '',
       'color': '',
