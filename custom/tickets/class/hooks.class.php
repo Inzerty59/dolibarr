@@ -8,6 +8,7 @@
  */
 
 require_once __DIR__.'/actions_tickets.class.php';
+
 class TicketsHooks extends ActionsTickets
 {
 
@@ -157,7 +158,4 @@ class TicketsHooks extends ActionsTickets
 		</script>
 		<?php
 	}
-
-class TicketsHooks extends ActionsTickets
-{
 }
