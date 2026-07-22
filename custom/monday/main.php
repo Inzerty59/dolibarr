@@ -2,6 +2,7 @@
 require '../../main.inc.php';
 require_once DOL_DOCUMENT_ROOT.'/core/lib/admin.lib.php';
 require_once DOL_DOCUMENT_ROOT.'/core/lib/functions.lib.php';
+require_once __DIR__.'/planity_kanban.php';
 
 $langs->load("mymodule@mymodule");
 
@@ -639,7 +640,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['toggle_task_completion'
     if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
     $taskId = (int)$_POST['toggle_task_completion'];
     $isCompleted = (int)$_POST['is_completed'];
-    
+
     $db->query("UPDATE llx_myworkspace_task SET is_completed = $isCompleted WHERE rowid = $taskId");
     echo 'OK';
     exit;
@@ -667,7 +668,7 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['tasks_group_id'])) {
 // Nouvel endpoint : retourne les tâches + cellules en une seule requête
 if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['tasks_group_id_with_cells'])) {
     $gid = (int)$_GET['tasks_group_id_with_cells'];
-    
+
     // Récupérer les tâches
     $res = $db->query("SELECT rowid, label, parent_task_id, level_depth, is_completed, position FROM llx_myworkspace_task WHERE fk_group = $gid ORDER BY position ASC");
     $out = [];
@@ -684,7 +685,7 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['tasks_group_id_with_cells
             'cells' => []
         ];
     }
-    
+
     // Récupérer toutes les cellules pour toutes les tâches du groupe en une seule requête
     if (!empty($taskIds)) {
         $taskIdsList = implode(',', $taskIds);
@@ -696,7 +697,7 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['tasks_group_id_with_cells
             }
             $cellsByTask[$o->fk_task][$o->fk_column] = $o->value;
         }
-        
+
         // Ajouter les cellules aux tâches
         foreach ($out as &$task) {
             if (isset($cellsByTask[$task['id']])) {
@@ -704,7 +705,7 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['tasks_group_id_with_cells
             }
         }
     }
-    
+
     header('Content-Type: application/json');
     echo json_encode($out);
     exit;
@@ -1364,10 +1365,10 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['add_task_group_id'], $_
     $gid   = (int)$_POST['add_task_group_id'];
     $label = $db->escape($_POST['task_label']);
     $datec = date('Y-m-d H:i:s');
-    
+
     $parent_task_id = isset($_POST['parent_task_id']) ? (int)$_POST['parent_task_id'] : null;
     $level_depth = 0;
-    
+
     if ($parent_task_id) {
         $r = $db->query("SELECT level_depth FROM llx_myworkspace_task WHERE rowid=$parent_task_id");
         if ($o = $db->fetch_object($r)) {
@@ -1377,13 +1378,25 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['add_task_group_id'], $_
     } else {
         $r = $db->query("SELECT MAX(position) as m FROM llx_myworkspace_task WHERE fk_group=$gid AND parent_task_id IS NULL");
     }
-    
+
     $p = ($r && $o=$db->fetch_object($r)) ? $o->m+1 : 0;
-    
+
     if ($parent_task_id) {
         $db->query("INSERT INTO llx_myworkspace_task (fk_group,label,position,datec,parent_task_id,level_depth) VALUES ($gid,'$label',$p,'$datec',$parent_task_id,$level_depth)");
     } else {
         $db->query("INSERT INTO llx_myworkspace_task (fk_group,label,position,datec,level_depth) VALUES ($gid,'$label',$p,'$datec',$level_depth)");
+    }
+
+    $newTaskId = (int) $db->last_insert_id('llx_myworkspace_task');
+
+    if ($newTaskId > 0 && !empty($_POST['split_column_id']) && !empty($_POST['split_option_id'])) {
+        $splitColumnId = (int) $_POST['split_column_id'];
+        $splitOptionId = (int) $_POST['split_option_id'];
+
+
+        $db->query("INSERT INTO llx_myworkspace_cell (fk_task, fk_column, value)
+                    VALUES ($newTaskId, $splitColumnId, '$splitOptionId')
+                    ON DUPLICATE KEY UPDATE value = '$splitOptionId'");
     }
     exit;
 }
@@ -1432,8 +1445,8 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && !empty($_POST['new_workspace'])) {
     $r  = $db->query("SELECT MAX(position) as m FROM llx_myworkspace");
     $p  = ($r && $o=$db->fetch_object($r))?$o->m+1:0;
     $db->query("INSERT INTO llx_myworkspace(label,position) VALUES('".$db->escape($nw)."',$p)");
-    
-    if (isset($_POST['ajax']) || 
+
+    if (isset($_POST['ajax']) ||
         (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) == 'xmlhttprequest') ||
         (isset($_SERVER['CONTENT_TYPE']) && strpos($_SERVER['CONTENT_TYPE'], 'multipart/form-data') !== false)) {
         $newId = $db->last_insert_id();
@@ -1441,7 +1454,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && !empty($_POST['new_workspace'])) {
         echo json_encode(['id' => $newId, 'label' => $nw]);
         exit;
     }
-    
+
     header("Location: ".$_SERVER['PHP_SELF']);
     exit;
 }
@@ -1476,87 +1489,60 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['rename_group_id'],$_POS
     exit;
 }
 
-// Dupliquer un groupe avec ses colonnes
-if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['duplicate_group_id'],$_POST['new_group_label'])) {
+// Dupliquer un groupe vers un autre workspace
+if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['duplicate_group_id'], $_POST['target_workspace_id'])) {
     if ($_POST['token']!==$_SESSION['newtoken']) accessforbidden('CSRF token invalid');
-    
-    $oldGroupId = (int)$_POST['duplicate_group_id'];
-    $newLabel = $db->escape($_POST['new_group_label']);
-    
-    // Récupérer le groupe original
-    $res = $db->query("SELECT fk_workspace, task_column_label FROM llx_myworkspace_group WHERE rowid = $oldGroupId");
-    if (!$o = $db->fetch_object($res)) {
+
+    $oldGroupId = (int) $_POST['duplicate_group_id'];
+    $targetWorkspaceId = (int) $_POST['target_workspace_id'];
+
+    $res = $db->query("SELECT fk_workspace, label, task_column_label FROM llx_myworkspace_group WHERE rowid = $oldGroupId");
+    if (!$res || !($sourceGroup = $db->fetch_object($res))) {
         http_response_code(404);
         exit;
     }
-    
-    $workspaceId = $o->fk_workspace;
-    $taskColumnLabel = $o->task_column_label;
-    
-    // Récupérer la position max
-    $res = $db->query("SELECT MAX(position) as m FROM llx_myworkspace_group WHERE fk_workspace = $workspaceId");
-    $p = ($res && $row = $db->fetch_object($res)) ? $row->m + 1 : 0;
-    
-    // Créer le nouveau groupe
-    $db->query("INSERT INTO llx_myworkspace_group (fk_workspace, label, position, task_column_label) 
-               VALUES ($workspaceId, '$newLabel', $p, '".$db->escape($taskColumnLabel)."')");
-    
-    $newGroupId = $db->last_insert_id('llx_myworkspace_group');
-    
-    // Copier les colonnes du groupe original
-    $resColumns = $db->query("SELECT rowid, label, type FROM llx_myworkspace_column WHERE fk_group = $oldGroupId ORDER BY position ASC");
-    
-    if ($resColumns) {
-        // Récupérer toutes les colonnes d'abord
-        $columns = [];
-        while ($col = $db->fetch_object($resColumns)) {
-            $columns[] = $col;
-        }
-        
-        // Ensuite les traiter (évite les problèmes de curseur)
-        foreach ($columns as $col) {
-            $colLabel = $db->escape($col->label);
-            $colType = $db->escape($col->type);
-            
-            // Obtenir la position max des colonnes du nouveau groupe
-            $resPos = $db->query("SELECT MAX(position) as m FROM llx_myworkspace_column WHERE fk_group = $newGroupId");
-            $colPos = 0;
-            if ($resPos && $rowPos = $db->fetch_object($resPos)) {
-                $colPos = (int)$rowPos->m + 1;
-            }
-            
-            // Insérer la colonne
-            $db->query("INSERT INTO llx_myworkspace_column (fk_workspace, fk_group, label, type, position) 
-                       VALUES ($workspaceId, $newGroupId, '$colLabel', '$colType', $colPos)");
-            
-            $newColId = $db->last_insert_id('llx_myworkspace_column');
-            
-            // Copier les options de cette colonne
-            $resOptions = $db->query("SELECT label, color FROM llx_myworkspace_column_option WHERE fk_column = ".$col->rowid." ORDER BY position ASC");
-            if ($resOptions) {
-                $options = [];
-                while ($opt = $db->fetch_object($resOptions)) {
-                    $options[] = $opt;
-                }
-                
-                foreach ($options as $opt) {
-                    $optLabel = $db->escape($opt->label);
-                    $optColor = $db->escape($opt->color);
-                    
-                    // Obtenir position max
-                    $resOptPos = $db->query("SELECT MAX(position) as m FROM llx_myworkspace_column_option WHERE fk_column = $newColId");
-                    $optPos = 0;
-                    if ($resOptPos && $rowOptPos = $db->fetch_object($resOptPos)) {
-                        $optPos = (int)$rowOptPos->m + 1;
-                    }
-                    
-                    $db->query("INSERT INTO llx_myworkspace_column_option (fk_column, label, color, position) 
-                               VALUES ($newColId, '$optLabel', '$optColor', $optPos)");
-                }
-            }
+
+    if ($targetWorkspaceId <= 0) {
+        http_response_code(400);
+        exit;
+    }
+
+    $resTarget = $db->query("SELECT rowid FROM llx_myworkspace WHERE rowid = $targetWorkspaceId");
+    if (!$resTarget || !$db->fetch_object($resTarget)) {
+        http_response_code(404);
+        exit;
+    }
+
+    $resPos = $db->query("SELECT MAX(position) as m FROM llx_myworkspace_group WHERE fk_workspace = $targetWorkspaceId");
+    $newGroupPos = ($resPos && ($rowPos = $db->fetch_object($resPos))) ? ((int) $rowPos->m + 1) : 0;
+
+    $newGroupLabel = isset($_POST['new_group_label']) && trim($_POST['new_group_label']) !== ''
+    ? $db->escape(trim($_POST['new_group_label']))
+    : $db->escape($sourceGroup->label);
+    $taskColumnLabel = $db->escape($sourceGroup->task_column_label);
+
+    $db->query("INSERT INTO llx_myworkspace_group (fk_workspace, label, position, task_column_label) VALUES ($targetWorkspaceId, '$newGroupLabel', $newGroupPos, '$taskColumnLabel')");
+    $newGroupId = (int) $db->last_insert_id('llx_myworkspace_group');
+
+    $columnMap = [];
+    $resColumns = $db->query("SELECT rowid, label, type, position FROM llx_myworkspace_column WHERE fk_group = $oldGroupId ORDER BY position ASC, rowid ASC");
+    while ($resColumns && $column = $db->fetch_object($resColumns)) {
+        $colLabel = $db->escape($column->label);
+        $colType = $db->escape($column->type);
+        $colPosition = (int) $column->position;
+
+        $db->query("INSERT INTO llx_myworkspace_column (fk_workspace, fk_group, label, type, position) VALUES ($targetWorkspaceId, $newGroupId, '$colLabel', '$colType', $colPosition)");
+        $newColId = (int) $db->last_insert_id('llx_myworkspace_column');
+        $columnMap[(int) $column->rowid] = $newColId;
+
+        $resOptions = $db->query("SELECT label, color, position FROM llx_myworkspace_column_option WHERE fk_column = ".(int) $column->rowid." ORDER BY position ASC, rowid ASC");
+        while ($resOptions && $option = $db->fetch_object($resOptions)) {
+            $optLabel = $db->escape($option->label);
+            $optColor = $db->escape($option->color);
+            $optPosition = (int) $option->position;
+            $db->query("INSERT INTO llx_myworkspace_column_option (fk_column, label, color, position) VALUES ($newColId, '$optLabel', '$optColor', $optPosition)");
         }
     }
-    
     exit;
 }
 
@@ -1646,14 +1632,14 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['add_option_column_id'],
     $cid   = (int)$_POST['add_option_column_id'];
     $label = $db->escape($_POST['option_label']);
     $color = isset($_POST['option_color']) ? $db->escape($_POST['option_color']) : '#cccccc';
-    
+
     $existing = $db->query("SELECT rowid FROM llx_myworkspace_column_option WHERE fk_column = $cid AND label = '$label'");
     if ($db->num_rows($existing) > 0) {
         header('Content-Type: application/json');
         echo json_encode(['error' => 'Une option avec ce nom existe déjà']);
         exit;
     }
-    
+
     $r = $db->query("SELECT MAX(position) as m FROM llx_myworkspace_column_option WHERE fk_column=$cid");
     $p = ($r && $o=$db->fetch_object($r)) ? $o->m+1 : 0;
     $db->query("INSERT INTO llx_myworkspace_column_option (fk_column,label,color,position) VALUES ($cid,'$label','$color',$p)");
@@ -1664,7 +1650,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['rename_option_id'], $_P
     if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
     $oid   = (int)$_POST['rename_option_id'];
     $label = $db->escape($_POST['rename_option_label']);
-    
+
     $res = $db->query("SELECT fk_column FROM llx_myworkspace_column_option WHERE rowid = $oid");
     $opt = $db->fetch_object($res);
     if ($opt) {
@@ -1675,7 +1661,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['rename_option_id'], $_P
             exit;
         }
     }
-    
+
     $db->query("UPDATE llx_myworkspace_column_option SET label='$label' WHERE rowid=$oid");
     exit;
 }
@@ -1743,7 +1729,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['save_cell_task'], $_POS
     $tid = (int)$_POST['save_cell_task'];
     $cid = (int)$_POST['save_cell_column'];
     $val = $db->escape($_POST['save_cell_value']);
-    
+
     $db->query("INSERT INTO llx_myworkspace_cell (fk_task, fk_column, value) VALUES ($tid, $cid, '$val')
                 ON DUPLICATE KEY UPDATE value = '$val'");
     exit;
@@ -1752,10 +1738,10 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['save_cell_task'], $_POS
 if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['task_comments'])) {
     $tid = (int)$_GET['task_comments'];
     $res = $db->query("
-        SELECT c.rowid, c.comment, c.font_family, c.font_size, c.font_weight, c.font_color, c.datec, c.fk_user, u.firstname, u.lastname 
+        SELECT c.rowid, c.comment, c.font_family, c.font_size, c.font_weight, c.font_color, c.datec, c.fk_user, u.firstname, u.lastname
         FROM llx_myworkspace_comment c
         LEFT JOIN llx_user u ON u.rowid = c.fk_user
-        WHERE c.fk_task = $tid 
+        WHERE c.fk_task = $tid
         ORDER BY c.datec DESC
     ");
     $out = [];
@@ -1783,24 +1769,24 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['add_comment_task'], $_P
     $comment = $db->escape($_POST['comment_text']);
     $uid = $user->id;
     $date = date('Y-m-d H:i:s');
-    
+
     // Paramètres de formatage optionnels
     $font_family = isset($_POST['font_family']) ? $db->escape($_POST['font_family']) : 'Arial';
     $font_size = isset($_POST['font_size']) ? (int)$_POST['font_size'] : 14;
     $font_weight = isset($_POST['font_weight']) ? (int)$_POST['font_weight'] : 400;
     $font_color = isset($_POST['font_color']) ? $db->escape($_POST['font_color']) : '#000000';
-    
-    $sql = "INSERT INTO llx_myworkspace_comment (fk_task, fk_user, comment, font_family, font_size, font_weight, font_color, datec) 
+
+    $sql = "INSERT INTO llx_myworkspace_comment (fk_task, fk_user, comment, font_family, font_size, font_weight, font_color, datec)
             VALUES ($tid, $uid, '$comment', '$font_family', $font_size, $font_weight, '$font_color', '$date')";
     $result = $db->query($sql);
-    
+
     if (!$result) {
         http_response_code(500);
         header('Content-Type: application/json');
         echo json_encode(['error' => 'Erreur lors de l\'insertion du commentaire']);
         exit;
     }
-    
+
     $new_id = $db->last_insert_id('llx_myworkspace_comment');
     if (!$new_id) {
         http_response_code(500);
@@ -1808,14 +1794,14 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['add_comment_task'], $_P
         echo json_encode(['error' => 'Impossible de récupérer l\'ID du commentaire']);
         exit;
     }
-    
+
     $res = $db->query("
-        SELECT c.rowid, c.comment, c.font_family, c.font_size, c.font_weight, c.font_color, c.datec, c.fk_user, u.firstname, u.lastname 
+        SELECT c.rowid, c.comment, c.font_family, c.font_size, c.font_weight, c.font_color, c.datec, c.fk_user, u.firstname, u.lastname
         FROM llx_myworkspace_comment c
         LEFT JOIN llx_user u ON u.rowid = c.fk_user
         WHERE c.rowid = $new_id
     ");
-    
+
     $comment_data = $db->fetch_object($res);
     if (!$comment_data) {
         http_response_code(500);
@@ -1823,7 +1809,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['add_comment_task'], $_P
         echo json_encode(['error' => 'Commentaire créé mais impossible de le récupérer']);
         exit;
     }
-    
+
     header('Content-Type: application/json');
     echo json_encode([
         'id' => $comment_data->rowid,
@@ -1840,10 +1826,10 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['edit_comment_id'], $_PO
     $cid = (int)$_POST['edit_comment_id'];
     $comment = $db->escape($_POST['edit_comment_text']);
     $uid = $user->id;
-    
+
     $res = $db->query("SELECT fk_user FROM llx_myworkspace_comment WHERE rowid = $cid");
     $owner = $db->fetch_object($res);
-    
+
     if ($owner && $owner->fk_user == $uid) {
         $db->query("UPDATE llx_myworkspace_comment SET comment = '$comment' WHERE rowid = $cid");
         echo 'OK';
@@ -1858,10 +1844,10 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['delete_comment_id'])) {
     if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
     $cid = (int)$_POST['delete_comment_id'];
     $uid = $user->id;
-    
+
     $res = $db->query("SELECT fk_user FROM llx_myworkspace_comment WHERE rowid = $cid");
     $owner = $db->fetch_object($res);
-    
+
     if ($owner && $owner->fk_user == $uid) {
         $db->query("DELETE FROM llx_myworkspace_comment_file WHERE fk_comment = $cid");
         $db->query("DELETE FROM llx_myworkspace_comment WHERE rowid = $cid");
@@ -1881,7 +1867,7 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['task_details'])) {
         LEFT JOIN llx_myworkspace_group g ON g.rowid = t.fk_group
         WHERE t.rowid = $tid
     ");
-    
+
     if ($task = $db->fetch_object($res)) {
         header('Content-Type: application/json');
         echo json_encode([
@@ -1908,7 +1894,7 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['users_list'])) {
     while ($o = $db->fetch_object($res)) {
         $fullname = trim($o->firstname . ' ' . $o->lastname);
         if (empty($fullname)) $fullname = $o->login;
-        
+
         $out[] = [
             'id' => $o->rowid,
             'name' => $fullname,
@@ -1927,27 +1913,27 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['upload_task_file'], $_F
     error_log("Token SESSION: " . $_SESSION['newtoken']);
     error_log("Task ID: " . $_POST['upload_task_file']);
     error_log("File info: " . print_r($_FILES['task_file'], true));
-    
+
     if ($_POST['token'] !== $_SESSION['newtoken']) {
         error_log("CSRF token mismatch!");
         accessforbidden('CSRF token invalid');
     }
-    
+
     $task_id = (int)$_POST['upload_task_file'];
     $upload_dir = '/var/www/documents/myworkspace/tasks/';
     error_log("Upload dir: " . $upload_dir);
-    
+
     if (!file_exists($upload_dir)) {
         error_log("Creating upload directory...");
         mkdir($upload_dir, 0755, true);
     }
-    
+
     $file = $_FILES['task_file'];
     $filename = basename($file['name']);
     $filename = preg_replace('/[^a-zA-Z0-9._-]/', '_', $filename);
     $extension = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
     error_log("Filename: " . $filename . ", Extension: " . $extension);
-    
+
     $allowed_extensions = ['jpg', 'jpeg', 'png', 'gif', 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'txt', 'zip'];
     if (!in_array($extension, $allowed_extensions)) {
         error_log("Extension not allowed: " . $extension);
@@ -1956,7 +1942,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['upload_task_file'], $_F
         echo json_encode(['error' => 'Type de fichier non autorisé']);
         exit;
     }
-    
+
     if ($file['size'] > 10 * 1024 * 1024) {
         error_log("File too large: " . $file['size']);
         http_response_code(400);
@@ -1964,11 +1950,11 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['upload_task_file'], $_F
         echo json_encode(['error' => 'Fichier trop volumineux (max 10MB)']);
         exit;
     }
-    
+
     $unique_filename = time() . '_' . uniqid() . '_' . $filename;
     $filepath = $upload_dir . $unique_filename;
     error_log("Target filepath: " . $filepath);
-    
+
     if (move_uploaded_file($file['tmp_name'], $filepath)) {
         error_log("File moved successfully");
         $original_name = $db->escape($filename);
@@ -1977,11 +1963,11 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['upload_task_file'], $_F
         $mimetype = $db->escape($file['type']);
         $uid = $user->id;
         $date = date('Y-m-d H:i:s');
-        
-        $sql = "INSERT INTO llx_myworkspace_task_file (fk_task, original_name, filename, filesize, mimetype, fk_user, datec) 
+
+        $sql = "INSERT INTO llx_myworkspace_task_file (fk_task, original_name, filename, filesize, mimetype, fk_user, datec)
                 VALUES ($task_id, '$original_name', '$unique_name', $filesize, '$mimetype', $uid, '$date')";
         error_log("SQL: " . $sql);
-        
+
         if ($db->query($sql)) {
             $file_id = $db->last_insert_id('llx_myworkspace_task_file');
             error_log("File inserted with ID: " . $file_id);
@@ -2038,7 +2024,7 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['task_files'])) {
 if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['download_file'])) {
     $file_id = (int)$_GET['download_file'];
     $type = isset($_GET['type']) ? $_GET['type'] : 'comment';
-    
+
     if ($type === 'task') {
         $res = $db->query("SELECT original_name, filename, mimetype FROM llx_myworkspace_task_file WHERE rowid = $file_id");
         $subdir = 'tasks';
@@ -2046,10 +2032,10 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['download_file'])) {
         $res = $db->query("SELECT original_name, filename, mimetype FROM llx_myworkspace_comment_file WHERE rowid = $file_id");
         $subdir = 'comments';
     }
-    
+
     if ($file = $db->fetch_object($res)) {
         $filepath = '/var/www/documents/myworkspace/'.$subdir.'/' . $file->filename;
-        
+
         if (file_exists($filepath)) {
             header('Content-Type: ' . $file->mimetype);
             header('Content-Disposition: inline; filename="' . $file->original_name . '"');
@@ -2071,7 +2057,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['delete_file_id'])) {
     $file_id = (int)$_POST['delete_file_id'];
     $type = isset($_POST['type']) ? $_POST['type'] : 'comment';
     $uid = $user->id;
-    
+
     if ($type === 'task') {
         $res = $db->query("SELECT filename, fk_user FROM llx_myworkspace_task_file WHERE rowid = $file_id");
         $subdir = 'tasks';
@@ -2081,15 +2067,15 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['delete_file_id'])) {
         $subdir = 'comments';
         $table = 'llx_myworkspace_comment_file';
     }
-    
+
     $file = $db->fetch_object($res);
-    
+
     if ($file && $file->fk_user == $uid) {
         $filepath = '/var/www/documents/myworkspace/'.$subdir.'/' . $file->filename;
         if (file_exists($filepath)) {
             unlink($filepath);
         }
-        
+
         $db->query("DELETE FROM $table WHERE rowid = $file_id");
         echo 'OK';
     } else {
@@ -2122,8 +2108,9 @@ foreach ($workspaces as $w) {
                . dol_escape_htmltag($w->label)
                . '</li>';
 }
-$leftmenu .= '</ul>'
-    . '<div class="workspace-kpi-entry" id="kpi-dashboard-link">Tableaux KPI</div>';
+$leftmenu .= '</ul>';
+$leftmenu .= planity_kanban_render_left_menu();
+$leftmenu .= '<div class="workspace-kpi-entry" id="kpi-dashboard-link">Tableaux KPI</div>';
 
 ob_start();
 ?>
@@ -2131,13 +2118,13 @@ ob_start();
 
 <div class="workspace-container">
   <div class="main-content" id="main-content"></div>
-  
+
   <div id="task-detail-panel" class="task-detail-panel">
     <div class="panel-header">
       <h3 id="task-detail-title">Détail</h3>
       <button id="close-panel" class="close-panel-btn">×</button>
     </div>
-    
+
     <div class="panel-content">
       <div class="task-info-section">
         <h4>Informations</h4>
@@ -2158,10 +2145,10 @@ ob_start();
           </div>
         </div>
       </div>
-      
+
       <div class="comments-section">
         <h4>Commentaires</h4>
-        
+
         <div class="add-comment-form">
           <div class="comment-formatting-toolbar">
             <button id="comment-bold-toggle" class="format-btn" title="Gras">
@@ -2175,20 +2162,20 @@ ob_start();
           <div id="new-comment-text" class="comment-editor" contenteditable="true" placeholder="Ajouter un commentaire..."></div>
           <button id="add-comment-btn">Publier</button>
         </div>
-        
+
         <div id="comments-list" class="comments-list">
         </div>
       </div>
-      
+
       <div class="task-files-section">
         <h4>Fichiers de la tâche</h4>
-        
+
         <div class="task-files-content">
           <div class="task-file-upload-area">
             <input type="file" id="task-file-input" style="display:none;" multiple accept=".jpg,.jpeg,.png,.gif,.pdf,.doc,.docx,.xls,.xlsx,.txt,.zip">
             <button id="add-task-file-btn">📎 Ajouter des fichiers</button>
           </div>
-          
+
           <div id="task-files-list" class="task-files-list">
           </div>
         </div>
@@ -2203,6 +2190,8 @@ window.leftmenu = <?php echo json_encode($leftmenu); ?>;
 window.formtoken = <?php echo json_encode($formtoken); ?>;
 window.userId = <?php echo $user->id; ?>;
 window.mondayConfig = <?php echo json_encode($mondayJsConfig); ?>;
+window.planityKanbanUrl = <?php echo json_encode(DOL_URL_ROOT.'/custom/monday/ajax/planity_kanban.php'); ?>;
+window.planityKanbanIsAdmin = <?php echo planity_kanban_user_is_admin($user) ? 'true' : 'false'; ?>;
 </script>
 <script src="<?php echo DOL_URL_ROOT ?>/custom/monday/js/main.js?v=<?php echo time(); ?>"></script>
 
