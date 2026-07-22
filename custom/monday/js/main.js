@@ -515,6 +515,7 @@ $(function(){
     if (isNumber) {
       validateNumberInput(textarea);
     }
+    $(textarea).closest('.cell-expandable').attr('data-expanded', '1');
     updateExpandableTextarea(textarea);
   };
 
