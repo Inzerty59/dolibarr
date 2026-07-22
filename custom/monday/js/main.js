@@ -43,6 +43,7 @@ $(function(){
   // State pour gérer les tâches collapsées
   const taskCollapseState = new Set();
   const clientNeedCandidateState = new Set();
+  const clientNeedCandidateCache = new Map();
   let currentWorkspaceId = 0;
   let currentWorkspaceLabel = '';
 
@@ -1692,20 +1693,19 @@ $(function(){
     return clientNeedCandidateState.has(String(taskId));
   }
 
-  function renderClientNeedCandidatesToggle(taskId, count) {
+  function renderClientNeedCandidatesToggle(taskId, count = '') {
     const expanded = isClientNeedCandidatesExpanded(taskId);
     const panelId = `client-need-candidates-${Number(taskId)}`;
+    const countHtml = count === '' || count === null ? '' : `<span class="count">${Number(count)}</span>`;
     return `
       <button class="candidates-toggle" type="button" data-need-id="${Number(taskId)}" aria-expanded="${expanded ? 'true' : 'false'}" aria-controls="${panelId}">
         <span class="candidates-caret" aria-hidden="true">${expanded ? '▼' : '▶'}</span>
         <span>Candidatures</span>
-        <span class="count">${count}</span>
+        ${countHtml}
       </button>`;
   }
 
-  function renderClientNeedCandidatesPanel(taskId, candidates) {
-    const expanded = isClientNeedCandidatesExpanded(taskId);
-    const panelId = `client-need-candidates-${Number(taskId)}`;
+  function renderClientNeedCandidatesTable(candidates) {
     const candidateRows = (candidates || []).map(candidate => `
       <tr>
         <td>
@@ -1719,24 +1719,70 @@ $(function(){
     `).join('');
 
     return `
+      <table class="candidates-table">
+        <colgroup>
+          <col style="width: 46.666%">
+          <col style="width: 26.667%">
+          <col style="width: 26.667%">
+        </colgroup>
+        <thead>
+          <tr>
+            <th>Prénom et nom</th>
+            <th>Date d'envoi</th>
+            <th>Action client</th>
+          </tr>
+        </thead>
+        <tbody>${candidateRows || '<tr><td colspan="3" class="candidates-empty">Aucune candidature</td></tr>'}</tbody>
+      </table>
+    `;
+  }
+
+  function renderClientNeedCandidatesPanel(taskId, candidates = null) {
+    const expanded = isClientNeedCandidatesExpanded(taskId);
+    const panelId = `client-need-candidates-${Number(taskId)}`;
+    const content = Array.isArray(candidates)
+      ? renderClientNeedCandidatesTable(candidates)
+      : '<div class="candidates-empty">Cliquez pour charger les candidatures</div>';
+
+    return `
       <div id="${panelId}" class="candidates-panel" data-need-id="${Number(taskId)}"${expanded ? '' : ' hidden'}>
-        <table class="candidates-table">
-          <colgroup>
-            <col style="width: 46.666%">
-            <col style="width: 26.667%">
-            <col style="width: 26.667%">
-          </colgroup>
-          <thead>
-            <tr>
-              <th>Prénom et nom</th>
-              <th>Date d'envoi</th>
-              <th>Action client</th>
-            </tr>
-          </thead>
-          <tbody>${candidateRows || '<tr><td colspan="3" class="candidates-empty">Aucune candidature</td></tr>'}</tbody>
-        </table>
+        ${content}
       </div>
     `;
+  }
+
+  function loadClientNeedCandidates($button) {
+    const needId = Number($button.data('need-id'));
+    const groupId = Number($button.closest('.group').data('id'));
+    const cacheKey = `${groupId}:${needId}`;
+    const $panel = $button.closest('.task-cell').find(`.candidates-panel[data-need-id="${needId}"]`);
+
+    if (!needId || !groupId || $panel.data('loaded') === true) {
+      return;
+    }
+
+    if (clientNeedCandidateCache.has(cacheKey)) {
+      const cachedCandidates = clientNeedCandidateCache.get(cacheKey);
+      $panel.html(renderClientNeedCandidatesTable(cachedCandidates)).data('loaded', true);
+      $button.find('.count').remove();
+      $button.append(`<span class="count">${cachedCandidates.length}</span>`);
+      return;
+    }
+
+    $panel.html('<div class="candidates-empty">Chargement...</div>');
+    fetch(`?client_need_candidates_group_id=${groupId}&client_need_id=${needId}&token=${encodeURIComponent(token)}`)
+      .then(r => r.json())
+      .then(payload => {
+        const candidatesByNeed = payload?.candidates_by_need || {};
+        const candidates = getClientNeedCandidateRows(needId, candidatesByNeed) || [];
+        clientNeedCandidateCache.set(cacheKey, candidates);
+        $panel.html(renderClientNeedCandidatesTable(candidates)).data('loaded', true);
+        $button.find('.count').remove();
+        $button.append(`<span class="count">${candidates.length}</span>`);
+      })
+      .catch(() => {
+        $panel.html('<div class="candidates-empty">Erreur de chargement</div>');
+      });
   }
 
   function setClientNeedCandidatesExpanded($button, expanded) {
@@ -1749,6 +1795,7 @@ $(function(){
 
     if (expanded) {
       clientNeedCandidateState.add(needId);
+      loadClientNeedCandidates($button);
     } else {
       clientNeedCandidateState.delete(needId);
     }
@@ -2415,15 +2462,10 @@ $(function(){
 	                      })
 	                  );
 
-	                Promise.all([
-	                  fetch(`?tasks_group_id_with_cells=${g.id}`).then(r=>r.json()),
-	                  fetch(`?client_need_candidates_group_id=${g.id}&token=${encodeURIComponent(token)}`).then(r=>r.json()).catch(() => ({enabled: false, candidates_by_need: {}}))
-                ])
-	                  .then(([tasks, candidatePayload])=>{
-	                    const needsCandidatesEnabled = Boolean(candidatePayload && candidatePayload.enabled);
-	                    const candidatesByNeed = candidatePayload?.candidates_by_need || {};
-	                    const flattenNeedRows = isClientNeedWorkspace(wid, currentWorkspaceLabel);
-	                    const sortedTasks = sortTasksHierarchically(tasks);
+		                fetch(`?tasks_group_id_with_cells=${g.id}`).then(r=>r.json())
+		                  .then(tasks=>{
+		                    const flattenNeedRows = isClientNeedWorkspace(wid, currentWorkspaceLabel);
+		                    const sortedTasks = sortTasksHierarchically(tasks);
 
 	                    const taskPromises = sortedTasks.map(t=>{
 	                      return new Promise((resolve) => {
@@ -2445,9 +2487,9 @@ $(function(){
 	                        const completedStyle = t.is_completed ? 'text-decoration: line-through; color: #999;' : '';
 	                        const checkboxHtml = t.level_depth > 0 ? `<input type="checkbox" class="task-completion-checkbox" data-task-id="${taskId}" ${isCompleted} style="cursor:pointer;width:16px;height:16px;" onchange="window.toggleTaskCompletion(${taskId}, this.checked)">` : '';
 
-	                        const needCandidates = needsCandidatesEnabled ? getClientNeedCandidateRows(taskId, candidatesByNeed) : null;
-	                        const candidatesToggle = needCandidates ? renderClientNeedCandidatesToggle(taskId, needCandidates.length) : '';
-	                        const candidatesPanel = needCandidates ? renderClientNeedCandidatesPanel(taskId, needCandidates) : '';
+		                        const isNeedRow = flattenNeedRows && (parentTaskId > 0 || Number(t.level_depth || 0) > 0);
+		                        const candidatesToggle = isNeedRow ? renderClientNeedCandidatesToggle(taskId) : '';
+		                        const candidatesPanel = isNeedRow ? renderClientNeedCandidatesPanel(taskId) : '';
 
 	                        let tds = `
 	                          <td style="border:1px solid #ddd;${indentStyle}" class="task-cell" data-level="${t.level_depth || 0}">

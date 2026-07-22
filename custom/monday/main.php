@@ -720,6 +720,7 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['client_need_candidates_gr
     }
 
     $gid = (int) $_GET['client_need_candidates_group_id'];
+    $requestedNeedId = isset($_GET['client_need_id']) ? (int) $_GET['client_need_id'] : 0;
     $groupRes = $db->query("SELECT g.rowid, g.fk_workspace, w.label AS workspace_label
                               FROM llx_myworkspace_group g
                               JOIN llx_myworkspace w ON w.rowid = g.fk_workspace
@@ -772,6 +773,21 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['client_need_candidates_gr
                     $needsByClient[$clientKey][] = $taskId;
                 }
             }
+        }
+    }
+
+    if ($requestedNeedId > 0) {
+        if (empty($needs[$requestedNeedId])) {
+            header('Content-Type: application/json');
+            echo json_encode(['enabled' => true, 'candidates_by_need' => []]);
+            exit;
+        }
+
+        $requestedNeed = $needs[$requestedNeedId];
+        $needs = [$requestedNeedId => $requestedNeed];
+        $needsByClient = [];
+        if (!empty($clients[$requestedNeed['parent_id']]['normalized'])) {
+            $needsByClient[$clients[$requestedNeed['parent_id']]['normalized']] = [$requestedNeedId];
         }
     }
 
