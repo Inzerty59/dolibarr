@@ -477,9 +477,7 @@ function monday_get_candidate_source_task_map($db, $workspaceId, $candidateNames
     }
 
     $sourceTasks = [];
-    $res = $db->query("SELECT t.rowid, t.label,
-                              (SELECT COUNT(*) FROM llx_myworkspace_comment c WHERE c.fk_task = t.rowid) AS comment_count,
-                              (SELECT COUNT(*) FROM llx_myworkspace_task_file f WHERE f.fk_task = t.rowid) AS file_count
+    $res = $db->query("SELECT t.rowid, t.label
                          FROM llx_myworkspace_task t
                          JOIN llx_myworkspace_group g ON g.rowid = t.fk_group
                         WHERE g.fk_workspace = ".$workspaceId."
@@ -493,13 +491,16 @@ function monday_get_candidate_source_task_map($db, $workspaceId, $candidateNames
             continue;
         }
 
-        $score = ((int) $task->comment_count) + ((int) $task->file_count);
-        if (!isset($sourceTasks[$key]) || $score > $sourceTasks[$key]['score']) {
-            $sourceTasks[$key] = [
-                'id' => (int) $task->rowid,
-                'score' => $score,
-            ];
+        if (isset($sourceTasks[$key])) {
+            $sourceTasks[$key]['duplicate'] = true;
+            unset($sourceTasks[$key]['id']);
+            continue;
         }
+
+        $sourceTasks[$key] = [
+            'id' => (int) $task->rowid,
+            'duplicate' => false,
+        ];
     }
 
     return $sourceTasks;
@@ -857,6 +858,7 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['client_need_candidates_gr
     }
 
     $matchedCandidateNames = [];
+    $matchedCandidateNameCounts = [];
     foreach ($candidateTasks as $candidateTask) {
         $groupColumns = isset($columnsByGroup[$candidateTask['group_id']]) ? $columnsByGroup[$candidateTask['group_id']] : [];
         $clientColumnId = isset($groupColumns['client']) ? (int) $groupColumns['client'] : 0;
@@ -904,6 +906,10 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['client_need_candidates_gr
                     $needs[$needId]['candidate_ids'][$candidate['id']] = true;
                     $needs[$needId]['candidates'][] = $candidate;
                     $matchedCandidateNames[$candidate['id']] = $candidate['name'];
+                    $candidateKey = monday_normalize_kpi_label($candidate['name']);
+                    if ($candidateKey !== '') {
+                        $matchedCandidateNameCounts[$candidateKey] = isset($matchedCandidateNameCounts[$candidateKey]) ? $matchedCandidateNameCounts[$candidateKey] + 1 : 1;
+                    }
                 }
                 break;
             }
@@ -916,6 +922,9 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['client_need_candidates_gr
         foreach ($needs as &$need) {
             foreach ($need['candidates'] as &$candidate) {
                 $sourceKey = monday_normalize_kpi_label($candidate['name']);
+                if (isset($matchedCandidateNameCounts[$sourceKey]) && $matchedCandidateNameCounts[$sourceKey] > 1) {
+                    continue;
+                }
                 if (!empty($sourceTaskByName[$sourceKey]['id'])) {
                     $candidate['id'] = (int) $sourceTaskByName[$sourceKey]['id'];
                 }
