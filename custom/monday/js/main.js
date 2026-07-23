@@ -1743,7 +1743,7 @@ $(function(){
     const panelId = `client-need-candidates-${Number(taskId)}`;
     const content = Array.isArray(candidates)
       ? renderClientNeedCandidatesTable(candidates)
-      : '<div class="candidates-empty">Cliquez pour charger les candidatures</div>';
+      :'';
 
     return `
       <div id="${panelId}" class="candidates-panel" data-need-id="${Number(taskId)}"${expanded ? '' : ' hidden'}>
@@ -2380,6 +2380,7 @@ $(function(){
   }
 
   function loadGroups(wid){
+      clientNeedCandidateState.clear();
       fetch(`get_groups.php?wid=${wid}`)
         .then(r=>r.json()).then(groups=>{
           $('#group-list').empty();
