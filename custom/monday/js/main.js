@@ -2,6 +2,7 @@ $(function(){
   $('.side-nav .vmenu').prepend(window.leftmenu || '');
   const token = window.formtoken;
   const userId = window.userId;
+  const mondayConfig = window.mondayConfig || {};
   const planityKanbanUrl = window.planityKanbanUrl || 'ajax/planity_kanban.php';
   const planityKanbanIsAdmin = !!window.planityKanbanIsAdmin;
 
@@ -38,18 +39,46 @@ $(function(){
 
     return decoded;
   }
-  
+
   // State pour gérer les tâches collapsées
   const taskCollapseState = new Set();
-  
-  // Cache pour les données fréquemment utilisées 
+  const clientNeedCandidateState = new Set();
+  const clientNeedCandidateCache = new Map();
+  let currentWorkspaceId = 0;
+  let currentWorkspaceLabel = '';
+
+  // Cache pour les données fréquemment utilisées
   const dataCache = {
     users: null,
     columnOptions: {}
   };
 
+  function normalizeKpiLabel(label) {
+    return String(label || '')
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]+/g, "");
+  }
+
+  function isClientNeedWorkspace(workspaceId, label) {
+    const configuredIds = Array.isArray(mondayConfig.clientNeedWorkspaceIds)
+      ? mondayConfig.clientNeedWorkspaceIds.map(id => Number(id)).filter(id => id > 0)
+      : [];
+    if (configuredIds.length > 0) {
+      return configuredIds.includes(Number(workspaceId));
+    }
+
+    const normalizedWorkspace = normalizeKpiLabel(label);
+    const configuredLabels = Array.isArray(mondayConfig.clientNeedWorkspaceLabels)
+      ? mondayConfig.clientNeedWorkspaceLabels
+      : [];
+
+    return configuredLabels.includes(normalizedWorkspace);
+  }
+
   const pendingColumnOptions = {};
-    const groupSplitState = new Map();
+  const groupSplitState = new Map();
 
   function getSplitableColumns(cols) {
     return cols.filter(c => c.type === 'select');
@@ -146,7 +175,7 @@ $(function(){
     }
 
     const taskLabel = String($section.data('taskLabel') || 'élément').toLowerCase();
-    const rowCount = $section.find('tbody tr').length;
+    const rowCount = $section.find('.planity-group-table > tbody > tr.task-row').length;
     const countLabel = `${rowCount} ${taskLabel}${rowCount > 1 ? 's' : ''}`;
 
     $section.find('.group-split-section-count').text(countLabel);
@@ -167,7 +196,7 @@ $(function(){
     const $rowData = $row.data('cellValues') || {};
     $rowData[splitColumnId] = normalizedValue;
     $row.data('cellValues', $rowData);
-    $row.detach().appendTo($targetSection.find('tbody').first());
+    $row.detach().appendTo($targetSection.find('.planity-group-table > tbody').first());
 
     updateSplitSectionCount($currentSection);
     updateSplitSectionCount($targetSection);
@@ -212,7 +241,7 @@ $(function(){
     if (activeSplitId === '__base__') {
       const $table = $(buildGroupTableHtml(headerCells, 'group-base-table'));
       taskRows.forEach($row => {
-        $table.find('tbody').append($row);
+        $table.find('> tbody').append($row);
       });
       $tablesContainer.append($table);
       return;
@@ -224,7 +253,7 @@ $(function(){
 
       const $table = $(buildGroupTableHtml(headerCells, 'group-base-table'));
       taskRows.forEach($row => {
-        $table.find('tbody').append($row);
+        $table.find('> tbody').append($row);
       });
       $tablesContainer.append($table);
       return;
@@ -240,7 +269,7 @@ $(function(){
       });
       const $table = $(buildGroupTableHtml(headerCells, 'group-base-table'));
       taskRows.forEach($row => {
-        $table.find('tbody').append($row);
+        $table.find('> tbody').append($row);
       });
       $tablesContainer.append($table);
       return;
@@ -249,7 +278,7 @@ $(function(){
     if (!splitOptions.length) {
       const $table = $(buildGroupTableHtml(headerCells, 'group-base-table'));
       taskRows.forEach($row => {
-        $table.find('tbody').append($row);
+        $table.find('> tbody').append($row);
       });
       $tablesContainer.append($table);
       return;
@@ -283,7 +312,7 @@ $(function(){
       const $table = $(buildGroupTableHtml(headerCells, 'split-view-table'));
 
       section.rows.forEach($row => {
-        $table.find('tbody').append($row);
+        $table.find('> tbody').append($row);
       });
 
       $section.append($table);
@@ -299,7 +328,7 @@ $(function(){
       console.log('Utilisateurs pré-chargés en cache');
     })
     .catch(err => console.error('Erreur pré-chargement utilisateurs:', err));
-  
+
   // Pré-charger TOUTES les options de colonnes au démarrage
   fetch('?all_column_options')
     .then(r=>r.json())
@@ -312,17 +341,17 @@ $(function(){
   $(document).on('submit', 'form', function(e) {
     const form = $(this);
     const newWorkspaceInput = form.find('input[name="new_workspace"]');
-    
+
     if (newWorkspaceInput.length > 0) {
       e.preventDefault();
       const workspaceName = newWorkspaceInput.val().trim();
       if (!workspaceName) return;
-      
+
       const fd = new FormData();
       fd.append('new_workspace', workspaceName);
       fd.append('token', token);
-      fd.append('ajax', '1'); 
-      
+      fd.append('ajax', '1');
+
       fetch('', {
         method: 'POST',
         body: fd
@@ -341,9 +370,9 @@ $(function(){
           'data-id': data.id
         }).text(decodeHtmlEntities(data.label));
         $('#workspace-list').append($newItem);
-        
+
         newWorkspaceInput.val('');
-        
+
         console.log('Espace ajouté avec succès:', data);
       })
       .catch(error => {
@@ -355,7 +384,7 @@ $(function(){
         }).text(decodeHtmlEntities(workspaceName));
         $('#workspace-list').append($newItem);
         newWorkspaceInput.val('');
-        
+
         setTimeout(() => location.reload(), 500);
       });
     }
@@ -429,7 +458,7 @@ $(function(){
   window.validateNumberInput = function(input) {
     const value = input.value;
     const allowedPattern = /^[0-9€$.,\s-]*$/;
-    
+
     if (!allowedPattern.test(value)) {
       input.value = value.replace(/[^0-9€$.,\s-]/g, '');
     }
@@ -486,6 +515,7 @@ $(function(){
     if (isNumber) {
       validateNumberInput(textarea);
     }
+    $(textarea).closest('.cell-expandable').attr('data-expanded', '1');
     updateExpandableTextarea(textarea);
   };
 
@@ -505,23 +535,23 @@ $(function(){
     const $cell = $(cell);
     const taskId = $cell.data('task');
     const columnId = $cell.data('column');
-    
+
     // Utiliser le cache ou fetcher
-    const getUsersPromise = dataCache.users 
+    const getUsersPromise = dataCache.users
       ? Promise.resolve(dataCache.users)
       : fetch('?users_list').then(r=>r.json()).then(users => {
           dataCache.users = users;
           return users;
         });
-    
+
     getUsersPromise.then(users=>{
       const currentUserId = $cell.find('select').val();
-      
+
       const modal = $(`
         <div id="user-modal" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1000;display:flex;align-items:center;justify-content:center;">
           <div style="background:white;padding:20px;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.3);min-width:400px;max-height:80vh;overflow-y:auto;">
             <h3>Assigner à un utilisateur</h3>
-            
+
             <div id="users-list" style="margin:15px 0;">
               <div class="user-option ${!currentUserId ? 'selected' : ''}" data-user-id="" style="display:flex;align-items:center;gap:10px;margin-bottom:8px;padding:10px;border:2px solid ${!currentUserId ? '#007cba' : 'transparent'};background:${!currentUserId ? '#f0f8ff' : '#f9f9f9'};border-radius:6px;cursor:pointer;">
                 <div class="user-avatar" style="background:#999;">--</div>
@@ -541,7 +571,7 @@ $(function(){
                   `;
                 }).join('')}
               </div>
-              
+
               <div style="margin-top:20px;text-align:right;display:flex;gap:10px;justify-content:flex-end;">
                 <button id="save-user" style="padding:8px 16px;background:#007cba;color:white;border:none;cursor:pointer;border-radius:4px;">Assigner</button>
                 <button id="cancel-user" style="padding:8px 16px;background:#ccc;border:none;cursor:pointer;border-radius:4px;">Annuler</button>
@@ -549,9 +579,9 @@ $(function(){
             </div>
           </div>
         `);
-        
+
         $('body').append(modal);
-        
+
         $('.user-option').click(function(){
           $('.user-option').removeClass('selected').css({
             'border': '2px solid transparent',
@@ -562,34 +592,34 @@ $(function(){
             'background': '#f0f8ff'
           });
         });
-        
+
         $('#save-user').click(function(){
           const selectedUserId = $('.user-option.selected').data('user-id') || '';
-          
+
           const fd = new FormData();
           fd.append('save_cell_task', taskId);
           fd.append('save_cell_column', columnId);
           fd.append('save_cell_value', selectedUserId);
           fd.append('token', token);
-          
+
           fetch('', {method: 'POST', body: fd}).then(()=>{
             modal.remove();
-            
+
             const $activeWorkspace = $('.workspace-item').filter(function() {
               return $(this).css('background-color') === 'rgb(0, 124, 186)';
             });
-            
+
             if ($activeWorkspace.length > 0) {
               const wsId = $activeWorkspace.data('id');
               loadGroups(wsId);
             }
           });
         });
-        
+
         $('#cancel-user').click(function(){
           modal.remove();
         });
-        
+
         modal.click(function(e){
           if(e.target === modal[0]) {
             modal.remove();
@@ -602,7 +632,7 @@ $(function(){
     const $cell = $(cell);
     const taskId = $cell.data('task');
     const columnId = $cell.data('column');
-    
+
     const getOptionsPromise = dataCache.columnOptions[columnId]
       ? Promise.resolve(dataCache.columnOptions[columnId])
       : fetch(`?column_options=${columnId}`)
@@ -611,7 +641,7 @@ $(function(){
             dataCache.columnOptions[columnId] = options;
             return options;
           });
-    
+
     getOptionsPromise.then(options=>{
       const selectedTags = [];
       $cell.find('.tag-item').each(function(){
@@ -620,9 +650,9 @@ $(function(){
           selectedTags.push(tagId);
         }
       });
-        
+
         console.log('Tags actuellement sélectionnés:', selectedTags);
-        
+
         const modal = $(`
           <div id="tags-modal" class="custom-popup-overlay show">
             <div class="custom-popup">
@@ -641,9 +671,9 @@ $(function(){
                     `;
                   }).join('')}
                 </div>
-                
+
                 ${options.length === 0 ? '<p style="text-align:center;color:#666;font-style:italic;margin:20px 0;">Aucune étiquette disponible. Utilisez "Gérer options" dans le menu de la colonne pour en créer.</p>' : ''}
-                
+
                 <div class="custom-popup-buttons">
                   <button id="save-tags" class="custom-popup-btn custom-popup-btn-primary">Sauvegarder</button>
                   <button id="cancel-tags" class="custom-popup-btn custom-popup-btn-secondary">Annuler</button>
@@ -652,9 +682,9 @@ $(function(){
             </div>
           </div>
         `);
-        
+
         $('body').append(modal);
-        
+
         $('.tag-option').click(function(){
           $(this).toggleClass('selected');
           if($(this).hasClass('selected')) {
@@ -665,28 +695,28 @@ $(function(){
             $(this).css('transform', 'scale(1)');
           }
         });
-        
+
         $('#save-tags').click(function(){
           const selectedTagIds = [];
           $('.tag-option.selected').each(function(){
             selectedTagIds.push(parseInt($(this).data('tag-id')));
           });
-          
+
           console.log('Tags à sauvegarder:', selectedTagIds);
-          
+
           const fd = new FormData();
           fd.append('save_cell_task', taskId);
           fd.append('save_cell_column', columnId);
           fd.append('save_cell_value', JSON.stringify(selectedTagIds));
           fd.append('token', token);
-          
+
           fetch('', {method: 'POST', body: fd}).then(()=>{
             modal.remove();
-            
+
             let tagsHtml = `
               <div class="selected-tags" style="display:flex;flex-wrap:wrap;gap:3px;margin-bottom:5px;">
             `;
-            
+
             const getOptionsPromise = dataCache.columnOptions[columnId]
               ? Promise.resolve(dataCache.columnOptions[columnId])
               : fetch(`?column_options=${columnId}`)
@@ -695,7 +725,7 @@ $(function(){
                     dataCache.columnOptions[columnId] = allOptions;
                     return allOptions;
                   });
-            
+
             getOptionsPromise.then(allOptions=>{
               selectedTagIds.forEach(tagId => {
                 const tag = allOptions.find(opt => parseInt(opt.id) === tagId);
@@ -708,20 +738,20 @@ $(function(){
                     `;
                   }
                 });
-                
+
                 tagsHtml += `
                   </div>
                 `;
-                
+
                 $cell.html(tagsHtml);
               });
           });
         });
-        
+
         $('#cancel-tags').click(function(){
           modal.remove();
         });
-        
+
         modal.click(function(e){
           if(e.target === modal[0]) {
             modal.remove();
@@ -735,20 +765,20 @@ $(function(){
     const $cell = $(tagElement).closest('.tags-cell');
     const taskId = $cell.data('task');
     const columnId = $cell.data('column');
-    
+
     $(tagElement).closest('.tag-item').remove();
-    
+
     const remainingTags = [];
     $cell.find('.tag-item').each(function(){
       remainingTags.push($(this).data('tag-id'));
     });
-    
+
     const fd = new FormData();
     fd.append('save_cell_task', taskId);
     fd.append('save_cell_column', columnId);
     fd.append('save_cell_value', JSON.stringify(remainingTags));
     fd.append('token', token);
-    
+
     fetch('', {method: 'POST', body: fd}).then(()=>{
       console.log('Tag supprimé et sauvegardé');
     });
@@ -758,11 +788,11 @@ $(function(){
     const $cell = $(input).closest('.deadline-cell');
     const taskId = $cell.data('task');
     const columnId = $cell.data('column');
-    
+
     const startDate = $cell.find('.deadline-start').val();
     const endDate = $cell.find('.deadline-end').val();
     const value = `${startDate}|${endDate}`;
-    
+
     let daysText = '';
     let daysClass = '';
     if(endDate) {
@@ -770,7 +800,7 @@ $(function(){
       const end = new Date(endDate);
       const diffTime = end - today;
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      
+
       if(diffDays > 0) {
         daysText = `${diffDays} jour${diffDays > 1 ? 's' : ''} restant${diffDays > 1 ? 's' : ''}`;
         daysClass = diffDays <= 3 ? 'deadline-urgent' : (diffDays <= 7 ? 'deadline-warning' : 'deadline-ok');
@@ -782,16 +812,16 @@ $(function(){
         daysClass = 'deadline-overdue';
       }
     }
-    
+
     const $daysDiv = $cell.find('.days-remaining');
     $daysDiv.text(daysText).removeClass('deadline-urgent deadline-warning deadline-ok deadline-overdue').addClass(daysClass);
-    
+
     const fd = new FormData();
     fd.append('save_cell_task', taskId);
     fd.append('save_cell_column', columnId);
     fd.append('save_cell_value', value);
     fd.append('token', token);
-    
+
     fetch('', {method: 'POST', body: fd});
   };
 
@@ -804,10 +834,10 @@ $(function(){
         const color = style.match(/background:([^;]+)/)?.[1];
         if(color) {
           $select.css('background-color', color);
-          
+
           const textColor = getContrastColor(color);
           $select.css('color', textColor);
-          
+
           $select.css({
             'border': 'none',
             'padding': '4px 8px',
@@ -818,7 +848,7 @@ $(function(){
         }
       }
     }
-    
+
     $select.css({
       'background-color': 'transparent',
       'color': 'inherit',
@@ -828,10 +858,10 @@ $(function(){
       'font-weight': 'normal'
     });
   }
-  
+
   function getContrastColor(hexColor) {
     let r, g, b;
-    
+
     if (hexColor.startsWith('#')) {
       const hex = hexColor.substring(1);
       r = parseInt(hex.substr(0, 2), 16);
@@ -844,7 +874,7 @@ $(function(){
         g = parseInt(matches[1]);
         b = parseInt(matches[2]);
       } else {
-        return '#000000'; 
+        return '#000000';
       }
     } else {
       const namedColors = {
@@ -860,16 +890,16 @@ $(function(){
         'black': '#000000',
         'white': '#FFFFFF'
       };
-      
+
       if (namedColors[hexColor.toLowerCase()]) {
         return getContrastColor(namedColors[hexColor.toLowerCase()]);
       }
-      
+
       return '#000000';
     }
-    
+
     const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-    
+
     return luminance > 0.5 ? '#000000' : '#FFFFFF';
   }
 
@@ -878,7 +908,7 @@ $(function(){
     fd.append('toggle_task_completion', taskId);
     fd.append('is_completed', isChecked ? 1 : 0);
     fd.append('token', token);
-    
+
     fetch('', {method: 'POST', body: fd})
       .then(r => r.text())
       .then(response => {
@@ -886,7 +916,7 @@ $(function(){
           // Mettre à jour l'affichage
           const $checkbox = $(`.task-completion-checkbox[data-task-id="${taskId}"]`);
           const $label = $checkbox.closest('.task-cell').find('.task-label');
-          
+
           if (isChecked) {
             $label.css({'text-decoration': 'line-through', 'color': '#999'});
           } else {
@@ -899,23 +929,23 @@ $(function(){
   window.openTaskDetail = function(taskId, taskName, groupName, taskColumnLabel) {
     currentTaskId = taskId;
     currentTaskColumnLabel = taskColumnLabel ? taskColumnLabel.toLowerCase() : 'tâche';
-    
+
     const detailTitle = 'Détail';
     const labelText = taskColumnLabel ? `${taskColumnLabel} :` : 'Tâche :';
-    
+
     $('#task-detail-title').text(detailTitle);
     $('#task-label-text').text(labelText);
     $('#task-name-display').text(taskName);
     $('#task-group-display').text(groupName);
     $('#task-created-display').text('Chargement...');
-    
+
     setTimeout(() => {
       $('#task-detail-title').text(detailTitle);
       $('#task-label-text').text(labelText);
     }, 50);
-    
+
     $('#task-detail-panel').addClass('open');
-    
+
     fetch(`?task_details=${taskId}`)
       .then(r => r.json())
       .then(task => {
@@ -933,7 +963,7 @@ $(function(){
         } else {
           $('#task-created-display').text('Date non disponible');
         }
-        
+
         $('#task-name-display').text(task.label);
         $('#task-group-display').text(task.group_label);
       })
@@ -941,15 +971,27 @@ $(function(){
         console.error('Erreur lors du chargement des détails:', err);
         $('#task-created-display').text('Erreur de chargement');
       });
-    
+
     loadComments(taskId);
     loadTaskFiles(taskId);
   };
 
-  window.closeTaskDetail = function() {
-    $('#task-detail-panel').removeClass('open');
+  window.closeTaskDetail = function(options = {}) {
+    const immediate = Boolean(options && options.immediate);
+    const $panel = $('#task-detail-panel');
+
+    if (immediate) {
+      $panel.addClass('no-transition');
+    }
+
+    $panel.removeClass('open');
     currentTaskId = null;
     currentTaskColumnLabel = 'tâche';
+
+    if (immediate && $panel.length) {
+      $panel[0].offsetHeight;
+      $panel.removeClass('no-transition');
+    }
   };
 
   function loadComments(taskId) {
@@ -958,7 +1000,7 @@ $(function(){
       .then(comments => {
         const $commentsList = $('#comments-list');
         $commentsList.empty();
-        
+
         if (comments.length === 0) {
           $commentsList.append(`
             <div class="no-comments" style="text-align:center;color:#666;font-style:italic;padding:20px;">
@@ -967,7 +1009,7 @@ $(function(){
           `);
           return;
         }
-        
+
         comments.forEach(comment => {
           const commentDate = new Date(comment.date);
           const formattedDate = commentDate.toLocaleDateString('fr-FR', {
@@ -977,13 +1019,13 @@ $(function(){
             hour: '2-digit',
             minute: '2-digit'
           });
-          
+
           const fontFamily = comment.font_family || 'Arial';
           const fontSize = comment.font_size || 14;
           const fontWeight = comment.font_weight || 400;
           const fontColor = comment.font_color || '#000000';
           const commentStyle = `font-family: ${fontFamily}; font-size: ${fontSize}px; font-weight: ${fontWeight}; color: ${fontColor};`;
-          
+
           const $comment = $(`
             <div class="comment-item" data-comment-id="${comment.id}">
               <div class="comment-header">
@@ -997,7 +1039,7 @@ $(function(){
               </div>
             </div>
           `);
-          
+
           $commentsList.append($comment);
         });
       })
@@ -1017,7 +1059,7 @@ $(function(){
         console.log('Fichiers reçus:', files);
         const $filesList = $('#task-files-list');
         $filesList.empty();
-        
+
         if (files.length === 0) {
           $filesList.append(`
             <div class="no-files" style="text-align:center;color:#666;font-style:italic;padding:20px;">
@@ -1028,7 +1070,7 @@ $(function(){
           files.forEach(file => {
             const fileSize = formatFileSize(file.filesize);
             const fileIcon = getFileIcon(file.mimetype, file.original_name);
-            
+
             const $fileItem = $(`
               <div class="task-file-item" data-file-id="${file.rowid}">
                 <div class="task-file-info">
@@ -1042,7 +1084,7 @@ $(function(){
                 </div>
               </div>
             `);
-            
+
             $filesList.append($fileItem);
           });
         }
@@ -1081,7 +1123,7 @@ $(function(){
         default: return '📎';
       }
     }
-    
+
     if (mimetype) {
       if (mimetype.startsWith('image/')) return '🖼️';
       if (mimetype.startsWith('video/')) return '🎥';
@@ -1091,30 +1133,30 @@ $(function(){
       if (mimetype.includes('sheet') || mimetype.includes('excel')) return '📊';
       if (mimetype.includes('zip') || mimetype.includes('compressed')) return '🗜️';
     }
-    
+
     return '📎';
   }
 
   window.viewTaskFile = function(fileId, fileName, mimeType) {
     const isImage = mimeType && mimeType.startsWith('image/');
     const isPdf = mimeType && mimeType.includes('pdf');
-    
+
     if (isImage || isPdf) {
       const modal = $(`
         <div id="file-viewer-modal" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);z-index:1001;display:flex;align-items:center;justify-content:center;">
           <div style="position:relative;max-width:90%;max-height:90%;background:white;padding:20px;border-radius:8px;">
             <button id="close-viewer" style="position:absolute;top:10px;right:10px;background:none;border:none;font-size:24px;cursor:pointer;">✖</button>
             <h4 style="margin:0 0 15px 0;">${fileName}</h4>
-            ${isImage ? 
+            ${isImage ?
               `<img src="?download_file=${fileId}&type=task" style="max-width:100%;max-height:70vh;" alt="${fileName}">` :
               `<iframe src="?download_file=${fileId}&type=task" style="width:80vw;height:70vh;border:none;"></iframe>`
             }
           </div>
         </div>
       `);
-      
+
       $('body').append(modal);
-      
+
       $('#close-viewer').click(() => modal.remove());
       modal.click(function(e) {
         if (e.target === modal[0]) modal.remove();
@@ -1127,12 +1169,12 @@ $(function(){
   window.deleteTaskFile = function(fileId) {
     CustomPopup.confirm('Êtes-vous sûr de vouloir supprimer ce fichier ?', function(result) {
       if (!result) return;
-      
+
       const fd = new FormData();
       fd.append('delete_file_id', fileId);
       fd.append('type', 'task');
       fd.append('token', token);
-      
+
       fetch('', {method: 'POST', body: fd})
         .then(r => r.text())
         .then(response => {
@@ -1148,11 +1190,11 @@ $(function(){
   window.deleteFile = function(fileId) {
     CustomPopup.confirm('Êtes-vous sûr de vouloir supprimer ce fichier ?', function(result) {
       if (!result) return;
-      
+
       const fd = new FormData();
       fd.append('delete_file_id', fileId);
       fd.append('token', token);
-      
+
       fetch('', {method: 'POST', body: fd})
         .then(r => r.text())
         .then(response => {
@@ -1169,35 +1211,35 @@ $(function(){
     const editor = document.getElementById('new-comment-text');
     const commentText = editor.textContent.trim();
     const commentHTML = editor.innerHTML.trim();
-    
+
     if (!commentText) {
       CustomPopup.error('Veuillez saisir un commentaire', 'Champ obligatoire');
       return;
     }
-    
+
     if (!currentTaskId) {
       CustomPopup.error('Erreur: aucune tâche sélectionnée');
       return;
     }
-    
+
     const fd = new FormData();
     fd.append('add_comment_task', currentTaskId);
     fd.append('comment_text', commentHTML);
     fd.append('token', token);
-    
+
     fetch('', {method: 'POST', body: fd})
       .then(response => {
         console.log('Statut de la réponse:', response.status);
         const contentType = response.headers.get('content-type');
         console.log('Type de contenu:', contentType);
-        
+
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
-        
+
         return response.text().then(text => {
           console.log('Réponse brute reçue:', text);
-          
+
           if (contentType && contentType.includes('application/json')) {
             try {
               return JSON.parse(text);
@@ -1258,28 +1300,28 @@ $(function(){
       CustomPopup.error('Erreur: aucune tâche sélectionnée');
       return;
     }
-    
+
     CustomPopup.confirm('Êtes-vous sûr de vouloir supprimer cette tâche ?', function(result) {
       if (!result) return;
-      
+
       const fd = new FormData();
       fd.append('delete_task_id', currentTaskId);
       fd.append('token', token);
-      
+
       fetch('', {method: 'POST', body: fd})
         .then(() => {
           closeTaskDetail();
-          
+
           $(`tr[data-id="${currentTaskId}"]`).fadeOut(300, function() {
             $(this).remove();
           });
-          
+
           const $activeWorkspace = $('.workspace-item').filter(function() {
             return $(this).css('background-color') === 'rgb(0, 124, 186)' ||
                    $(this).css('font-weight') === 'bold' ||
                    $(this).css('font-weight') === '700';
           });
-          
+
           if ($activeWorkspace.length > 0) {
             const wsId = $activeWorkspace.data('id');
             if (wsId) {
@@ -1298,28 +1340,28 @@ $(function(){
 
   $('#edit-task-name').click(function() {
     const currentName = $('#task-name-display').text();
-    
+
     CustomPopup.prompt('Nouveau nom de la tâche:', function(newName) {
       if (!newName || newName === currentName) return;
-      
+
       const fd = new FormData();
       fd.append('rename_task_id', currentTaskId);
       fd.append('rename_task_label', newName);
       fd.append('token', token);
-      
+
       fetch('', {method: 'POST', body: fd})
         .then(() => {
           $('#task-name-display').text(newName);
-          
+
           $(`tr[data-id="${currentTaskId}"] td:nth-child(1)`).text(newName);
-          
+
           const $activeWorkspace = $('.workspace-item').filter(function() {
             const $this = $(this);
-            return $this.css('background-color') === 'rgb(0, 124, 186)' || 
+            return $this.css('background-color') === 'rgb(0, 124, 186)' ||
                    $this.css('font-weight') === 'bold' ||
                    $this.css('font-weight') === '700';
           });
-          
+
           if ($activeWorkspace.length > 0) {
             const wsId = $activeWorkspace.data('id');
             if (wsId) {
@@ -1349,7 +1391,7 @@ $(function(){
     const $commentText = $commentItem.find('.comment-text');
     const currentText = $commentText.text();
     const currentHTML = $commentText.html();
-    
+
     const $editForm = $(`
       <div class="edit-comment-form">
         <div class="comment-formatting-toolbar">
@@ -1368,11 +1410,11 @@ $(function(){
         </div>
       </div>
     `);
-    
+
     $commentText.hide();
     $commentItem.find('.comment-actions').hide();
     $commentItem.append($editForm);
-    
+
     // Event handlers pour la barre d'outils d'édition
     $editForm.find('.edit-bold-toggle').click(function(e) {
       e.preventDefault();
@@ -1380,14 +1422,14 @@ $(function(){
       document.execCommand('bold', false, null);
       $editForm.find('.edit-comment-textarea').focus();
     });
-    
+
     $editForm.find('.edit-italic-toggle').click(function(e) {
       e.preventDefault();
       $(this).toggleClass('active');
       document.execCommand('italic', false, null);
       $editForm.find('.edit-comment-textarea').focus();
     });
-    
+
     $editForm.find('.edit-comment-color').change(function() {
       const color = $(this).val();
       document.execCommand('foreColor', false, color);
@@ -1400,20 +1442,20 @@ $(function(){
     const $commentItem = $(this).closest('.comment-item');
     const $editForm = $commentItem.find('.edit-comment-form');
     const $editTextarea = $editForm.find('[contenteditable="true"]');
-    
+
     // Récupérer le contenu HTML du contenteditable
     const newText = $editTextarea.html().trim();
-    
+
     if (!newText) {
       CustomPopup.error('Le commentaire ne peut pas être vide', 'Champ obligatoire');
       return;
     }
-    
+
     const fd = new FormData();
     fd.append('edit_comment_id', commentId);
     fd.append('edit_comment_text', newText);
     fd.append('token', token);
-    
+
     fetch('', {method: 'POST', body: fd})
       .then(r => r.text())
       .then(response => {
@@ -1427,14 +1469,14 @@ $(function(){
 
   $(document).on('click', '.delete-comment-btn', function() {
     const commentId = $(this).data('comment-id');
-    
+
     CustomPopup.confirm('Êtes-vous sûr de vouloir supprimer ce commentaire ?', function(result) {
       if (!result) return;
-      
+
       const fd = new FormData();
       fd.append('delete_comment_id', commentId);
       fd.append('token', token);
-      
+
       fetch('', {method: 'POST', body: fd})
         .then(r => r.text())
         .then(response => {
@@ -1464,25 +1506,25 @@ $(function(){
     const files = this.files;
     console.log('Files sélectionnés:', files.length);
     console.log('currentTaskId:', currentTaskId);
-    
+
     if (files.length === 0) {
       console.log('Aucun fichier sélectionné');
       return;
     }
-    
+
     if (!currentTaskId) {
       console.log('Erreur: currentTaskId est null');
       CustomPopup.error('Erreur: Aucune tâche sélectionnée');
       return;
     }
-    
+
     Array.from(files).forEach((file, index) => {
       console.log('Upload du fichier:', file.name);
       const fd = new FormData();
       fd.append('upload_task_file', currentTaskId);
       fd.append('task_file', file);
       fd.append('token', token);
-      
+
       fetch('', {method: 'POST', body: fd})
         .then(r => {
           console.log('Réponse reçue:', r.status);
@@ -1502,10 +1544,22 @@ $(function(){
           CustomPopup.error('Erreur lors de l\'upload du fichier: ' + file.name);
         });
     });
-    
+
     $(this).val('');
   });
-  $('#workspace-list').sortable({
+
+  function initSortable($element, options) {
+    if (!$element.length || typeof $element.sortable !== 'function') {
+      return;
+    }
+
+    $element.sortable(options);
+    if (typeof $element.disableSelection === 'function') {
+      $element.disableSelection();
+    }
+  }
+
+  initSortable($('#workspace-list'), {
     cursor:'pointer',
     update(){
       const order = $('#workspace-list .workspace-item').map((_,el)=>el.dataset.id).get();
@@ -1514,10 +1568,10 @@ $(function(){
         token: token
       })});
     }
-  }).disableSelection();
+  });
 
   function initGroupSortable(){
-    $('#group-list').sortable({
+    initSortable($('#group-list'), {
       cursor:'pointer',
       update(){
         const order = $('#group-list .group').map((_,el)=>el.dataset.id).get();
@@ -1526,29 +1580,30 @@ $(function(){
           token: token
         })});
       }
-    }).disableSelection();
+    });
   }
-  
+
   function initTaskSortable(){
-    $('.group-body .group-base-table tbody').sortable({
+    initSortable($('.group-body .group-base-table > tbody'), {
+      items: '> tr.task-row',
       cursor:'pointer',
       update(){
-        const order = $(this).children().map((_,tr)=>tr.dataset.id).get();
+        const order = $(this).children('.task-row').map((_,tr)=>tr.dataset.id).get();
         fetch('',{method:'POST',body:new URLSearchParams({
           reorder_tasks: JSON.stringify(order),
           token: token
         })});
       }
-    }).disableSelection();
+    });
   }
 
   function initColumnSortable(){
-    $('.group-body thead tr').each(function(){
+    $('.group-body .planity-group-table > thead > tr').each(function(){
       const $tr = $(this);
       const $group = $tr.closest('.group');
       const groupId = $group.data('id');
-      
-      $tr.sortable({
+
+      initSortable($tr, {
         items: 'th:not(:first-child):not(:last-child)',
         cursor: 'move',
         axis: 'x',
@@ -1564,7 +1619,7 @@ $(function(){
             'border': '2px dashed #2196f3',
             'opacity': '0.7'
           });
-          
+
           $('.column-menu').removeClass('show').hide();
         },
         update: function(event, ui) {
@@ -1578,7 +1633,7 @@ $(function(){
               }
             }
           });
-          
+
           if (columnOrder.length > 0) {
             fetch('', {
               method: 'POST',
@@ -1598,7 +1653,7 @@ $(function(){
             });
           }
         }
-      }).disableSelection();
+      });
     });
   }
 
@@ -1609,6 +1664,142 @@ $(function(){
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#039;');
+  }
+
+  function highlightEscapedText(value, regex) {
+    const text = String(value ?? '');
+    let lastIndex = 0;
+    let highlighted = '';
+
+    text.replace(regex, (match, ...args) => {
+      const offset = args[args.length - 2];
+      highlighted += escapeHtml(text.slice(lastIndex, offset));
+      highlighted += `<span class="search-highlight">${escapeHtml(match)}</span>`;
+      lastIndex = offset + match.length;
+      return match;
+    });
+
+    return highlighted + escapeHtml(text.slice(lastIndex));
+  }
+
+  function getClientNeedCandidateRows(taskId, candidatesByNeed) {
+    const key = String(taskId);
+    if (!Object.prototype.hasOwnProperty.call(candidatesByNeed, key)) {
+      return null;
+    }
+    return Array.isArray(candidatesByNeed[key]) ? candidatesByNeed[key] : [];
+  }
+
+  function isClientNeedCandidatesExpanded(taskId) {
+    return clientNeedCandidateState.has(String(taskId));
+  }
+
+  function renderClientNeedCandidatesToggle(taskId, count = '') {
+    const expanded = isClientNeedCandidatesExpanded(taskId);
+    const panelId = `client-need-candidates-${Number(taskId)}`;
+    const countHtml = count === '' || count === null ? '' : `<span class="count">${Number(count)}</span>`;
+    return `
+      <button class="candidates-toggle" type="button" data-need-id="${Number(taskId)}" aria-expanded="${expanded ? 'true' : 'false'}" aria-controls="${panelId}">
+        <span class="candidates-caret" aria-hidden="true">${expanded ? '▼' : '▶'}</span>
+        <span>Candidatures</span>
+        ${countHtml}
+      </button>`;
+  }
+
+  function renderClientNeedCandidatesTable(candidates) {
+    const candidateRows = (candidates || []).map(candidate => `
+      <tr>
+        <td>
+          <button class="candidate-detail-link" type="button" data-candidate-id="${Number(candidate.id)}" data-candidate-name="${escapeHtml(candidate.name)}">
+            ${escapeHtml(candidate.name)}
+          </button>
+        </td>
+        <td>${escapeHtml(candidate.date_envoie_client || '')}</td>
+        <td>${escapeHtml(candidate.action_client || '')}</td>
+      </tr>
+    `).join('');
+
+    return `
+      <table class="candidates-table">
+        <colgroup>
+          <col style="width: 46.666%">
+          <col style="width: 26.667%">
+          <col style="width: 26.667%">
+        </colgroup>
+        <thead>
+          <tr>
+            <th>Prénom et nom</th>
+            <th>Date d'envoi</th>
+            <th>Action client</th>
+          </tr>
+        </thead>
+        <tbody>${candidateRows || '<tr><td colspan="3" class="candidates-empty">Aucune candidature</td></tr>'}</tbody>
+      </table>
+    `;
+  }
+
+  function renderClientNeedCandidatesPanel(taskId, candidates = null) {
+    const expanded = isClientNeedCandidatesExpanded(taskId);
+    const panelId = `client-need-candidates-${Number(taskId)}`;
+    const content = Array.isArray(candidates)
+      ? renderClientNeedCandidatesTable(candidates)
+      : '';
+
+    return `
+      <div id="${panelId}" class="candidates-panel" data-need-id="${Number(taskId)}"${expanded ? '' : ' hidden'}>
+        ${content}
+      </div>
+    `;
+  }
+
+  function loadClientNeedCandidates($button) {
+    const needId = Number($button.data('need-id'));
+    const groupId = Number($button.closest('.group').data('id'));
+    const cacheKey = `${groupId}:${needId}`;
+    const $panel = $button.closest('.task-cell').find(`.candidates-panel[data-need-id="${needId}"]`);
+
+    if (!needId || !groupId || $panel.data('loaded') === true) {
+      return;
+    }
+
+    if (clientNeedCandidateCache.has(cacheKey)) {
+      const cachedCandidates = clientNeedCandidateCache.get(cacheKey);
+      $panel.html(renderClientNeedCandidatesTable(cachedCandidates)).data('loaded', true);
+      $button.find('.count').remove();
+      $button.append(`<span class="count">${cachedCandidates.length}</span>`);
+      return;
+    }
+
+    $panel.html('<div class="candidates-empty">Chargement...</div>');
+    fetch(`?client_need_candidates_group_id=${groupId}&client_need_id=${needId}&token=${encodeURIComponent(token)}`)
+      .then(r => r.json())
+      .then(payload => {
+        const candidatesByNeed = payload?.candidates_by_need || {};
+        const candidates = getClientNeedCandidateRows(needId, candidatesByNeed) || [];
+        clientNeedCandidateCache.set(cacheKey, candidates);
+        $panel.html(renderClientNeedCandidatesTable(candidates)).data('loaded', true);
+        $button.find('.count').remove();
+        $button.append(`<span class="count">${candidates.length}</span>`);
+      })
+      .catch(() => {
+        $panel.html('<div class="candidates-empty">Erreur de chargement</div>');
+      });
+  }
+
+  function setClientNeedCandidatesExpanded($button, expanded) {
+    const needId = String($button.data('need-id'));
+    const $panel = $button.closest('.task-cell').find(`.candidates-panel[data-need-id="${needId}"]`);
+
+    $panel.prop('hidden', !expanded);
+    $button.attr('aria-expanded', expanded ? 'true' : 'false');
+    $button.find('.candidates-caret').text(expanded ? '▼' : '▶');
+
+    if (expanded) {
+      clientNeedCandidateState.add(needId);
+      loadClientNeedCandidates($button);
+    } else {
+      clientNeedCandidateState.delete(needId);
+    }
   }
 
   function buildKpiQuery() {
@@ -1893,6 +2084,7 @@ $(function(){
   }
 
   $(document).on('click', '.workspace-kpi-entry', function() {
+    closeTaskDetail({ immediate: true });
     showKpiDashboard();
   });
 
@@ -1920,6 +2112,10 @@ $(function(){
     if (this.id === 'planity-kanban-item') return;
     const wsId    = this.dataset.id;
     const wsLabel = this.textContent;
+    const escapedWsLabel = escapeHtml(wsLabel);
+    closeTaskDetail({ immediate: true });
+    currentWorkspaceId = Number(wsId) || 0;
+    currentWorkspaceLabel = wsLabel;
     $('.workspace-kpi-entry').removeClass('active');
     $('#planity-kanban-item').removeClass('active').css({
       'background-color': '',
@@ -1937,17 +2133,17 @@ $(function(){
       'color': 'white',
       'font-weight': 'bold'
     });
-    
+
     $('#main-content').html(`
       <div style="display:flex;align-items:center;gap:10px;">
-        <h2 style="margin:0;cursor:pointer;">${wsLabel}</h2>
+        <h2 style="margin:0;cursor:pointer;">${escapedWsLabel}</h2>
         <button id="rename-btn" style="padding:2px 6px;">✎</button>
         <button id="delete-btn" style="padding:2px 6px;">✖</button>
       </div>
       <div style="display:flex;align-items:center;gap:10px;margin:1rem 0;">
         <button id="add-group-btn">+ Ajouter un groupe</button>
         <div style="position:relative;display:inline-block;">
-          <input type="text" id="workspace-search" placeholder="Rechercher dans cet espace..." 
+          <input type="text" id="workspace-search" placeholder="Rechercher dans cet espace..."
                  style="padding:6px 30px 6px 10px;border:1px solid #ccc;border-radius:4px;width:250px;">
           <button id="clear-workspace-search" style="position:absolute;right:5px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:#999;font-size:16px;padding:0;width:20px;height:20px;display:none;">×</button>
         </div>
@@ -1961,9 +2157,9 @@ $(function(){
         if(!n) return;
         const fd=new FormData(); fd.append('rename_workspace_id',wsId);
         fd.append('rename_workspace_label',n); fd.append('token',token);
-        
+
         console.log('Renommage de l\'espace:', wsId, 'vers:', n);
-        
+
         fetch('',{method:'POST',body:fd})
           .then(response => {
             console.log('Réponse du serveur pour renommage:', response.status);
@@ -1971,10 +2167,10 @@ $(function(){
           })
           .then(responseText => {
             console.log('Contenu de la réponse:', responseText);
-            
+
             $('#main-content h2').text(n);
             $(`.workspace-item[data-id="${wsId}"]`).text(n);
-            
+
             console.log('Interface mise à jour avec succès');
           })
           .catch(error => {
@@ -1987,9 +2183,9 @@ $(function(){
         if(!result) return;
         const fd=new FormData(); fd.append('delete_workspace_id',wsId);
         fd.append('token',token);
-        
+
         console.log('Suppression de l\'espace:', wsId);
-        
+
         fetch('',{method:'POST',body:fd})
           .then(response => {
             console.log('Réponse du serveur pour suppression:', response.status);
@@ -1997,10 +2193,10 @@ $(function(){
           })
           .then(responseText => {
             console.log('Contenu de la réponse:', responseText);
-            
+
             $(`.workspace-item[data-id="${wsId}"]`).remove();
             $('#main-content').html('<div style="text-align:center;padding:50px;color:#666;"><h3>Sélectionnez un espace de travail</h3><p>Choisissez un espace dans la liste de gauche pour commencer.</p></div>');
-            
+
             console.log('Espace supprimé de l\'interface');
           })
           .catch(error => {
@@ -2184,6 +2380,7 @@ $(function(){
   }
 
   function loadGroups(wid){
+      clientNeedCandidateState.clear();
       fetch(`get_groups.php?wid=${wid}`)
         .then(r=>r.json()).then(groups=>{
           $('#group-list').empty();
@@ -2197,16 +2394,16 @@ $(function(){
               .then(cols=>{
                 let ths = `
                   <th style="border:1px solid #ddd;padding:4px;position:relative;">
-                    <span class="task-column-label" data-gid="${g.id}" style="cursor:pointer;" title="Cliquer pour modifier">${decodeHtmlEntities(g.task_column_label || 'Tâche')}</span>
+                    <span class="task-column-label" data-gid="${g.id}" style="cursor:pointer;" title="Cliquer pour modifier">${escapeHtml(decodeHtmlEntities(g.task_column_label || 'Tâche'))}</span>
                   </th>
                 `;
                 cols.forEach(c=>{
                   ths += `<th style="border:1px solid #ddd;padding:4px;position:relative;cursor:move;">
-                            <span class="column-label" data-cid="${c.id}" style="cursor:pointer;" title="Glisser pour réorganiser">${decodeHtmlEntities(c.label)}</span><span class="column-sort-indicator" data-cid="${c.id}"></span>
+                            <span class="column-label" data-cid="${c.id}" style="cursor:pointer;" title="Glisser pour réorganiser">${escapeHtml(decodeHtmlEntities(c.label))}</span><span class="column-sort-indicator" data-cid="${c.id}"></span>
                             <button class="column-menu-btn" data-cid="${c.id}" type="button" aria-label="Menu de colonne">⋮</button>
                             <div class="column-menu" style="display:none;position:absolute;right:0;top:22px;z-index:10;">
-                              <button class="sort-asc-btn" type="button" data-cid="${c.id}" data-type="${c.type}">Trier croissant ↑</button>
-                              <button class="sort-desc-btn" type="button" data-cid="${c.id}" data-type="${c.type}">Trier décroissant ↓</button>
+                              <button class="sort-asc-btn" type="button" data-cid="${c.id}" data-type="${escapeHtml(c.type)}">Trier croissant ↑</button>
+                              <button class="sort-desc-btn" type="button" data-cid="${c.id}" data-type="${escapeHtml(c.type)}">Trier décroissant ↓</button>
                               <button class="rename-column-btn" type="button" data-cid="${c.id}">Renommer</button>
                               <button class="delete-column-btn" type="button" data-cid="${c.id}">Supprimer</button>
                               ${(c.type === 'select' || c.type === 'tags') ? `<button class="manage-options-btn" type="button" data-cid="${c.id}">Gérer options</button>` : ''}
@@ -2220,34 +2417,34 @@ $(function(){
                 const $grp = $(`
                   <div class="group" data-id="${g.id}">
                     <div class="group-header" style="display:flex;justify-content:space-between;padding:8px;background:#f3f3f3;">
-                      <div style="display:flex;align-items:center;gap:8px;">
-                        <span class="group-toggle">▼</span>
-                        <span class="group-label"></span>
-                      </div>
-                      <div>
-                        <button class="rename-group">✎</button>
-                        <button class="delete-group">✖</button>
-                      </div>
-                    </div>
-                    <div class="group-body" style="padding:10px;">
-                      <div class="group-body-toolbar"> 
-                        <button class="add-row-btn" type="button"></button>
-                        <button class="duplicate-table-btn" data-gid="${g.id}" type="button">
+	                      <div style="display:flex;align-items:center;gap:8px;">
+	                        <span class="group-toggle">▼</span>
+	                        <span class="group-label"></span>
+	                      </div>
+	                      <div>
+	                        <button class="rename-group">✎</button>
+	                        <button class="delete-group">✖</button>
+	                      </div>
+	                    </div>
+	                    <div class="group-body" style="padding:10px;">
+	                      <div class="group-body-toolbar">
+	                        <button class="add-row-btn" type="button"></button>
+	                        <button class="duplicate-table-btn" data-gid="${g.id}" type="button">
                           <span class="duplicate-table-icon">▦</span>
                           Dupliquer ce tableau
                         </button>
-                      </div>
-                      <div class="group-tables-container"></div>
-                    </div>
-                  </div>
-                `);
+	                      </div>
+	                      <div class="group-tables-container"></div>
+	                    </div>
+	                  </div>
+	                `);
 
                 if (g.collapsed === 1) {
                   $grp.find('.group-body').hide();
-                  $grp.find('.group-toggle').text('►');
-                }
-                $grp.find('.group-label').text(decodeHtmlEntities(g.label));
-                $grp.find('.add-row-btn').text(`+ Ajouter ${decodeHtmlEntities(g.task_column_label || 'tâche')}`);
+	                  $grp.find('.group-toggle').text('►');
+	                }
+	                $grp.find('.group-label').text(decodeHtmlEntities(g.label));
+	                $grp.find('.add-row-btn').text(`+ Ajouter ${decodeHtmlEntities(g.task_column_label || 'tâche')}`);
                 const $slot = $groupList.find('.group-slot[data-id="' + g.id + '"]');
                 if ($slot.length) {
                   $slot.replaceWith($grp);
@@ -2258,82 +2455,93 @@ $(function(){
                 // Pré-charger les options des colonnes select/tags en parallèle
                 const optionFetches = cols
                   .filter(c => (c.type === 'select' || c.type === 'tags') && !dataCache.columnOptions[c.id])
-                  .map(c => 
+                  .map(c =>
                     fetch(`?column_options=${c.id}`)
                       .then(r=>r.json())
                       .then(options => {
                         dataCache.columnOptions[c.id] = options;
                         return options;
-                      })
-                  );
+	                      })
+	                  );
 
-                fetch(`?tasks_group_id_with_cells=${g.id}`)
-                  .then(r=>r.json())
-                  .then(tasks=>{
-                    const sortedTasks = sortTasksHierarchically(tasks);
-                    const taskPromises = sortedTasks.map(t=>{
-                      return new Promise((resolve) => {
-                        const indentPx = (t.level_depth || 0) * 20;
-                        const indentStyle = `padding-left: ${4 + indentPx}px;`;
-                        
-                        // Vérifier si cette tâche a des enfants
-                        const hasChildren = tasks.some(task => task.parent_task_id === t.id);
-                        const isCollapsed = taskCollapseState.has(t.id);
-                        const collapseBtn = hasChildren 
-                          ? `<button class="collapse-toggle" data-task-id="${t.id}" onclick="window.toggleCollapse(${t.id})" style="width:16px;background:none;border:none;cursor:pointer;padding:0;font-size:12px;">${isCollapsed ? '▶' : '▼'}</button>`
-                          : `<span style="width:16px;display:inline-block;"></span>`;
-                        
-                        const subtaskIndicator = t.level_depth > 0 ? '└─ ' : '';
-                        const isCompleted = t.is_completed ? 'checked' : '';
-                        const completedStyle = t.is_completed ? 'text-decoration: line-through; color: #999;' : '';
-                        const checkboxHtml = t.level_depth > 0 ? `<input type="checkbox" class="task-completion-checkbox" data-task-id="${t.id}" ${isCompleted} style="cursor:pointer;width:16px;height:16px;" onchange="window.toggleTaskCompletion(${t.id}, this.checked)">` : '';
-                        
-                        let tds = `
-                          <td style="border:1px solid #ddd;${indentStyle}" class="task-cell task-name-cell" data-level="${t.level_depth || 0}">
-                            <div style="display: flex; align-items: center; gap: 5px;">
-                              ${collapseBtn}
-                              <span style="color: #999; font-family: monospace;">${subtaskIndicator}</span>
-                              ${checkboxHtml}
-                              <span class="task-label" style="${completedStyle}">${escapeHtml(decodeHtmlEntities(t.label))}</span>
-                              <button class="add-subtask-btn" data-task-id="${t.id}" style="opacity: 0; transition: opacity 0.2s; background: none; border: none; cursor: pointer; color: #007cba; font-size: 12px;" title="Ajouter une sous-tâche">+</button>
-                            </div>
-                          </td>
-                        `;
-                        
-                        // Les cellules sont déjà incluses dans la réponse du nouvel endpoint
-                        const cells = t.cells || {};
-                        let cellPromises = [];
-                        const rowCellValues = {};
-                        cols.forEach(c=>{
-                          const cellValue = cells[c.id] || '';
-                          rowCellValues[c.id] = String(cellValue || '');
-                          if(c.type === 'select') {
-                              const promise = (dataCache.columnOptions[c.id]
-                                ? Promise.resolve(dataCache.columnOptions[c.id])
-                                : fetch(`?column_options=${c.id}`)
-                                    .then(r=>r.json())
+		                fetch(`?tasks_group_id_with_cells=${g.id}`).then(r=>r.json())
+		                  .then(tasks=>{
+		                    const flattenNeedRows = isClientNeedWorkspace(wid, currentWorkspaceLabel);
+		                    const sortedTasks = sortTasksHierarchically(tasks);
+
+	                    const taskPromises = sortedTasks.map(t=>{
+	                      return new Promise((resolve) => {
+	                            const taskId = Number(t.id);
+	                            const parentTaskId = Number(t.parent_task_id || 0);
+		                        const displayLevel = flattenNeedRows ? (Number(t.level_depth || 0) > 0 ? 1 : 0) : (t.level_depth || 0);
+		                        const indentPx = displayLevel * 20;
+		                        const indentStyle = `padding-left: ${4 + indentPx}px;`;
+
+		                        // Vérifier si cette tâche a des enfants
+		                        const hasChildren = !flattenNeedRows && sortedTasks.some(task => Number(task.parent_task_id || 0) === taskId);
+		                        const isCollapsed = taskCollapseState.has(t.id);
+		                        const collapseBtn = hasChildren
+		                          ? `<button class="collapse-toggle" data-task-id="${taskId}" onclick="window.toggleCollapse(${taskId})" style="width:16px;background:none;border:none;cursor:pointer;padding:0;font-size:12px;">${isCollapsed ? '▶' : '▼'}</button>`
+		                          : `<span style="width:16px;display:inline-block;"></span>`;
+
+		                        const subtaskIndicator = !flattenNeedRows && t.level_depth > 0 ? '└─ ' : '';
+	                        const isCompleted = t.is_completed ? 'checked' : '';
+	                        const completedStyle = t.is_completed ? 'text-decoration: line-through; color: #999;' : '';
+	                        const checkboxHtml = t.level_depth > 0 ? `<input type="checkbox" class="task-completion-checkbox" data-task-id="${taskId}" ${isCompleted} style="cursor:pointer;width:16px;height:16px;" onchange="window.toggleTaskCompletion(${taskId}, this.checked)">` : '';
+
+		                        const isNeedRow = flattenNeedRows && (parentTaskId > 0 || Number(t.level_depth || 0) > 0);
+		                        const candidatesToggle = isNeedRow ? renderClientNeedCandidatesToggle(taskId) : '';
+		                        const candidatesPanel = isNeedRow ? renderClientNeedCandidatesPanel(taskId) : '';
+
+	                        let tds = `
+	                          <td style="border:1px solid #ddd;${indentStyle}" class="task-cell" data-level="${t.level_depth || 0}">
+	                            <div style="display: flex; align-items: center; gap: 5px;">
+	                              ${collapseBtn}
+	                              <span style="color: #999; font-family: monospace;">${subtaskIndicator}</span>
+	                              ${checkboxHtml}
+	                              <span class="task-label" style="${completedStyle}">${escapeHtml(t.label)}</span>
+	                              ${candidatesToggle}
+	                              <button class="add-subtask-btn" data-task-id="${taskId}" style="opacity: 0; transition: opacity 0.2s; background: none; border: none; cursor: pointer; color: #007cba; font-size: 12px;" title="Ajouter une sous-tâche">+</button>
+	                            </div>
+	                            ${candidatesPanel}
+	                          </td>
+	                        `;
+
+	                        // Les cellules sont déjà incluses dans la réponse du nouvel endpoint
+		                        const cells = t.cells || {};
+		                        let cellPromises = [];
+                            const rowCellValues = {};
+		                        cols.forEach(c=>{
+		                          const cellValue = cells[c.id] || '';
+                              rowCellValues[c.id] = String(cellValue || '');
+
+		                          if(c.type === 'select') {
+		                              const promise = (dataCache.columnOptions[c.id]
+	                                ? Promise.resolve(dataCache.columnOptions[c.id])
+	                                : fetch(`?column_options=${c.id}`)
+	                                    .then(r=>r.json())
                                     .then(options => {
-                                      dataCache.columnOptions[c.id] = options;
-                                      return options;
-                                    }))
-                                .then(options=>{
-                                  let selectHtml = `<select class="cell-select" data-task="${t.id}" data-column="${c.id}" 
-                                                           style="border:none;background:transparent;width:100%;padding:2px;"
-                                                           onchange="saveCellValue(this)">
-                                                     <option value="">-- Choisir --</option>`;
-                                  options.forEach(opt=>{
-                                    const selected = cellValue == opt.id ? 'selected' : '';
-                                    const optionColor = opt.color || '#87CEEB';
-                                    selectHtml += `<option value="${opt.id}" ${selected} style="background:${optionColor};">${escapeHtml(decodeHtmlEntities(opt.label))}</option>`;
-                                  });
-                                  selectHtml += '</select>'; 
-                                  return selectHtml;
-                                });
-                              cellPromises.push(promise);
-                            } else if(c.type === 'number') {
+	                                      dataCache.columnOptions[c.id] = options;
+	                                      return options;
+	                                    }))
+		                                .then(options=>{
+		                                  let selectHtml = `<select class="cell-select" data-task="${taskId}" data-column="${Number(c.id)}"
+		                                                           style="border:none;background:transparent;width:100%;padding:2px;"
+	                                                           onchange="saveCellValue(this)">
+	                                                     <option value="">-- Choisir --</option>`;
+	                                  options.forEach(opt=>{
+		                                    const selected = cellValue == opt.id ? 'selected' : '';
+		                                    const optionColor = opt.color || '#87CEEB';
+		                                    selectHtml += `<option value="${Number(opt.id)}" ${selected} style="background:${escapeHtml(optionColor)};">${escapeHtml(decodeHtmlEntities(opt.label))}</option>`;
+		                                  });
+	                                  selectHtml += '</select>';
+	                                  return selectHtml;
+	                                });
+	                              cellPromises.push(promise);
+	                            } else if(c.type === 'number') {
 
-                                const value = String(cellValue || '')
-                                  .replace(/&/g, '&amp;')
+	                                const value = String(cellValue || '')
+	                                  .replace(/&/g, '&amp;')
                                   .replace(/</g, '&lt;')
                                   .replace(/>/g, '&gt;');
 
@@ -2347,43 +2555,48 @@ $(function(){
                                       oninput="handleExpandableTextareaInput(this, true)"
                                       onkeydown="if(event.key==='Enter'){event.preventDefault();saveCellValue(this)}"
                                       onblur="saveCellValue(this)">${value}</textarea>
-                                    <span class="cell-expandable-toggle" onclick="toggleCellPreview(this, event)" style="display:none;"></span>
-                                  </div>`;
-                                cellPromises.push(Promise.resolve(inputHtml));
-                            } else if(c.type === 'tags') {
-                              const promise = (dataCache.columnOptions[c.id]
-                                ? Promise.resolve(dataCache.columnOptions[c.id])
+	                                    <span class="cell-expandable-toggle" onclick="toggleCellPreview(this, event)" style="display:none;"></span>
+	                                  </div>`;
+	                                cellPromises.push(Promise.resolve(inputHtml));
+	                            } else if(c.type === 'tags') {
+	                              const promise = (dataCache.columnOptions[c.id]
+	                                ? Promise.resolve(dataCache.columnOptions[c.id])
                                 : fetch(`?column_options=${c.id}`)
                                     .then(r=>r.json())
                                     .then(options => {
-                                      dataCache.columnOptions[c.id] = options;
-                                      return options;
-                                    }))
-                                .then(options=>{
-                                  const selectedTags = cellValue ? JSON.parse(cellValue) : [];
-                                  
-                                  let tagsHtml = `
-                                    <div class="tags-cell" data-task="${t.id}" data-column="${c.id}" style="min-height:30px;padding:3px;border:1px dashed #ddd;cursor:pointer;" onclick="openTagsSelector(this)">
-                                      <div class="selected-tags" style="display:flex;flex-wrap:wrap;gap:3px;margin-bottom:5px;">
-                                  `;
-                                  
-                                  selectedTags.forEach(tagId => {
-                                    const tag = options.find(opt => opt.id == tagId);
-                                    if(tag) {
-                                      tagsHtml += `
-                                        <span class="tag-item" data-tag-id="${tag.id}" style="background:${tag.color || '#87CEEB'};color:white;padding:2px 6px;border-radius:12px;font-size:11px;display:flex;align-items:center;gap:4px;">
-                                          ${escapeHtml(decodeHtmlEntities(tag.label))}
-                                          <span class="remove-tag" onclick="removeTag(event, this)" style="cursor:pointer;font-weight:bold;">×</span>
-                                        </span>
-                                      `;
-                                    }
-                                  });
-                                  
+	                                      dataCache.columnOptions[c.id] = options;
+	                                      return options;
+	                                    }))
+		                                .then(options=>{
+		                                  let selectedTags = [];
+		                                  try {
+	                                    selectedTags = cellValue ? JSON.parse(cellValue) : [];
+	                                  } catch (e) {
+	                                    selectedTags = [];
+	                                  }
+
+	                                  let tagsHtml = `
+	                                    <div class="tags-cell" data-task="${taskId}" data-column="${Number(c.id)}" style="min-height:30px;padding:3px;border:1px dashed #ddd;cursor:pointer;" onclick="openTagsSelector(this)">
+	                                      <div class="selected-tags" style="display:flex;flex-wrap:wrap;gap:3px;margin-bottom:5px;">
+	                                  `;
+
+	                                  selectedTags.forEach(tagId => {
+		                                    const tag = options.find(opt => opt.id == tagId);
+		                                    if(tag) {
+		                                      tagsHtml += `
+		                                        <span class="tag-item" data-tag-id="${Number(tag.id)}" style="background:${escapeHtml(tag.color || '#87CEEB')};color:white;padding:2px 6px;border-radius:12px;font-size:11px;display:flex;align-items:center;gap:4px;">
+		                                          ${escapeHtml(decodeHtmlEntities(tag.label))}
+		                                          <span class="remove-tag" onclick="removeTag(event, this)" style="cursor:pointer;font-weight:bold;">×</span>
+		                                        </span>
+	                                      `;
+	                                    }
+	                                  });
+
                                   tagsHtml += `
                                       </div>
                                     </div>
                                   `;
-                                  
+
                                   return tagsHtml;
                                 });
                               cellPromises.push(promise);
@@ -2391,7 +2604,7 @@ $(function(){
                               const dates = cellValue ? cellValue.split('|') : ['', ''];
                               const startDate = dates[0] || '';
                               const endDate = dates[1] || '';
-                              
+
                               let daysText = '';
                               let daysClass = '';
                               if(endDate) {
@@ -2399,7 +2612,7 @@ $(function(){
                                 const end = new Date(endDate);
                                 const diffTime = end - today;
                                 const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                                
+
                                 if(diffDays > 0) {
                                   daysText = `${diffDays} jour${diffDays > 1 ? 's' : ''} restant${diffDays > 1 ? 's' : ''}`;
                                   daysClass = diffDays <= 3 ? 'deadline-urgent' : (diffDays <= 7 ? 'deadline-warning' : 'deadline-ok');
@@ -2411,70 +2624,70 @@ $(function(){
                                   daysClass = 'deadline-overdue';
                                 }
                               }
-                              
+
                               const inputHtml = `
-                                <div class="deadline-cell" data-task="${t.id}" data-column="${c.id}">
-                                  <div style="display:flex;gap:5px;margin-bottom:3px;">
-                                    <input type="date" class="deadline-start" value="${startDate}" 
-                                           style="border:1px solid #ddd;padding:2px;font-size:10px;width:48%;"
-                                           placeholder="Début"
-                                           onchange="updateDeadline(this)">
-                                    <input type="date" class="deadline-end" value="${endDate}" 
-                                           style="border:1px solid #ddd;padding:2px;font-size:10px;width:48%;"
+	                                <div class="deadline-cell" data-task="${taskId}" data-column="${Number(c.id)}">
+	                                  <div style="display:flex;gap:5px;margin-bottom:3px;">
+	                                    <input type="date" class="deadline-start" value="${escapeHtml(startDate)}"
+	                                           style="border:1px solid #ddd;padding:2px;font-size:10px;width:48%;"
+	                                           placeholder="Début"
+	                                           onchange="updateDeadline(this)">
+	                                    <input type="date" class="deadline-end" value="${escapeHtml(endDate)}"
+	                                           style="border:1px solid #ddd;padding:2px;font-size:10px;width:48%;"
                                            placeholder="Fin"
                                            onchange="updateDeadline(this)">
                                   </div>
-                                  <div class="days-remaining ${daysClass}" style="font-size:11px;text-align:center;font-weight:bold;">${daysText}</div>
-                                </div>
+	                                  <div class="days-remaining ${daysClass}" style="font-size:11px;text-align:center;font-weight:bold;">${escapeHtml(daysText)}</div>
+	                                </div>
                               `;
                               cellPromises.push(Promise.resolve(inputHtml));
                             } else if(c.type === 'user') {
-                              const promise = (dataCache.users 
+                              const promise = (dataCache.users
                                 ? Promise.resolve(dataCache.users)
-                                : fetch('?users_list').then(r=>r.json()).then(users => {
-                                    dataCache.users = users;
-                                    return users;
-                                  }))
-                                .then(users=>{
-                                  let selectHtml = `<select class="cell-select user-select" data-task="${t.id}" data-column="${c.id}" 
-                                                           style="border:none;background:transparent;width:100%;padding:2px;"
-                                                           onchange="saveCellValue(this)">
-                                                     <option value="">-- Non assigné --</option>`;
-                                  users.forEach(user=>{
-                                    const selected = cellValue == user.id ? 'selected' : '';
-                                    selectHtml += `<option value="${user.id}" ${selected}>${escapeHtml(user.name)}</option>`;
-                                  });
-                                  selectHtml += '</select>';
-                                  
-                                  if (cellValue) {
-                                    const selectedUser = users.find(u => u.id == cellValue);
-                                    if (selectedUser) {
-                                      const initials = selectedUser.name.split(' ').map(n => n[0]).join('').substr(0, 2).toUpperCase();
-                                      return `
-                                        <div class="user-cell" data-task="${t.id}" data-column="${c.id}" style="cursor:pointer;" onclick="openUserSelector(this)">
-                                          <div class="user-avatar" title="${escapeHtml(selectedUser.name)}">${escapeHtml(initials)}</div>
-                                          <span>${escapeHtml(selectedUser.name)}</span>
-                                          ${selectHtml.replace('style="', 'style="display:none;')}
-                                        </div>
-                                      `;
-                                    }
-                                  }
-                                  
-                                  return `<div class="user-cell unassigned" data-task="${t.id}" data-column="${c.id}" style="cursor:pointer;" onclick="openUserSelector(this)">${selectHtml}</div>`;
-                                });
+	                                : fetch('?users_list').then(r=>r.json()).then(users => {
+	                                    dataCache.users = users;
+	                                    return users;
+	                                  }))
+	                                .then(users=>{
+		                                  let selectHtml = `<select class="cell-select user-select" data-task="${taskId}" data-column="${Number(c.id)}"
+		                                                           style="border:none;background:transparent;width:100%;padding:2px;"
+		                                                           onchange="saveCellValue(this)">
+	                                                     <option value="">-- Non assigné --</option>`;
+	                                  users.forEach(user=>{
+		                                    const selected = cellValue == user.id ? 'selected' : '';
+		                                    selectHtml += `<option value="${Number(user.id)}" ${selected}>${escapeHtml(user.name)}</option>`;
+		                                  });
+	                                  selectHtml += '</select>';
+
+	                                  if (cellValue) {
+	                                    const selectedUser = users.find(u => u.id == cellValue);
+	                                    if (selectedUser) {
+		                                      const initials = selectedUser.name.split(' ').map(n => n[0]).join('').substr(0, 2).toUpperCase();
+		                                      return `
+		                                        <div class="user-cell" data-task="${taskId}" data-column="${Number(c.id)}" style="cursor:pointer;" onclick="openUserSelector(this)">
+	                                          <div class="user-avatar" title="${escapeHtml(selectedUser.name)}">${escapeHtml(initials)}</div>
+		                                          <span>${escapeHtml(selectedUser.name)}</span>
+		                                          ${selectHtml.replace('style="', 'style="display:none;')}
+		                                        </div>
+	                                      `;
+	                                    }
+	                                  }
+
+	                                  return `<div class="user-cell unassigned" data-task="${taskId}" data-column="${Number(c.id)}" style="cursor:pointer;" onclick="openUserSelector(this)">${selectHtml}</div>`;
+	                                });
                               cellPromises.push(promise);
                             } else if(c.type === 'date') {
-                              const inputHtml = `<input type="date" class="cell-input cell-date" 
-                                                        data-task="${t.id}" 
-                                                        data-column="${c.id}" 
-                                                        value="${cellValue}" 
-                                                        style="border:none;background:transparent;width:100%;padding:2px;cursor:pointer;"
-                                                        onblur="saveCellValue(this)"
-                                                        onchange="saveCellValue(this)">`;
-                              cellPromises.push(Promise.resolve(inputHtml));
-                            }else {
-                              const value = String(cellValue || '')
-                                .replace(/&/g, '&amp;')
+		                              const inputHtml = `<input type="date" class="cell-input cell-date"
+	                                                        data-task="${taskId}"
+	                                                        data-column="${Number(c.id)}"
+	                                                        value="${escapeHtml(cellValue)}"
+		                                                        style="border:none;background:transparent;width:100%;padding:2px;cursor:pointer;"
+		                                                        onblur="saveCellValue(this)"
+		                                                        onchange="saveCellValue(this)">`;
+	                              cellPromises.push(Promise.resolve(inputHtml));
+	                            }else {
+	                              const value = String(cellValue || '')
+	                                .replace(/&/g, '&amp;')
                                 .replace(/</g, '&lt;')
                                 .replace(/>/g, '&gt;');
 
@@ -2485,43 +2698,43 @@ $(function(){
                                     data-column="${c.id}"
                                     rows="1"
                                     oninput="handleExpandableTextareaInput(this, false)"
-                                    onblur="saveCellValue(this)">${value}</textarea>
-                                  <span class="cell-expandable-toggle" onclick="toggleCellPreview(this, event)" style="display:none;"></span>
-                                </div>`;
-                              cellPromises.push(Promise.resolve(inputHtml));
-                            }
+	                                    onblur="saveCellValue(this)">${value}</textarea>
+	                                  <span class="cell-expandable-toggle" onclick="toggleCellPreview(this, event)" style="display:none;"></span>
+	                                </div>`;
+	                              cellPromises.push(Promise.resolve(inputHtml));
+	                            }
 
                           });
-                        
+
                         Promise.all(cellPromises).then(cellsHtml=>{
-                          cellsHtml.forEach(cellHtml=>{
-                            tds += `<td style="border:1px solid #ddd;padding:4px;">${cellHtml}</td>`;
-                          });
-                          tds += `<td style="border:1px solid #ddd;padding:4px;"></td>`;
-                          const $taskRow = $(`<tr class="task-row" data-id="${t.id}" data-parent-id="${t.parent_task_id || ''}" style="cursor:pointer;">${tds}</tr>`);
-                          $taskRow.data('cellValues', rowCellValues);
-                          $taskRow.find('td:nth-child(1)').click(function(e) {
-                            if ($(e.target).is('button')) return;
-                            
-                            const taskName = $(this).text();
+	                          cellsHtml.forEach(cellHtml=>{
+	                            tds += `<td style="border:1px solid #ddd;padding:4px;">${cellHtml}</td>`;
+	                          });
+	                          tds += `<td style="border:1px solid #ddd;padding:4px;"></td>`;
+		                          const $taskRow = $(`<tr class="task-row" data-id="${taskId}" data-parent-id="${parentTaskId || ''}" style="cursor:pointer;">${tds}</tr>`);
+	                          $taskRow.data('cellValues', rowCellValues);
+	                          $taskRow.find('td:nth-child(1)').click(function(e) {
+	                            if ($(e.target).closest('button').length) return;
+
+                            const taskName = $(this).find('.task-label').text();
                             const groupName = $grp.find('.group-label').text();
                             const taskColumnLabel = $grp.find('.task-column-label').first().text();
                             openTaskDetail(t.id, taskName, groupName, taskColumnLabel);
                           });
-                          
+
                           resolve($taskRow);
                         });
-                      });
-                    });
-                    Promise.all(taskPromises).then((taskRows) => {
-                      renderGroupTables($grp, g, cols, ths, taskRows);
-                      $grp.find('textarea.cell-textarea, textarea.cell-number-textarea').each(function() {
-                        updateExpandableTextarea(this);
-                      });
+	                      });
+	                    });
+	                    Promise.all(taskPromises).then((taskRows) => {
+	                      renderGroupTables($grp, g, cols, ths, taskRows);
+	                      $grp.find('textarea.cell-textarea, textarea.cell-number-textarea').each(function() {
+	                        updateExpandableTextarea(this);
+	                      });
 
-                      $grp.find('select.cell-select').each(function() {
-                        applySelectColor($(this));
-                      });
+	                      $grp.find('select.cell-select').each(function() {
+	                        applySelectColor($(this));
+	                      });
 
                       initTaskSortable();
                       initColumnSortable();
@@ -2534,8 +2747,8 @@ $(function(){
           initGroupSortable();
           attachEventHandlers(wid);
           setTimeout(function() {
-            
-             
+
+
             if ($('#workspace-search').length && $('#workspace-search').val().trim()) {
               const searchTerm = $('#workspace-search').val();
               $('#workspace-search').trigger('input');
@@ -2546,6 +2759,21 @@ $(function(){
   }
 
   function attachEventHandlers(wid) {
+    $('#group-list').off('click', '.candidates-toggle').on('click', '.candidates-toggle', function(e) {
+      e.stopPropagation();
+      const $button = $(this);
+      setClientNeedCandidatesExpanded($button, $button.attr('aria-expanded') !== 'true');
+    });
+
+    $('#group-list').off('click', '.candidate-detail-link').on('click', '.candidate-detail-link', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      const candidateId = Number($(this).data('candidate-id'));
+      if (!candidateId) return;
+      const candidateName = $(this).data('candidate-name') || $(this).text().trim();
+      openTaskDetail(candidateId, candidateName, 'Candidat', 'Candidat');
+    });
+
     $('#group-list').off('change','.group-split-select').on('change','.group-split-select',function(){
       const gid = $(this).data('gid');
       const columnId = String($(this).val() || '__base__');
@@ -2557,10 +2785,10 @@ $(function(){
     $('#group-list').off('click','.add-column-btn').on('click','.add-column-btn',function(e){
       e.stopPropagation();
       const gid = $(this).data('gid');
-      
+
       CustomPopup.prompt('Nom de la colonne :', function(lbl) {
         if(!lbl) return;
-        
+
         const typeModal = $(`
         <div id="type-modal" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1001;display:flex;align-items:center;justify-content:center;">
           <div style="background:white;padding:25px;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.3);min-width:350px;">
@@ -2622,9 +2850,9 @@ $(function(){
           </div>
         </div>
       `);
-      
+
       $('body').append(typeModal);
-      
+
       $('.type-choice').hover(
         function() {
           $(this).css({
@@ -2643,7 +2871,7 @@ $(function(){
           });
         }
       );
-      
+
       $('.type-choice').click(function(){
         const type = $(this).data('type');
         const fd = new FormData();
@@ -2657,11 +2885,11 @@ $(function(){
           loadKpiExportGroups();
         });
       });
-      
+
       $('#cancel-type').click(function(){
         typeModal.remove();
       });
-      
+
       typeModal.click(function(e){
         if(e.target === typeModal[0]) {
           typeModal.remove();
@@ -2829,7 +3057,7 @@ $(function(){
         const parentTaskId = $(this).data('task-id');
         const gid = $(this).closest('.group').data('id');
         const $row = $(this).closest('tr');
-        
+
         CustomPopup.prompt('Nom de la sous-tâche :', function(lbl) {
           if(!lbl) return;
           const fd = new FormData();
@@ -2848,15 +3076,15 @@ $(function(){
         const gid = $(this).data('gid');
         const $group = $(this).closest('.group');
         const currentLabel = $(this).text();
-        
+
         CustomPopup.prompt('Nom de la colonne :', function(newLabel) {
           if(!newLabel || newLabel === currentLabel) return;
-          
+
           const fd = new FormData();
           fd.append('update_task_column_label', gid);
           fd.append('task_column_label', newLabel);
           fd.append('token', token);
-          
+
           fetch('', {method: 'POST', body: fd}).then(() => {
             $group.find('.task-column-label').text(newLabel);
             $group.find('.add-row-btn').text(`+ Ajouter ${newLabel.toLowerCase()}`);
@@ -2881,10 +3109,10 @@ $(function(){
         const $group = $(this).closest('.group');
         const $table = $(this).closest('table');
         sortColumn($group, $table, cid, type, 'asc');
-        
+
         $table.find('.column-sort-indicator').text('').removeClass('asc desc');
         $table.find(`[data-cid="${cid}"].column-sort-indicator`).text('↑').addClass('asc');
-        
+
         $('.column-menu').removeClass('show');
         setTimeout(() => $('.column-menu').hide(), 200);
       })
@@ -2896,7 +3124,7 @@ $(function(){
         const type = $(this).data('type');
         const $group = $(this).closest('.group');
         const $table = $(this).closest('table');
-        sortColumn($group, $table, cid, type, 'desc');      
+        sortColumn($group, $table, cid, type, 'desc');
         $table.find('.column-sort-indicator').text('').removeClass('asc desc');
         $table.find(`[data-cid="${cid}"].column-sort-indicator`).text('↓').addClass('desc');
         $('.column-menu').removeClass('show');
@@ -2940,7 +3168,7 @@ $(function(){
       .on('click', '.manage-options-btn', function(e){
         e.stopPropagation();
         const cid = $(this).data('cid');
-        
+
         manageColumnOptions(cid, token, () => loadGroups(wid));
       })
       .off('click', '.sort-asc-btn')
@@ -2952,10 +3180,10 @@ $(function(){
         const $group = $(this).closest('.group');
         const $table = $(this).closest('table');
         sortColumn($group, $table, cid, type, 'asc');
-        
+
         $table.find('.column-sort-indicator').text('').removeClass('asc desc');
         $table.find(`[data-cid="${cid}"].column-sort-indicator`).text('↑').addClass('asc');
-        
+
         $('.column-menu').removeClass('show');
         setTimeout(() => $('.column-menu').hide(), 200);
       })
@@ -2967,7 +3195,7 @@ $(function(){
         const type = $(this).data('type');
         const $group = $(this).closest('.group');
         const $table = $(this).closest('table');
-        sortColumn($group, $table, cid, type, 'desc');      
+        sortColumn($group, $table, cid, type, 'desc');
         $table.find('.column-sort-indicator').text('').removeClass('asc desc');
         $table.find(`[data-cid="${cid}"].column-sort-indicator`).text('↓').addClass('desc');
         $('.column-menu').removeClass('show');
@@ -2983,7 +3211,7 @@ $(function(){
           setTimeout(() => menu.addClass('show'), 10);
         }, 200);
       });
-      
+
     $(document).on('click', function(e) {
       if (!$(e.target).closest('.column-menu, .column-menu-btn').length) {
         $('.column-menu').removeClass('show');
@@ -2993,12 +3221,12 @@ $(function(){
   }
 
   function sortColumn($group, $table, columnId, columnType, direction) {
-    const $tbody = $table.find('tbody').first();
-    const $rows = $tbody.find('tr').toArray();
+    const $tbody = $table.find('> tbody').first();
+    const $rows = $tbody.children('tr.task-row').toArray();
 
     const $headers = $table.find('th');
     let columnIndex = -1;
-    
+
     $headers.each(function(index) {
       const $header = $(this);
       const $label = $header.find('.column-label');
@@ -3007,7 +3235,7 @@ $(function(){
         return false;
       }
     });
-    
+
     if (columnIndex === -1) return;
 
     function getSortValue(row, cell, columnId, columnType) {
@@ -3046,24 +3274,24 @@ $(function(){
 
       return cell.find('input, textarea').val() || cell.text() || '';
     }
-    
+
     $rows.sort(function(a, b) {
       const $cellA = $(a).find('td').eq(columnIndex);
       const $cellB = $(b).find('td').eq(columnIndex);
-      
+
       let valueA, valueB;
-      
+
       switch(columnType) {
         case 'text':
           valueA = String(getSortValue(a, $cellA, columnId, columnType)).toLowerCase();
           valueB = String(getSortValue(b, $cellB, columnId, columnType)).toLowerCase();
           break;
-          
+
         case 'number':
           valueA = parseFloat(String(getSortValue(a, $cellA, columnId, columnType) || '0').replace(/\s+/g, '').replace(',', '.')) || 0;
           valueB = parseFloat(String(getSortValue(b, $cellB, columnId, columnType) || '0').replace(/\s+/g, '').replace(',', '.')) || 0;
           break;
-          
+
         case 'date':
         case 'deadline':
           valueA = getSortValue(a, $cellA, columnId, columnType);
@@ -3071,53 +3299,53 @@ $(function(){
           valueA = valueA ? new Date(valueA) : new Date('1970-01-01');
           valueB = valueB ? new Date(valueB) : new Date('1970-01-01');
           break;
-          
+
         case 'select':
           valueA = String(getSortValue(a, $cellA, columnId, columnType)).toLowerCase();
           valueB = String(getSortValue(b, $cellB, columnId, columnType)).toLowerCase();
           break;
-          
+
         case 'user':
           valueA = String(getSortValue(a, $cellA, columnId, columnType)).toLowerCase();
           valueB = String(getSortValue(b, $cellB, columnId, columnType)).toLowerCase();
           break;
-          
+
         case 'tags':
           valueA = getSortValue(a, $cellA, columnId, columnType);
           valueB = getSortValue(b, $cellB, columnId, columnType);
           break;
-          
+
         default:
           valueA = String(getSortValue(a, $cellA, columnId, columnType)).toLowerCase();
           valueB = String(getSortValue(b, $cellB, columnId, columnType)).toLowerCase();
       }
-      
+
       let result = 0;
       if (columnType === 'number' || columnType === 'date' || columnType === 'deadline' || columnType === 'tags') {
         result = valueA - valueB;
       } else {
         result = valueA.localeCompare(valueB);
       }
-      
+
       return direction === 'desc' ? -result : result;
     });
-    
+
     $tbody.empty().append($rows);
-    
+
     $rows.forEach(row => {
       const $row = $(row);
       const taskId = $row.data('id');
       const $group = $row.closest('.group');
-      
+
       $row.find('td:nth-child(1)').off('click').on('click', function(e) {
         if ($(e.target).is('button')) return;
-        
+
         const taskName = $(this).text();
         const groupName = $group.find('.group-label').text();
         const taskColumnLabel = $group.find('.task-column-label').first().text();
         openTaskDetail(taskId, taskName, groupName, taskColumnLabel);
       });
-      
+
       $row.find('select.cell-select').each(function(){
         applySelectColor($(this));
       });
@@ -3145,7 +3373,7 @@ $(function(){
                     </div>
                   `).join('')}
                 </div>
-                
+
                 <div class="add-option-section" style="border-top:1px solid #e9ecef;padding-top:20px;margin-top:20px;">
                   <h4 style="margin:0 0 15px 0;color:#333;font-size:16px;">Ajouter une nouvelle option</h4>
                   <div class="add-option-form" style="display:flex;gap:10px;align-items:center;">
@@ -3154,7 +3382,7 @@ $(function(){
                     <button id="add-option-btn" class="custom-popup-btn custom-popup-btn-primary">Ajouter</button>
                   </div>
                 </div>
-                
+
                 <div class="custom-popup-buttons" style="margin-top:25px;">
                   <button id="close-options" class="custom-popup-btn custom-popup-btn-secondary">Fermer</button>
                 </div>
@@ -3162,11 +3390,11 @@ $(function(){
             </div>
           </div>
         `);
-        
+
         $('body').append(optionsModal);
-        
+
         let selectedColor = '#0073ea';
-        
+
         function createColorPicker(currentColor, callback) {
           const colorModal = $(`
             <div id="color-picker-modal" class="custom-popup-overlay show">
@@ -3181,7 +3409,7 @@ $(function(){
                       <div class="preset-color ${currentColor === color ? 'selected' : ''}" data-color="${color}" style="width:44px;height:44px;background:${color};border:3px solid ${currentColor === color ? '#0073ea' : '#e9ecef'};cursor:pointer;border-radius:8px;transition:all 0.2s ease;"></div>
                     `).join('')}
                   </div>
-                  
+
                   <div class="custom-color-section" style="display:flex;align-items:center;gap:15px;margin-bottom:20px;">
                     <div>
                       <div class="section-title">Couleur personnalisée</div>
@@ -3189,7 +3417,7 @@ $(function(){
                     </div>
                     <div class="color-display" style="padding:8px 15px;background:${currentColor};color:white;border-radius:6px;font-weight:600;font-size:14px;text-shadow:0 1px 2px rgba(0,0,0,0.3);border:1px solid rgba(0,0,0,0.1);">${currentColor}</div>
                   </div>
-                  
+
                   <div class="custom-popup-buttons">
                     <button id="apply-color" class="custom-popup-btn custom-popup-btn-primary">Appliquer</button>
                     <button id="cancel-color" class="custom-popup-btn custom-popup-btn-secondary">Annuler</button>
@@ -3198,11 +3426,11 @@ $(function(){
               </div>
             </div>
           `);
-          
+
           $('body').append(colorModal);
-          
+
           let tempColor = currentColor;
-          
+
           $('.preset-color').hover(
             function() { $(this).css('transform', 'scale(1.1)'); },
             function() { $(this).css('transform', 'scale(1)'); }
@@ -3213,7 +3441,7 @@ $(function(){
             $('#custom-color-picker').val(tempColor);
             $('#color-display').css('background', tempColor).text(tempColor);
           });
-          
+
           $('#custom-color-picker').on('input', function(){
             tempColor = $(this).val();
             $('#color-display').css('background', tempColor).text(tempColor);
@@ -3224,72 +3452,72 @@ $(function(){
               }
             });
           });
-          
+
           $('#apply-color').click(function(){
             callback(tempColor);
             colorModal.remove();
           });
-          
+
           $('#cancel-color').click(function(){
             colorModal.remove();
           });
-          
+
           colorModal.click(function(e){
             if(e.target === colorModal[0]) {
               colorModal.remove();
             }
           });
         }
-        
+
         function rgbToHex(rgb) {
           if (rgb.indexOf('#') === 0) return rgb;
           const result = rgb.match(/\d+/g);
           if (!result) return '#87CEEB';
           return '#' + ((1 << 24) + (parseInt(result[0]) << 16) + (parseInt(result[1]) << 8) + parseInt(result[2])).toString(16).slice(1);
         }
-        
+
         $('#new-option-color-preview').click(function(){
           createColorPicker(selectedColor, function(newColor){
             selectedColor = newColor;
             $('#new-option-color-preview').css('background', newColor);
           });
         });
-        
+
         $(document).on('click', '.color-preview', function(){
           const optionId = $(this).closest('.option-item').data('option-id');
           const currentColor = rgbToHex($(this).css('background-color'));
           const $preview = $(this);
-          
+
           createColorPicker(currentColor, function(newColor){
             $preview.css('background', newColor);
-            
+
             const fd = new FormData();
             fd.append('update_option_color', optionId);
             fd.append('option_color', newColor);
             fd.append('token', token);
-            
+
             fetch('', {method: 'POST', body: fd})
               .then(() => console.log('Couleur mise à jour'));
           });
         });
-        
+
         $('#options-list').off('click', '.edit-option-btn').on('click', '.edit-option-btn', function(e){
           e.preventDefault();
           e.stopPropagation();
-          
+
           const optionId = $(this).data('option-id');
           const $item = $(this).closest('.option-item');
           const $labelDisplay = $item.find('.option-label-display');
           const currentLabel = $labelDisplay.text();
-          
+
           CustomPopup.prompt('Nouveau nom de l\'option :', function(newLabel) {
             if(!newLabel || newLabel === currentLabel) return;
-            
+
             const fd = new FormData();
             fd.append('rename_option_id', optionId);
             fd.append('rename_option_label', newLabel);
             fd.append('token', token);
-            
+
             fetch('', {method: 'POST', body: fd})
               .then(() => {
                 $labelDisplay.text(newLabel);
@@ -3298,21 +3526,21 @@ $(function(){
               .catch(e => console.log('Erreur lors du renommage:', e));
           }, currentLabel);
         });
-        
+
         $('#options-list').off('click', '.delete-option-btn').on('click', '.delete-option-btn', function(e){
           e.preventDefault();
           e.stopPropagation();
-          
+
           const optionId = $(this).data('option-id');
           const $button = $(this);
-          
+
           CustomPopup.confirm('Supprimer cette option ?', function(result) {
             if(!result) return;
-            
+
             const fd = new FormData();
             fd.append('delete_option_id', optionId);
             fd.append('token', token);
-            
+
             fetch('', {method: 'POST', body: fd})
               .then(() => {
                 $button.closest('.option-item').remove();
@@ -3320,21 +3548,21 @@ $(function(){
               .catch(e => console.error('Erreur lors de la suppression:', e));
           });
         });
-        
+
         $('#add-option-btn').click(function(){
           const label = $('#new-option-label').val().trim();
-          
+
           if(!label) {
             CustomPopup.error('Veuillez saisir un label', 'Champ obligatoire');
             return;
           }
-          
+
           const fd = new FormData();
           fd.append('add_option_column_id', cid);
           fd.append('option_label', label);
           fd.append('option_color', selectedColor);
           fd.append('token', token);
-          
+
           fetch('', {method: 'POST', body: fd})
             .then(() => {
               const tempId = Date.now();
@@ -3347,20 +3575,20 @@ $(function(){
                 </div>
               `);
               $('#options-list').append(newOption);
-              
-              
+
+
               $('#new-option-label').val('');
               selectedColor = '#87CEEB';
               $('#new-option-color-preview').css('background', selectedColor);
             })
             .catch(e => console.error('Erreur lors de l\'ajout:', e));
         });
-        
+
         $('#close-options').click(function(){
           optionsModal.remove();
           if(onComplete) onComplete();
         });
-        
+
         optionsModal.click(function(e){
           if(e.target === optionsModal[0]) {
             optionsModal.remove();
@@ -3381,17 +3609,26 @@ $(function(){
   };
 
   function updateCollapsedRows() {
+    const flattenNeedRows = isClientNeedWorkspace(currentWorkspaceId, currentWorkspaceLabel);
+
     document.querySelectorAll('.task-row').forEach(row => {
       const taskId = row.dataset.id;
       const parentId = row.dataset.parentId;
-      
+
+      if (flattenNeedRows) {
+        row.classList.remove('collapsed-children');
+        row.classList.remove('task-row-hidden');
+        row.style.display = '';
+        return;
+      }
+
       // Si le parent de cette tâche est collapsed, on la masque
       if (parentId && taskCollapseState.has(parseInt(parentId))) {
         row.classList.add('collapsed-children');
       } else {
         row.classList.remove('collapsed-children');
       }
-      
+
       // Mettre à jour le bouton collapse
       const collapseBtn = row.querySelector('.collapse-toggle');
       if (collapseBtn) {
@@ -3400,128 +3637,46 @@ $(function(){
       }
     });
   }
-  
-  $('#workspace-list').sortable({
-    cursor:'pointer',
-    update(){
-      const order = $('#workspace-list .workspace-item').map((_,el)=>el.dataset.id).get();
-      fetch('',{method:'POST',body:new URLSearchParams({
-        reorder_workspaces: JSON.stringify(order),
-        token: token
-      })});
-    }
-  }).disableSelection();
-  function initGroupSortable(){
-    $('#group-list').sortable({
-      cursor:'pointer',
-      update(){
-        const order = $('#group-list .group').map((_,el)=>el.dataset.id).get();
-        fetch('',{method:'POST',body:new URLSearchParams({
-          reorder_groups: JSON.stringify(order),
-          token: token
-        })});
-      }
-    }).disableSelection();
-  }
-  
-  function initTaskSortable(){
-    $('.group-body tbody').sortable({
-      cursor:'pointer',
-      update(){
-        const order = $(this).children().map((_,tr)=>tr.dataset.id).get();
-        fetch('',{method:'POST',body:new URLSearchParams({
-          reorder_tasks: JSON.stringify(order),
-          token: token
-        })});
-      }
-    }).disableSelection();
-  }
-
-  function initColumnSortable(){
-    $('.group-body thead tr').each(function(){
-      const $tr = $(this);
-      const $group = $tr.closest('.group');
-      const groupId = $group.data('id');
-      
-      $tr.sortable({
-        items: 'th:not(:first-child):not(:last-child)',
-        cursor: 'move',
-        axis: 'x',
-        helper: 'clone',
-        placeholder: 'ui-sortable-placeholder',
-        tolerance: 'pointer',
-        distance: 10,
-        cancel: '.column-menu-btn, .column-menu',
-        start: function(event, ui) {
-          ui.placeholder.height(ui.item.height());
-          ui.placeholder.css({
-            'background': '#e3f2fd',
-            'border': '2px dashed #2196f3',
-            'opacity': '0.7'
-          });
-          
-          $('.column-menu').removeClass('show').hide();
-        },
-        update: function(event, ui) {
-          const columnOrder = [];
-          $tr.find('th:not(:first-child):not(:last-child)').each(function() {
-            const $span = $(this).find('.column-label');
-            if ($span.length > 0) {
-              const columnId = $span.data('cid');
-              if (columnId) {
-                columnOrder.push(parseInt(columnId));
-              }
-            }
-          });
-          
-          if (columnOrder.length > 0) {
-            fetch('', {
-              method: 'POST',
-              body: new URLSearchParams({
-                reorder_columns: JSON.stringify(columnOrder),
-                token: token
-              })
-            }).then(() => {
-              setTimeout(() => {
-                const workspaceId = $('.workspace-item.active').data('id');
-                if (workspaceId) {
-                  loadGroups(workspaceId);
-                }
-              }, 200);
-            }).catch(error => {
-              console.error('Erreur lors de la réorganisation des colonnes:', error);
-            });
-          }
-        }
-      }).disableSelection();
-    });
-  }
 
   function sortTasksHierarchically(tasks) {
     const result = [];
-    const taskMap = new Map(tasks.map(t => [t.id, t]));
+    const taskMap = new Map(tasks.map(t => [Number(t.id), t]));
     const processed = new Set();
-    
+    const originalOrder = new Map(tasks.map((t, index) => [Number(t.id), index]));
+
+    const byPosition = (a, b) => {
+      const positionA = Number.isFinite(Number(a.position)) ? Number(a.position) : originalOrder.get(Number(a.id));
+      const positionB = Number.isFinite(Number(b.position)) ? Number(b.position) : originalOrder.get(Number(b.id));
+      if (positionA !== positionB) return positionA - positionB;
+      return Number(a.id || 0) - Number(b.id || 0);
+    };
+
     function addTaskAndChildren(taskId) {
+      taskId = Number(taskId);
       if (processed.has(taskId)) return;
-      
+
       const task = taskMap.get(taskId);
       if (!task) return;
-      
+
       processed.add(taskId);
       result.push(task);
-      
+
       tasks
-        .filter(t => t.parent_task_id === taskId)
-        .sort((a, b) => (a.position || 0) - (b.position || 0))
+        .filter(t => Number(t.parent_task_id || 0) === taskId)
+        .sort(byPosition)
         .forEach(t => addTaskAndChildren(t.id));
     }
-    
+
     tasks
       .filter(t => !t.parent_task_id)
-      .sort((a, b) => (a.position || 0) - (b.position || 0))
+      .sort(byPosition)
       .forEach(t => addTaskAndChildren(t.id));
-    
+
+    tasks
+      .filter(t => !processed.has(Number(t.id)))
+      .sort(byPosition)
+      .forEach(t => addTaskAndChildren(t.id));
+
     return result;
   }
 
@@ -3531,58 +3686,58 @@ $(function(){
     const $searchInput = $('#workspace-search');
     const $clearButton = $('#clear-workspace-search');
     const $searchInfo = $('#search-info');
-    
+
     if ($searchInput.length === 0) return;
-    
+
     function normalizeText(text) {
       return text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     }
-    
+
     function performWorkspaceSearch(searchTerm) {
       const $groups = $('.group');
       let totalItems = 0;
       let visibleItems = 0;
       let foundInGroups = new Set();
-      
+
       $('.search-highlight').contents().unwrap();
       $('td').css('background-color', '');
-      
+
       if (!searchTerm.trim()) {
         $groups.show();
-        $groups.find('tr').removeClass('task-row-hidden').show();
+        $groups.find('.planity-group-table > tbody > tr.task-row').removeClass('task-row-hidden').show();
         $groups.find('td').css('background-color', '');
         $searchInfo.hide();
         $('#no-results-message').remove();
         return;
       }
-      
+
       const normalizedSearchTerm = normalizeText(searchTerm.trim());
       const searchRegex = new RegExp(searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
-      
+
       $groups.each(function() {
         const $group = $(this);
         const groupId = $group.attr('data-id');
         let hasMatchInGroup = false;
-        
+
         const $groupLabel = $group.find('.group-label');
         const groupLabelText = $groupLabel.text().trim();
         if (normalizeText(groupLabelText).includes(normalizedSearchTerm)) {
-          const highlightedText = groupLabelText.replace(searchRegex, '<span class="search-highlight">$&</span>');
+          const highlightedText = highlightEscapedText(groupLabelText, searchRegex);
           $groupLabel.html(highlightedText);
           hasMatchInGroup = true;
           totalItems++;
           visibleItems++;
         }
-        
-        const $rows = $group.find('tbody tr');
+
+        const $rows = $group.find('.planity-group-table > tbody > tr.task-row');
         $rows.each(function() {
           const $row = $(this);
           let hasMatchInRow = false;
-          
-          $row.find('td').each(function() {
+
+          $row.children('td').each(function() {
             const $cell = $(this);
             let cellText = '';
-            
+
             if ($cell.find('input[type="text"], input[type="date"], textarea').length > 0) {
               cellText = $cell.find('input, textarea').val() || '';
             } else if ($cell.find('select').length > 0) {
@@ -3599,13 +3754,35 @@ $(function(){
             } else {
               cellText = $cell.text().trim();
             }
-            
+
             if (cellText && normalizeText(cellText).includes(normalizedSearchTerm)) {
-              if ($cell.find('input, textarea').length === 0 && 
-                  $cell.find('select').length === 0 && 
-                  $cell.find('.tag-item').length === 0 && 
+              if ($cell.find('.candidates-panel').length > 0) {
+                $cell.css('background-color', '#fff3cd');
+                const $candidatePanel = $cell.find('.candidates-panel').first();
+                $candidatePanel.find('tbody tr').each(function() {
+                  const $candidateRow = $(this);
+                  $candidateRow.children('td').each(function() {
+                    const $candidateCell = $(this);
+                    const candidateCellText = $candidateCell.text().trim();
+
+                    if (!candidateCellText || !normalizeText(candidateCellText).includes(normalizedSearchTerm)) {
+                      return;
+                    }
+
+                    if ($candidateCell.find('.candidate-detail-link').length > 0) {
+                      const $candidateLink = $candidateCell.find('.candidate-detail-link').first();
+                      const candidateLinkText = $candidateLink.text().trim();
+                      $candidateLink.html(highlightEscapedText(candidateLinkText, searchRegex));
+                    } else {
+                      $candidateCell.css('background-color', '#fff3cd');
+                    }
+                  });
+                });
+              } else if ($cell.find('input, textarea').length === 0 &&
+                  $cell.find('select').length === 0 &&
+                  $cell.find('.tag-item').length === 0 &&
                   $cell.find('.user-cell').length === 0) {
-                const highlightedText = cellText.replace(searchRegex, '<span class="search-highlight">$&</span>');
+                const highlightedText = highlightEscapedText(cellText, searchRegex);
                 $cell.html(highlightedText);
               } else if ($cell.find('select').length > 0) {
                 $cell.css('background-color', '#fff3cd');
@@ -3614,7 +3791,7 @@ $(function(){
                   const $tag = $(this);
                   const tagText = $tag.text().replace('×', '').trim();
                   if (normalizeText(tagText).includes(normalizedSearchTerm)) {
-                    const highlightedTagText = tagText.replace(searchRegex, '<span class="search-highlight">$&</span>');
+                    const highlightedTagText = highlightEscapedText(tagText, searchRegex);
                     $tag.html(highlightedTagText + '<span class="remove-tag" onclick="removeTag(event, this)" style="cursor:pointer;font-weight:bold;">×</span>');
                   }
                 });
@@ -3627,7 +3804,7 @@ $(function(){
               hasMatchInGroup = true;
             }
           });
-          
+
           if (hasMatchInRow) {
             $row.removeClass('task-row-hidden').show();
             totalItems++;
@@ -3636,19 +3813,19 @@ $(function(){
             $row.addClass('task-row-hidden').hide();
           }
         });
-        
+
         $group.find('.column-label').each(function() {
           const $colLabel = $(this);
           const colText = $colLabel.text().trim();
           if (normalizeText(colText).includes(normalizedSearchTerm)) {
-            const highlightedText = colText.replace(searchRegex, '<span class="search-highlight">$&</span>');
+            const highlightedText = highlightEscapedText(colText, searchRegex);
             $colLabel.html(highlightedText);
             hasMatchInGroup = true;
             totalItems++;
             visibleItems++;
           }
         });
-        
+
         if (hasMatchInGroup) {
           foundInGroups.add(groupId);
           $group.show();
@@ -3660,10 +3837,10 @@ $(function(){
           $group.hide();
         }
       });
-      
+
       if (visibleItems === 0) {
         $searchInfo.html(`Aucun résultat trouvé pour "<strong>${escapeHtml(searchTerm)}</strong>"`).show();
-        
+
         if ($('.group:visible').length === 0 && $('.group').length > 0) {
           if ($('#no-results-message').length === 0) {
             $('#group-list').append(`
@@ -3680,42 +3857,42 @@ $(function(){
         $('#no-results-message').remove();
       }
     }
-    
-    
+
+
     $searchInput.on('input', function() {
       clearTimeout(searchTimeout);
       const searchTerm = $(this).val();
-      
+
       if (searchTerm.trim()) {
         $clearButton.show();
       } else {
         $clearButton.hide();
       }
-      
+
       searchTimeout = setTimeout(function() {
         performWorkspaceSearch(searchTerm);
       }, 300);
     });
-    
+
     $searchInput.on('keypress', function(e) {
       if (e.which === 13) {
         clearTimeout(searchTimeout);
         performWorkspaceSearch($(this).val());
       }
     });
-    
+
     $clearButton.on('click', function() {
       $searchInput.val('');
       $clearButton.hide();
       performWorkspaceSearch('');
     });
-    
+
     $(document).on('keydown', function(e) {
       if (e.ctrlKey && e.key === 'f' && $searchInput.is(':visible')) {
         e.preventDefault();
         $searchInput.focus();
       }
-      
+
       if (e.key === 'Escape' && $searchInput.is(':focus')) {
         $searchInput.val('');
         $clearButton.hide();
@@ -3724,7 +3901,7 @@ $(function(){
       }
     });
   }
-  
+
   $(document).ready(function() {
   });
 
@@ -3745,25 +3922,25 @@ $(function(){
           }
         ]
       };
-      
+
       const config = Object.assign({}, defaults, options);
-      
+
       $('.custom-popup-overlay').remove();
-      
+
       const headerClass = config.type === 'info' ? '' : config.type;
-      
+
       let inputHtml = '';
       if (config.showInput) {
         inputHtml = `<input type="text" class="custom-popup-input" placeholder="${config.inputPlaceholder}" value="${config.inputValue}">`;
       }
-      
+
       let buttonsHtml = '';
       config.buttons.forEach(button => {
         buttonsHtml += `<button class="custom-popup-btn ${button.class}" data-action="${button.text.toLowerCase()}">${button.text}</button>`;
       });
 
       const popupClass = config.popupClass ? ` ${config.popupClass}` : '';
-      
+
       const popupHtml = `
         <div class="custom-popup-overlay">
           <div class="custom-popup${popupClass}">
@@ -3780,48 +3957,48 @@ $(function(){
           </div>
         </div>
       `;
-      
+
       $('body').append(popupHtml);
-      
+
       setTimeout(() => {
         $('.custom-popup-overlay').addClass('show');
       }, 10);
-      
+
       $('.custom-popup-overlay').on('click', '.custom-popup-btn', function(e) {
         const action = $(this).data('action');
         const inputValue = $('.custom-popup-input').val();
-        
+
         const button = config.buttons.find(b => b.text.toLowerCase() === action);
-        
+
         if (button && button.callback) {
           const result = button.callback(inputValue);
           if (result === false) {
             return;
           }
         }
-        
+
         CustomPopup.hide();
       });
-      
+
       $('.custom-popup-overlay').on('click', function(e) {
         if (e.target === this) {
           CustomPopup.hide();
         }
       });
-      
+
       $(document).on('keydown.popup', function(e) {
         if (e.keyCode === 27) {
           CustomPopup.hide();
         }
       });
-      
+
       if (config.showInput) {
         setTimeout(() => {
           $('.custom-popup-input').focus();
         }, 350);
       }
     },
-    
+
     hide: function() {
       $('.custom-popup-overlay').removeClass('show');
       setTimeout(() => {
@@ -3829,7 +4006,7 @@ $(function(){
         $(document).off('keydown.popup');
       }, 300);
     },
-    
+
     alert: function(message, title = 'Information', type = 'info') {
       this.show({
         type: type,
@@ -3843,7 +4020,7 @@ $(function(){
         ]
       });
     },
-    
+
     confirm: function(message, callback, title = 'Confirmation') {
       this.show({
         type: 'info',
@@ -3864,7 +4041,7 @@ $(function(){
         ]
       });
     },
-    
+
     prompt: function(message, callback, defaultValue = '', title = 'Saisie') {
       this.show({
         type: 'info',
@@ -3887,16 +4064,16 @@ $(function(){
         ]
       });
     },
-    
+
     success: function(message, title = 'Succès') {
       this.alert(message, title, 'success');
     },
-    
+
     error: function(message, title = 'Erreur') {
       this.alert(message, title, 'error');
     }
   };
-  
+
   window.customAlert = window.CustomPopup.alert.bind(window.CustomPopup);
   window.customConfirm = window.CustomPopup.confirm.bind(window.CustomPopup);
   window.customPrompt = window.CustomPopup.prompt.bind(window.CustomPopup);

@@ -27,5 +27,6 @@ services:
       DOLI_DB_PASSWORD: secret_password
       DOLI_MAIN_DOCUMENTS_DIR: /var/www/html/documents
     volumes:
+      - ./dolibarr-src:/var/www/html
       - ./data/dolibarr:/var/www/html/documents
       - ./custom:/var/www/html/custom

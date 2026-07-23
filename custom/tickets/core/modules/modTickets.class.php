@@ -53,10 +53,8 @@ class modTickets extends DolibarrModules
 			'login' => 0,
 			'substitutions' => 0,
 			'menus' => 0,
-			'css' => array(
-				'/tickets/css/tickets.css',
-			),
-			'js' => 1,
+			'css' => 0,
+			'js' => 0,
 			'hooks' => array(
 				'data' => array(
 					'ticketcard',
