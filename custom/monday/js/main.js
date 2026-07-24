@@ -429,14 +429,20 @@ $(function(){
     fd.append('save_cell_value', value);
     fd.append('token', token);
 
+    fd.append('expect_json', '1');
+
     fetch('', { method: 'POST', body: fd })
       .then(response => {
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}`);
         }
-        return response.text();
+        return response.json();
       })
-      .then(() => {
+      .then(data => {
+        if (data.mail_required && data.draft && typeof openCandidateStatusMailModal === 'function') {
+          openCandidateStatusMailModal(data.draft);
+        }
+
         if (!isSelect) return;
         if (!activeSplitId) return;
         if (activeSplitId !== columnId) return;
@@ -928,6 +934,7 @@ $(function(){
 
   window.openTaskDetail = function(taskId, taskName, groupName, taskColumnLabel) {
     currentTaskId = taskId;
+    window.currentMondayTaskId = taskId;
     currentTaskColumnLabel = taskColumnLabel ? taskColumnLabel.toLowerCase() : 'tâche';
 
     const detailTitle = 'Détail';
@@ -986,6 +993,7 @@ $(function(){
 
     $panel.removeClass('open');
     currentTaskId = null;
+    window.currentMondayTaskId = null;
     currentTaskColumnLabel = 'tâche';
 
     if (immediate && $panel.length) {
@@ -1025,6 +1033,10 @@ $(function(){
           const fontWeight = comment.font_weight || 400;
           const fontColor = comment.font_color || '#000000';
           const commentStyle = `font-family: ${fontFamily}; font-size: ${fontSize}px; font-weight: ${fontWeight}; color: ${fontColor};`;
+          const commentHtml = String(comment.comment || '')
+            .replace(/\\r\\n/g, '<br>')
+            .replace(/\\n/g, '<br>')
+            .replace(/\\r/g, '<br>');
 
           const $comment = $(`
             <div class="comment-item" data-comment-id="${comment.id}">
@@ -1032,7 +1044,7 @@ $(function(){
                 <span class="comment-author">${escapeHtml(comment.user_name || '')}</span>
                 <span class="comment-date">${formattedDate}</span>
               </div>
-              <div class="comment-text" style="${commentStyle}">${comment.comment}</div>
+              <div class="comment-text" style="${commentStyle}">${commentHtml}</div>
               <div class="comment-actions">
                 <button class="comment-action-btn edit-comment-btn" data-comment-id="${comment.id}">Modifier</button>
                 <button class="comment-action-btn delete-comment-btn" data-comment-id="${comment.id}">Supprimer</button>
@@ -1265,6 +1277,7 @@ $(function(){
         CustomPopup.error('Erreur lors de l\'ajout du commentaire: ' + err.message);
       });
   }
+  window.reloadMondayTaskComments = loadComments;
 
   $('#close-panel').click(closeTaskDetail);
   $('#add-comment-btn').click(addComment);

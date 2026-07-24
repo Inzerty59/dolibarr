@@ -3,6 +3,11 @@ require '../../main.inc.php';
 require_once DOL_DOCUMENT_ROOT.'/core/lib/admin.lib.php';
 require_once DOL_DOCUMENT_ROOT.'/core/lib/functions.lib.php';
 require_once __DIR__.'/planity_kanban.php';
+require_once DOL_DOCUMENT_ROOT.'/core/class/CMailFile.class.php';
+
+ini_set('display_errors', 1);
+error_reporting(E_ALL);
+
 
 $langs->load("mymodule@mymodule");
 
@@ -12,6 +17,361 @@ function monday_normalize_kpi_label($label)
     $label = strtolower($label);
     $label = preg_replace('/[^a-z0-9]+/', '', $label);
     return $label;
+}
+function monday_normalize_candidate_label($label)
+{
+    $label = html_entity_decode((string) $label, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    $label = dol_string_unaccent($label);
+    $label = strtolower($label);
+    return preg_replace('/[^a-z0-9]+/', '', $label);
+}
+
+function monday_is_candidate_status_column($columnLabel)
+{
+    $normalized = monday_normalize_candidate_label($columnLabel);
+    return in_array($normalized, ['statut', 'status'], true);
+}
+
+function monday_get_status_mail_event($boardLabel, $statusLabel)
+{
+    $board = monday_normalize_candidate_label($boardLabel);
+    $status = monday_normalize_candidate_label($statusLabel);
+
+    if (in_array($board, ['viviercandidatlille', 'viviercandidatslille', 'viviercandidatparis', 'viviercandidatsparis'], true)) {
+        if ($status === 'recrute') return 'recruited';
+        if ($status === 'presenteauclient') return 'presented_to_client';
+        if ($status === 'vivier' || $status === 'vivierdecandidat' || $status === 'viviercandidat') return 'kept_in_candidate_pool';
+    }
+
+    if (in_array($board, ['candidaturesatraiteritparis', 'candidatureatraiteritparis', 'candidaturesatraiteritlille', 'candidatureatraiteritlille'], true)) {
+        if ($status === 'vivier' || $status === 'vivierdecandidat' || $status === 'viviercandidat') return 'moved_to_pool';
+    }
+
+    return '';
+}
+
+function monday_get_candidate_status_event_for_task($db, $taskId, $columnId)
+{
+    $taskId = (int) $taskId;
+    $columnId = (int) $columnId;
+
+    $sql = "SELECT c.label as column_label, w.label as board_label, o.label as status_label
+              FROM llx_myworkspace_task t
+              JOIN llx_myworkspace_column c ON c.rowid = $columnId AND c.fk_group = t.fk_group
+              JOIN llx_myworkspace_group g ON g.rowid = c.fk_group
+              JOIN llx_myworkspace w ON w.rowid = g.fk_workspace
+              JOIN llx_myworkspace_cell cell ON cell.fk_task = t.rowid AND cell.fk_column = c.rowid
+         LEFT JOIN llx_myworkspace_column_option o ON o.rowid = CAST(cell.value AS SIGNED)
+             WHERE t.rowid = $taskId";
+    $res = $db->query($sql);
+    if (!$res || !($ctx = $db->fetch_object($res))) {
+        return '';
+    }
+
+    if (!monday_is_candidate_status_column($ctx->column_label)) {
+        return '';
+    }
+
+    return monday_get_status_mail_event($ctx->board_label, $ctx->status_label);
+}
+
+function monday_get_candidate_cell_context($db, $taskId)
+{
+    $taskId = (int) $taskId;
+    $context = [
+        'candidate_name' => '',
+        'recipient' => '',
+        'poste' => '',
+        'client' => '',
+        'lieu' => '',
+        'date_demarrage' => '',
+        'type_contrat' => '',
+        'salaire' => ''
+    ];
+
+    $resTask = $db->query("SELECT label FROM llx_myworkspace_task WHERE rowid = $taskId");
+    if ($resTask && $task = $db->fetch_object($resTask)) {
+        $context['candidate_name'] = trim((string) $task->label);
+    }
+
+    $sql = "SELECT c.label, c.type, cell.value
+              FROM llx_myworkspace_task t
+              JOIN llx_myworkspace_column c ON c.fk_group = t.fk_group
+         LEFT JOIN llx_myworkspace_cell cell ON cell.fk_task = t.rowid AND cell.fk_column = c.rowid
+             WHERE t.rowid = $taskId";
+    $res = $db->query($sql);
+    while ($res && $row = $db->fetch_object($res)) {
+        $normalized = monday_normalize_candidate_label($row->label);
+        $value = trim((string) $row->value);
+        if ($value === '') {
+            continue;
+        }
+
+        if (in_array($row->type, ['select', 'tags'], true)) {
+            $optionIds = [];
+            if ($row->type === 'tags') {
+                $decoded = json_decode($value, true);
+                if (is_array($decoded)) {
+                    $optionIds = array_map('intval', $decoded);
+                }
+            } else {
+                $optionIds = [(int) $value];
+            }
+
+            $optionIds = array_values(array_filter($optionIds));
+            if (!empty($optionIds)) {
+                $resOptions = $db->query("SELECT label FROM llx_myworkspace_column_option WHERE rowid IN (".implode(',', $optionIds).") ORDER BY position ASC, rowid ASC");
+                $labels = [];
+                while ($resOptions && $opt = $db->fetch_object($resOptions)) {
+                    $labels[] = trim((string) $opt->label);
+                }
+                $value = implode(', ', array_filter($labels));
+            }
+        }
+
+        if ($context['recipient'] === '' && in_array($normalized, ['mail', 'email', 'courriel', 'adressemail', 'adressemailcandidat'], true)) {
+            $context['recipient'] = $value;
+        } elseif ($context['poste'] === '' && in_array($normalized, ['poste', 'posterecherche', 'posterecherchee', 'metier', 'fonction'], true)) {
+            $context['poste'] = $value;
+        } elseif ($context['client'] === '' && in_array($normalized, ['client', 'nomclient', 'societe', 'entreprise'], true)) {
+            $context['client'] = $value;
+        } elseif ($context['lieu'] === '' && in_array($normalized, ['lieu', 'lieumission', 'lieudemission', 'localisation', 'ville'], true)) {
+            $context['lieu'] = $value;
+        } elseif ($context['date_demarrage'] === '' && in_array($normalized, ['datedemarrage', 'datededemarrage', 'debutmission', 'datedebut'], true)) {
+            $context['date_demarrage'] = $value;
+        } elseif ($context['type_contrat'] === '' && in_array($normalized, ['typecontrat', 'typedecontrat', 'contrat'], true)) {
+            $context['type_contrat'] = $value;
+        } elseif ($context['salaire'] === '' && in_array($normalized, ['salaire', 'remuneration', 'salairebrut', 'salairebrutmensuelouannuel'], true)) {
+            $context['salaire'] = $value;
+        }
+    }
+
+    return $context;
+}
+
+function monday_get_candidate_firstname($candidateName)
+{
+    $candidateName = trim((string) $candidateName);
+    if ($candidateName === '') {
+        return '{{PRENOM}}';
+    }
+
+    $parts = preg_split('/\s+/', $candidateName);
+    return $parts[0] ?? $candidateName;
+}
+
+function monday_replace_candidate_placeholders($template, $values)
+{
+    foreach ($values as $key => $value) {
+        $value = trim((string) $value);
+        if ($value !== '') {
+            $template = str_replace('{{'.$key.'}}', $value, $template);
+        }
+    }
+
+    return $template;
+}
+
+function monday_build_candidate_mail_draft($db, $taskId, $columnId, $eventType)
+{
+    $taskId = (int) $taskId;
+    $context = monday_get_candidate_cell_context($db, $taskId);
+    $values = [
+        'PRENOM' => monday_get_candidate_firstname($context['candidate_name']),
+        'POSTE' => $context['poste'],
+        'CLIENT' => $context['client'],
+        'LIEU' => $context['lieu'],
+        'DATE_DEMARRAGE' => $context['date_demarrage'],
+        'TYPE_CONTRAT' => $context['type_contrat'],
+        'SALAIRE' => $context['salaire'],
+    ];
+
+    $subject = 'Information concernant votre candidature';
+    $body = '';
+
+    if ($eventType === 'recruited') {
+        $subject = 'INZERTY - Félicitations ! Votre recrutement est confirmé 🎉';
+        $body = "Bonjour {{PRENOM}},\n\n"
+            ."🎉 Félicitations !\n\n"
+            ."Nous avons le plaisir de vous annoncer que votre candidature a été retenue pour le poste de {{POSTE}} chez {{CLIENT}}.\n\n"
+            ."Vous avez franchi avec succès les différentes étapes de notre processus de recrutement, et nous sommes ravis de pouvoir vous accompagner dans cette nouvelle étape de votre parcours professionnel.\n\n"
+            ."📋 Récapitulatif de votre mission\n\n"
+            ."💼 Poste : {{POSTE}}\n\n"
+            ."🏢 Client : {{CLIENT}}\n\n"
+            ."📍 Lieu de mission : {{LIEU}}\n\n"
+            ."📅 Date de démarrage : {{DATE_DEMARRAGE}}\n\n"
+            ."📄 Type de contrat : {{TYPE_CONTRAT}}\n\n"
+            ."💰 Rémunération : {{SALAIRE}}\n\n"
+            ."Prochaine étape :\n\n"
+            ."Notre CISP ou notre chargée de mission RH prendra prochainement contact avec vous afin de constituer votre dossier administratif, répondre à vos éventuelles questions et finaliser les formalités liées à votre embauche.\n\n"
+            ."Toute l'équipe d'Inzerty vous remercie pour la confiance que vous nous accordez et est fière de vous accompagner vers cette nouvelle opportunité.\n\n"
+            ."Nous vous souhaitons une très belle réussite dans cette nouvelle aventure et avons hâte de vous retrouver prochainement.\n\n"
+            ."À très bientôt,\n\n"
+            ."L'équipe Inzerty";
+    } elseif ($eventType === 'presented_to_client') {
+        $subject = 'INZERTY - Votre profil a été présenté au client';
+        $body = "Bonjour {{PRENOM}},\n\n"
+            ."🚀 Une nouvelle étape vient d'être franchie !\n\n"
+            ."Nous avons le plaisir de vous informer que votre candidature a été présentée pour le poste de {{POSTE}} auprès de l'un de nos clients.\n\n"
+            ."À la suite de nos échanges et de l'étude de votre parcours, nous avons choisi de mettre en avant votre profil, en valorisant vos compétences, vos motivations ainsi que les qualités humaines que vous nous avez partagées.\n\n"
+            ."Votre candidature est désormais en cours d'étude. Le ou les clients concernés reviendront vers nous s'ils souhaitent poursuivre le processus de recrutement avec vous.\n\n"
+            ."De notre côté, nous mettons tout en œuvre pour vous donner les meilleures chances d'aboutir à une opportunité correspondant à votre profil. Selon les besoins en cours, votre candidature peut également être étudiée par plusieurs de nos clients afin de maximiser vos opportunités.\n\n"
+            ."Nous vous remercions pour votre confiance, votre disponibilité et la qualité de nos échanges.\n\n"
+            ."Si vous n'avez pas de nouvelles de notre part d'ici 10 jours à 2 semaines, n'hésitez pas à nous contacter par téléphone ou par mail. Nous serons ravis de faire un point avec vous sur l'avancement de votre candidature.\n\n"
+            ."Encore merci pour votre confiance. Nous espérons pouvoir revenir vers vous très prochainement avec une bonne nouvelle !\n\n"
+            ."À très bientôt,\n\n"
+            ."L'équipe Inzerty";
+    } elseif ($eventType === 'moved_to_pool') {
+        $subject = 'INZERTY - Votre profil nous intéresse pour de futures opportunités';
+        $body = "Bonjour {{PRENOM}},\n\n"
+            ."Nous vous remercions pour l'intérêt que vous portez à Inzerty ainsi que pour votre candidature.\n\n"
+            ."Après étude de votre profil, nous ne disposons malheureusement pas, à ce jour, d'une opportunité correspondant pleinement à votre parcours et à vos attentes.\n\n"
+            ."En revanche, votre profil a retenu notre attention. Sauf avis contraire de votre part, nous souhaiterions le conserver dans notre vivier de talents afin de pouvoir vous recontacter dès qu'une opportunité en adéquation avec vos compétences se présentera.\n\n"
+            ."Nous travaillons quotidiennement avec de nombreux clients et de nouveaux besoins nous sont régulièrement confiés. Il est donc tout à fait possible que nous revenions rapidement vers vous.\n\n"
+            ."Nous vous remercions pour la confiance que vous nous avez accordée et vous souhaitons une pleine réussite dans vos recherches.\n\n"
+            ."À très bientôt,\n\n"
+            ."L'équipe Inzerty";
+    } elseif ($eventType === 'kept_in_candidate_pool') {
+        $subject = "INZERTY - Continuons l'aventure ensemble";
+        $body = "Bonjour {{PRENOM}},\n\n"
+            ."Nous tenions tout d'abord à vous remercier pour le temps que vous nous avez accordé tout au long de notre processus de recrutement ainsi que pour la qualité de nos échanges.\n\n"
+            ."Malheureusement, cette opportunité n'a pas abouti. Malgré les qualités de votre profil, le client a fait un autre choix.\n\n"
+            ."Cette décision ne remet absolument pas en cause l'intérêt que nous portons à votre candidature. Au contraire, nous sommes convaincus que votre profil pourra correspondre à de futures opportunités.\n\n"
+            ."Sauf avis contraire de votre part, nous conserverons donc votre candidature dans notre vivier de talents afin de pouvoir vous recontacter dès qu'un poste correspondant à votre profil nous sera confié.\n\n"
+            ."Nous continuerons à penser à vous lors de nos prochains recrutements et espérons avoir le plaisir de vous accompagner prochainement vers une nouvelle opportunité.\n\n"
+            ."Encore merci pour votre confiance et votre disponibilité.\n\n"
+            ."À très bientôt,\n\n"
+            ."L'équipe Inzerty";
+    }
+
+    $body = monday_replace_candidate_placeholders($body, $values);
+
+    return [
+        'task_id' => $taskId,
+        'column_id' => (int) $columnId,
+        'event_type' => $eventType,
+        'recipient' => $context['recipient'],
+        'subject' => $subject,
+        'body' => $body
+    ];
+}
+
+function monday_json_response($payload, $statusCode = 200)
+{
+    http_response_code($statusCode);
+    header('Content-Type: application/json');
+    echo json_encode($payload);
+    exit;
+}
+
+function monday_get_missing_required_mail_fields($eventType, $subject, $body)
+{
+    $text = (string) $subject."\n".(string) $body;
+    preg_match_all('/{{\s*([A-Z0-9_]+)\s*}}/u', $text, $matches);
+    $missing = empty($matches[1]) ? [] : $matches[1];
+    $body = monday_normalize_mail_body($body);
+
+    $isEmptyValue = function ($value) {
+        $value = trim((string) $value);
+        $value = preg_replace('/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/u', '', $value);
+        return trim((string) $value) === '';
+    };
+
+    if (preg_match('/Bonjour\s*,/u', $body) || !preg_match('/Bonjour\s+\S+/u', $body)) {
+        $missing[] = 'PRENOM';
+    }
+
+    if ($eventType === 'recruited') {
+        if (!preg_match('/poste\s+de\s+(.+?)\s+chez\s+(.+?)(?:\.|\n)/isu', $body, $matches)) {
+            $missing[] = 'POSTE';
+            $missing[] = 'CLIENT';
+        } else {
+            if ($isEmptyValue($matches[1])) {
+                $missing[] = 'POSTE';
+            }
+            if ($isEmptyValue($matches[2])) {
+                $missing[] = 'CLIENT';
+            }
+        }
+
+        $requiredLines = [
+            'POSTE' => 'Poste',
+            'CLIENT' => 'Client',
+            'LIEU' => 'Lieu de mission',
+            'DATE_DEMARRAGE' => 'Date de démarrage',
+            'TYPE_CONTRAT' => 'Type de contrat',
+            'SALAIRE' => 'Rémunération',
+        ];
+
+        foreach ($requiredLines as $field => $label) {
+            $labelPattern = preg_quote($label, '/');
+            $hasLine = preg_match('/(?:^|\n)[^\S\n]*[^\p{L}\p{N}\n]*[^\S\n]*'.$labelPattern.'[^\S\n]*:[^\S\n]*([^\n]*)/u', $body, $lineMatches);
+            if (!$hasLine || $isEmptyValue($lineMatches[1])) {
+                $missing[] = $field;
+            }
+        }
+    } elseif ($eventType === 'presented_to_client') {
+        if (!preg_match('/poste\s+de\s+(.+?)\s+auprès/isu', $body, $matches) || $isEmptyValue($matches[1])) {
+            $missing[] = 'POSTE';
+        }
+    }
+
+    return array_values(array_unique($missing));
+}
+
+function monday_escape_comment_html($value)
+{
+    return dol_escape_htmltag((string) $value);
+}
+
+function monday_normalize_mail_body($body)
+{
+    $body = (string) $body;
+    $body = str_replace(["\\r\\n", "\\n", "\\r"], "\n", $body);
+    $body = str_replace(["\r\n", "\r"], "\n", $body);
+    return $body;
+}
+
+function monday_mail_body_to_html($body)
+{
+    $body = trim(monday_normalize_mail_body($body));
+    $paragraphs = preg_split("/\n{2,}/", $body);
+    $html = '<div style="font-family: Arial, Helvetica, sans-serif; font-size: 14px; line-height: 1.55; color: #111;">';
+
+    foreach ($paragraphs as $paragraph) {
+        $paragraph = trim($paragraph);
+        if ($paragraph === '') {
+            continue;
+        }
+
+        $html .= '<p style="margin: 0 0 14px 0;">'.nl2br(dol_escape_htmltag($paragraph), false).'</p>';
+    }
+
+    $html .= '</div>';
+    return $html;
+}
+
+function monday_add_candidate_mail_comment($db, $taskId, $userId, $recipient, $subject, $body)
+{
+    $taskId = (int) $taskId;
+    $userId = (int) $userId;
+    $date = date('Y-m-d H:i:s');
+    $displayDate = dol_print_date(dol_now(), 'dayhour');
+    $body = monday_normalize_mail_body($body);
+
+    $comment = '<div class="candidate-mail-copy">';
+    $comment .= '<strong>Email candidat envoyé le '.$displayDate.'</strong><br>';
+    $comment .= '<strong>Destinataire :</strong> '.monday_escape_comment_html($recipient).'<br>';
+    $comment .= '<strong>Sujet :</strong> '.monday_escape_comment_html($subject).'<br>';
+    $comment .= '<strong>Message :</strong><br>';
+    $comment .= nl2br(monday_escape_comment_html($body));
+    $comment .= '</div>';
+
+    $commentSql = $db->escape($comment);
+    $sql = "INSERT INTO llx_myworkspace_comment (fk_task, fk_user, comment, font_family, font_size, font_weight, font_color, datec)
+            VALUES ($taskId, $userId, '$commentSql', 'Arial', 14, 400, '#000000', '$date')";
+
+    return (bool) $db->query($sql);
 }
 
 function monday_need_label_matches($needLabel, $candidateNeedLabel)
@@ -185,6 +545,7 @@ function monday_user_can_read_workspace()
 
     return !empty($user->admin) || (method_exists($user, 'hasRight') && $user->hasRight('monday', 'myobject', 'read'));
 }
+
 
 function monday_get_kpi_columns($db, $workspaceId = 0)
 {
@@ -1740,14 +2101,138 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['task_cells'])) {
     exit;
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['send_candidate_status_mail'])) {
+    if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
+
+    $taskId = (int) ($_POST['task_id'] ?? 0);
+    $columnId = (int) ($_POST['column_id'] ?? 0);
+    $eventType = trim((string) ($_POST['event_type'] ?? ''));
+    $recipient = trim((string) ($_POST['recipient'] ?? ''));
+    $subject = trim((string) ($_POST['subject'] ?? ''));
+    $body = trim(monday_normalize_mail_body((string) ($_POST['body'] ?? '')));
+
+    if ($taskId <= 0 || $columnId <= 0 || $eventType === '') {
+        monday_json_response(['success' => false, 'message' => 'Contexte du mail invalide.'], 400);
+    }
+    $expectedEventType = monday_get_candidate_status_event_for_task($db, $taskId, $columnId);
+    if ($expectedEventType === '' || $expectedEventType !== $eventType) {
+        monday_json_response(['success' => false, 'message' => 'Le statut actuel ne permet pas l’envoi de ce mail.'], 403);
+    }
+    if (!filter_var($recipient, FILTER_VALIDATE_EMAIL)) {
+        monday_json_response(['success' => false, 'message' => 'Adresse email destinataire non valide.'], 400);
+    }
+    if ($subject === '') {
+        monday_json_response(['success' => false, 'message' => 'Le sujet du mail est obligatoire.'], 400);
+    }
+    if ($body === '') {
+        monday_json_response(['success' => false, 'message' => 'Le message du mail est obligatoire.'], 400);
+    }
+    $missingRequiredFields = monday_get_missing_required_mail_fields($eventType, $subject, $body);
+    if (!empty($missingRequiredFields)) {
+        monday_json_response([
+            'success' => false,
+            'message' => 'Impossible d’envoyer le mail : champs obligatoires manquants ou non remplis : '.implode(', ', $missingRequiredFields).'.'
+        ], 400);
+    }
+
+    $from = '';
+    if (!empty($conf->global->MAIN_MAIL_EMAIL_FROM)) {
+        $from = $conf->global->MAIN_MAIL_EMAIL_FROM;
+    } elseif (!empty($user->email)) {
+        $from = $user->email;
+    } elseif (!empty($conf->global->MAIN_INFO_SOCIETE_MAIL)) {
+        $from = $conf->global->MAIN_INFO_SOCIETE_MAIL;
+    }
+
+    if ($from === '' || !filter_var($from, FILTER_VALIDATE_EMAIL)) {
+        monday_json_response(['success' => false, 'message' => 'Email expéditeur Dolibarr non configuré ou non valide.'], 500);
+    }
+
+    $mailBodyHtml = monday_mail_body_to_html($body);
+    $mail = new CMailFile($subject, $recipient, $from, $mailBodyHtml, [], [], [], '', '', 0, 1, '', '', 'monday-candidate-'.$taskId);
+    $result = $mail->sendfile();
+
+    if (!$result) {
+        $error = !empty($mail->error) ? $mail->error : implode(', ', $mail->errors);
+        monday_json_response([
+            'success' => false,
+            'message' => 'Erreur lors de l’envoi du mail'.($error ? ' : '.$error : '.')
+        ], 500);
+    }
+
+    $commentAdded = monday_add_candidate_mail_comment($db, $taskId, (int) $user->id, $recipient, $subject, $body);
+    if (!$commentAdded) {
+        monday_json_response([
+            'success' => true,
+            'message' => 'Email envoyé avec succès, mais la copie dans les commentaires n’a pas pu être enregistrée.',
+            'comment_added' => false
+        ]);
+    }
+
+    monday_json_response([
+        'success' => true,
+        'message' => 'Email envoyé avec succès.',
+        'comment_added' => true,
+        'task_id' => $taskId
+    ]);
+}
 if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['save_cell_task'], $_POST['save_cell_column'], $_POST['save_cell_value'])) {
     if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
-    $tid = (int)$_POST['save_cell_task'];
-    $cid = (int)$_POST['save_cell_column'];
-    $val = $db->escape($_POST['save_cell_value']);
+
+    $tid = (int) $_POST['save_cell_task'];
+    $cid = (int) $_POST['save_cell_column'];
+    $rawValue = (string) $_POST['save_cell_value'];
+    $val = $db->escape($rawValue);
+
+    $resOld = $db->query("SELECT value FROM llx_myworkspace_cell WHERE fk_task = $tid AND fk_column = $cid");
+    $oldValue = '';
+    if ($resOld && $old = $db->fetch_object($resOld)) {
+        $oldValue = (string) $old->value;
+    }
+
 
     $db->query("INSERT INTO llx_myworkspace_cell (fk_task, fk_column, value) VALUES ($tid, $cid, '$val')
                 ON DUPLICATE KEY UPDATE value = '$val'");
+
+    $mailDraft = null;
+
+    if ($oldValue !== $rawValue && $rawValue !== '') {
+        $statusOptionId = (int) $rawValue;
+
+        $resContext = $db->query("
+            SELECT 
+                c.label as column_label,
+                w.label as board_label,
+                g.label as group_label,
+                o.label as status_label
+            FROM llx_myworkspace_column c
+            JOIN llx_myworkspace_group g ON g.rowid = c.fk_group
+            JOIN llx_myworkspace w ON w.rowid = g.fk_workspace
+            LEFT JOIN llx_myworkspace_column_option o ON o.rowid = $statusOptionId
+            WHERE c.rowid = $cid
+        ");
+
+        if ($resContext && $ctx = $db->fetch_object($resContext)) {
+            if (monday_is_candidate_status_column($ctx->column_label)) {
+                $event = monday_get_status_mail_event($ctx->board_label, $ctx->status_label);
+
+                if ($event !== '') {
+                    $mailDraft = monday_build_candidate_mail_draft($db, $tid, $cid, $event);
+                }
+            }
+        }
+    }
+
+    if (!empty($_POST['expect_json'])) {
+        header('Content-Type: application/json');
+        echo json_encode([
+            'saved' => true,
+            'mail_required' => $mailDraft !== null,
+            'draft' => $mailDraft
+        ]);
+        exit;
+    }
+
     exit;
 }
 
@@ -2210,7 +2695,7 @@ window.planityKanbanUrl = <?php echo json_encode(DOL_URL_ROOT.'/custom/monday/aj
 window.planityKanbanIsAdmin = <?php echo planity_kanban_user_is_admin($user) ? 'true' : 'false'; ?>;
 </script>
 <script src="<?php echo DOL_URL_ROOT ?>/custom/monday/js/main.js?v=<?php echo time(); ?>"></script>
-
+<script src="<?php echo DOL_URL_ROOT ?>/custom/monday/js/candidate-status-mail.js?v=<?php echo time(); ?>"></script>
 <?php
 echo ob_get_clean();
 llxFooter();
