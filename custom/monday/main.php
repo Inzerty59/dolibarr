@@ -38,6 +38,7 @@ function monday_get_status_mail_event($boardLabel, $statusLabel)
     if (in_array($board, ['viviercandidatlille', 'viviercandidatslille', 'viviercandidatparis', 'viviercandidatsparis'], true)) {
         if ($status === 'recrute') return 'recruited';
         if ($status === 'presenteauclient') return 'presented_to_client';
+        if ($status === 'vivier' || $status === 'vivierdecandidat' || $status === 'viviercandidat') return 'kept_in_candidate_pool';
     }
 
     if (in_array($board, ['candidaturesatraiteritparis', 'candidatureatraiteritparis', 'candidaturesatraiteritlille', 'candidatureatraiteritlille'], true)) {
@@ -226,6 +227,17 @@ function monday_build_candidate_mail_draft($db, $taskId, $columnId, $eventType)
             ."En revanche, votre profil a retenu notre attention. Sauf avis contraire de votre part, nous souhaiterions le conserver dans notre vivier de talents afin de pouvoir vous recontacter dès qu'une opportunité en adéquation avec vos compétences se présentera.\n\n"
             ."Nous travaillons quotidiennement avec de nombreux clients et de nouveaux besoins nous sont régulièrement confiés. Il est donc tout à fait possible que nous revenions rapidement vers vous.\n\n"
             ."Nous vous remercions pour la confiance que vous nous avez accordée et vous souhaitons une pleine réussite dans vos recherches.\n\n"
+            ."À très bientôt,\n\n"
+            ."L'équipe Inzerty";
+    } elseif ($eventType === 'kept_in_candidate_pool') {
+        $subject = "INZERTY - Continuons l'aventure ensemble";
+        $body = "Bonjour {{PRENOM}},\n\n"
+            ."Nous tenions tout d'abord à vous remercier pour le temps que vous nous avez accordé tout au long de notre processus de recrutement ainsi que pour la qualité de nos échanges.\n\n"
+            ."Malheureusement, cette opportunité n'a pas abouti. Malgré les qualités de votre profil, le client a fait un autre choix.\n\n"
+            ."Cette décision ne remet absolument pas en cause l'intérêt que nous portons à votre candidature. Au contraire, nous sommes convaincus que votre profil pourra correspondre à de futures opportunités.\n\n"
+            ."Sauf avis contraire de votre part, nous conserverons donc votre candidature dans notre vivier de talents afin de pouvoir vous recontacter dès qu'un poste correspondant à votre profil nous sera confié.\n\n"
+            ."Nous continuerons à penser à vous lors de nos prochains recrutements et espérons avoir le plaisir de vous accompagner prochainement vers une nouvelle opportunité.\n\n"
+            ."Encore merci pour votre confiance et votre disponibilité.\n\n"
             ."À très bientôt,\n\n"
             ."L'équipe Inzerty";
     }
