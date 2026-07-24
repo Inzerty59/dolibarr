@@ -275,6 +275,8 @@ function monday_get_t24_transfer_config()
     $sourceGroup = 'Profils à contacter';
     $targetParisWorkspace = 'Vivier candidat Paris';
     $targetLilleWorkspace = 'Vivier Candidats Lille';
+    $targetParisGroup = 'Candidats Paris Technique';
+    $targetLilleGroup = 'Candidats Lille technique';
     $columnStatut = 'Statut';
     $columnPosteRecherche = 'Poste recherché';
     $columnEligibleIae = 'Eligible IAE';
@@ -318,11 +320,13 @@ function monday_get_t24_transfer_config()
                 'source_workspace' => $sourceParisWorkspace,
                 'source_group' => $sourceGroup,
                 'target_workspace' => $targetParisWorkspace,
+                'target_group' => $targetParisGroup,
             ],
             [
                 'source_workspace' => $sourceLilleWorkspace,
                 'source_group' => $sourceGroup,
                 'target_workspace' => $targetLilleWorkspace,
+                'target_group' => $targetLilleGroup,
             ],
         ],
     ];
@@ -388,25 +392,6 @@ function monday_find_transfer_workspace($db, $workspaceLabel)
     return null;
 }
 
-function monday_get_transfer_group($db, $groupId)
-{
-    $groupId = (int) $groupId;
-    $res = $db->query("SELECT g.rowid, g.label, g.fk_workspace, w.label as workspace_label
-                         FROM llx_myworkspace_group g
-                         JOIN llx_myworkspace w ON w.rowid = g.fk_workspace
-                        WHERE g.rowid = $groupId");
-    if ($res && $group = $db->fetch_object($res)) {
-        return [
-            'id' => (int) $group->rowid,
-            'label' => (string) $group->label,
-            'workspace_id' => (int) $group->fk_workspace,
-            'workspace_label' => (string) $group->workspace_label,
-        ];
-    }
-
-    return null;
-}
-
 function monday_find_t24_pair_for_task($db, $taskId)
 {
     $taskId = (int) $taskId;
@@ -427,47 +412,6 @@ function monday_find_t24_pair_for_task($db, $taskId)
     }
 
     return [$task, null, null];
-}
-
-function monday_get_t24_destination_groups($db, $taskId)
-{
-    $result = ['success' => false, 'groups' => [], 'errors' => [], 'message' => ''];
-    list($task, $pair, $sourceGroup) = monday_find_t24_pair_for_task($db, $taskId);
-    if (!$task) {
-        $result['errors'][] = 'Candidature introuvable.';
-        return $result;
-    }
-    if (!$pair || !$sourceGroup) {
-        $result['message'] = 'Cette ligne ne fait pas partie des tableaux source T24.';
-        $result['success'] = true;
-        return $result;
-    }
-
-    $targetWorkspace = monday_find_transfer_workspace($db, $pair['target_workspace']);
-    if (!$targetWorkspace) {
-        $result['errors'][] = 'Espace destination introuvable: '.$pair['target_workspace'];
-        return $result;
-    }
-
-    $workspaceId = (int) $targetWorkspace['id'];
-    $res = $db->query("SELECT rowid, label
-                         FROM llx_myworkspace_group
-                        WHERE fk_workspace = $workspaceId
-                     ORDER BY position ASC, rowid ASC");
-    while ($res && $group = $db->fetch_object($res)) {
-        $result['groups'][] = [
-            'id' => (int) $group->rowid,
-            'label' => (string) $group->label,
-        ];
-    }
-
-    $result['success'] = true;
-    $result['workspace'] = $targetWorkspace;
-    $result['candidate'] = [
-        'id' => (int) $task->rowid,
-        'label' => (string) $task->label,
-    ];
-    return $result;
 }
 
 function monday_get_transfer_columns($db, $groupId)
@@ -654,10 +598,9 @@ function monday_convert_transfer_value($db, $value, $sourceColumn, $targetColumn
     return $value;
 }
 
-function monday_transfer_candidate_to_target($db, $taskId, $targetGroupId)
+function monday_transfer_candidate_to_target($db, $taskId)
 {
     $taskId = (int) $taskId;
-    $targetGroupId = (int) $targetGroupId;
     $result = ['success' => false, 'moved' => false, 'errors' => [], 'message' => ''];
 
     list($task, $matchedPair, $sourceGroup) = monday_find_t24_pair_for_task($db, $taskId);
@@ -679,13 +622,17 @@ function monday_transfer_candidate_to_target($db, $taskId, $targetGroupId)
 
     $config = monday_get_t24_transfer_config();
     $targetWorkspace = monday_find_transfer_workspace($db, $matchedPair['target_workspace']);
-    $targetGroup = monday_get_transfer_group($db, $targetGroupId);
     if (!$targetWorkspace) {
         $result['errors'][] = 'Espace destination introuvable: '.$matchedPair['target_workspace'];
         return $result;
     }
+
+    $targetGroupLabel = isset($matchedPair['target_group']) ? $matchedPair['target_group'] : '';
+    $targetGroup = $targetGroupLabel !== ''
+        ? monday_find_transfer_group($db, $matchedPair['target_workspace'], $targetGroupLabel)
+        : null;
     if (!$targetGroup) {
-        $result['errors'][] = 'Tableau destination introuvable.';
+        $result['errors'][] = 'Tableau destination introuvable: '.$targetGroupLabel;
         return $result;
     }
     if ((int) $targetGroup['workspace_id'] !== (int) $targetWorkspace['id']) {
@@ -1454,19 +1401,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['transfer_t24_candidat
     if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
 
     $taskId = (int) $_POST['transfer_t24_candidate'];
-    $targetGroupId = isset($_POST['target_group_id']) ? (int) $_POST['target_group_id'] : 0;
-    $result = monday_transfer_candidate_to_target($db, $taskId, $targetGroupId);
-
-    header('Content-Type: application/json');
-    echo json_encode($result);
-    exit;
-}
-
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['t24_destination_groups'])) {
-    if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
-
-    $taskId = (int) $_POST['t24_destination_groups'];
-    $result = monday_get_t24_destination_groups($db, $taskId);
+    $result = monday_transfer_candidate_to_target($db, $taskId);
 
     header('Content-Type: application/json');
     echo json_encode($result);
