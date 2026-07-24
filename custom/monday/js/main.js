@@ -399,6 +399,7 @@ $(function(){
       return $activeWorkspace.data('id');
     }
 
+
     const $fallbackWorkspace = $('.workspace-item').filter(function() {
       const $this = $(this);
       return $this.css('background-color') === 'rgb(0, 124, 186)' ||
@@ -453,12 +454,13 @@ $(function(){
         }
 
         maybeTransferT24Candidate(input);
+
       })
       .catch(error => {
         console.error('Erreur saveCellValue:', error);
       });
   };
-
+ 
   function normalizeMondayLabel(label) {
     return String(label || '')
       .toLowerCase()
@@ -528,7 +530,6 @@ $(function(){
         CustomPopup.error('Erreur pendant le transfert : ' + error.message, 'Transfert T24');
       });
   }
-
   window.validateNumberInput = function(input) {
     const value = input.value;
     const allowedPattern = /^[0-9€$.,\s-]*$/;
