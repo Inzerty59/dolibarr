@@ -399,6 +399,7 @@ $(function(){
       return $activeWorkspace.data('id');
     }
 
+
     const $fallbackWorkspace = $('.workspace-item').filter(function() {
       const $this = $(this);
       return $this.css('background-color') === 'rgb(0, 124, 186)' ||
@@ -428,7 +429,6 @@ $(function(){
     fd.append('save_cell_column', columnId);
     fd.append('save_cell_value', value);
     fd.append('token', token);
-
     fd.append('expect_json', '1');
 
     fetch('', { method: 'POST', body: fd })
@@ -443,24 +443,93 @@ $(function(){
           openCandidateStatusMailModal(data.draft);
         }
 
-        if (!isSelect) return;
-        if (!activeSplitId) return;
-        if (activeSplitId !== columnId) return;
-
-        const moved = moveRowBetweenSplitSections($input.closest('tr'), $group, columnId, value);
-        if (!moved) {
-          const wsId = getActiveWorkspaceId();
-          if (wsId) {
-            loadGroups(wsId);
+        if (isSelect && activeSplitId && activeSplitId === columnId) {
+          const moved = moveRowBetweenSplitSections($input.closest('tr'), $group, columnId, value);
+          if (!moved) {
+            const wsId = getActiveWorkspaceId();
+            if (wsId) {
+              loadGroups(wsId);
+            }
           }
         }
+
+        maybeTransferT24Candidate(input);
+
       })
       .catch(error => {
         console.error('Erreur saveCellValue:', error);
       });
   };
+ 
+  function normalizeMondayLabel(label) {
+    return String(label || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '');
+  }
 
+  function isT24TransferStatusInput(input) {
+    const $input = $(input);
+    if (!$input.is('select')) {
+      return false;
+    }
 
+    const transferConfig = window.t24TransferConfig || {};
+    const statusColumnLabels = (transferConfig.status_column_labels || []).map(normalizeMondayLabel);
+    const eligibleStatusLabels = (transferConfig.eligible_status_labels || []).map(normalizeMondayLabel);
+    const columnIndex = $input.closest('td').index();
+    const headerText = $input.closest('table').find('thead th').eq(columnIndex).find('.column-label').text();
+    const normalizedHeader = normalizeMondayLabel(headerText);
+    if (!statusColumnLabels.includes(normalizedHeader)) {
+      return false;
+    }
+
+    const selectedLabel = $input.find('option:selected').text();
+    return eligibleStatusLabels.includes(normalizeMondayLabel(selectedLabel));
+  }
+
+  function maybeTransferT24Candidate(input) {
+    if (!isT24TransferStatusInput(input)) {
+      return;
+    }
+
+    const taskId = $(input).data('task');
+    transferT24Candidate(taskId);
+  }
+
+  function postT24Transfer(taskId) {
+    const fd = new FormData();
+    fd.append('transfer_t24_candidate', taskId);
+    fd.append('token', token);
+
+    return fetch('', { method: 'POST', body: fd }).then(response => {
+      if (!response.ok) {
+        throw new Error(`Erreur HTTP ${response.status}`);
+      }
+      return response.json();
+    });
+  }
+
+  function transferT24Candidate(taskId) {
+    const activeWorkspaceId = $('.workspace-item.active').data('id');
+    postT24Transfer(taskId)
+      .then(result => {
+        if (!result.success) {
+          CustomPopup.error((result.errors || ['Transfert impossible']).join('<br>'), 'Transfert T24');
+          return;
+        }
+        if (result.moved) {
+          CustomPopup.success(result.message || 'Candidature déplacée.', 'Transfert T24');
+          if (activeWorkspaceId) {
+            loadGroups(activeWorkspaceId);
+          }
+        }
+      })
+      .catch(error => {
+        CustomPopup.error('Erreur pendant le transfert : ' + error.message, 'Transfert T24');
+      });
+  }
   window.validateNumberInput = function(input) {
     const value = input.value;
     const allowedPattern = /^[0-9€$.,\s-]*$/;
@@ -1241,7 +1310,7 @@ $(function(){
 
     fetch('', {method: 'POST', body: fd})
       .then(response => {
-        console.log('Statut de la réponse:', response.status);
+        console.log('Code de réponse:', response.status);
         const contentType = response.headers.get('content-type');
         console.log('Type de contenu:', contentType);
 
