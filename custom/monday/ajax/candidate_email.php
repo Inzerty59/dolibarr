@@ -14,7 +14,18 @@ function monday_candidate_email_response($payload, $status = 200)
     exit;
 }
 
+function monday_candidate_email_user_can_read()
+{
+    global $user;
+
+    return !empty($user->admin) || (method_exists($user, 'hasRight') && $user->hasRight('monday', 'myobject', 'read'));
+}
+
 if (empty($user->id)) {
+    monday_candidate_email_response(array('success' => false, 'message' => 'Accès interdit'), 403);
+}
+
+if (!monday_candidate_email_user_can_read()) {
     monday_candidate_email_response(array('success' => false, 'message' => 'Accès interdit'), 403);
 }
 

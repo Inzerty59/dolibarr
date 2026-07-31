@@ -299,7 +299,64 @@ class MondayInboundEmailProcessor
             return false;
         }
 
-        return strtolower($sender) === $baseEmail;
+        return strtolower($sender) === $baseEmail && $this->hasTrustedAuthenticationResults($parameters, $baseEmail);
+    }
+
+    private function hasTrustedAuthenticationResults(array $parameters, $baseEmail)
+    {
+        $domain = strtolower((string) substr(strrchr($baseEmail, '@'), 1));
+        if ($domain === '') {
+            return false;
+        }
+
+        $headers = $this->extractHeaderValues($parameters, 'Authentication-Results');
+        if (empty($headers)) {
+            return false;
+        }
+
+        foreach ($headers as $header) {
+            $normalized = strtolower($header);
+            if (preg_match('/dmarc=pass\b[^;]*header\.from='.preg_quote($domain, '/').'\b/', $normalized)) {
+                return true;
+            }
+            if (preg_match('/dkim=pass\b[^;]*header\.i=(?:[^@;\s]+@|@)?'.preg_quote($domain, '/').'\b/', $normalized)) {
+                return true;
+            }
+            if (preg_match('/spf=pass\b[^;]*smtp\.mailfrom=(?:[^@;\s]+@)?'.preg_quote($domain, '/').'\b/', $normalized)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function extractHeaderValues(array $parameters, $headerName)
+    {
+        $values = array();
+        if (empty($parameters['header'])) {
+            return $values;
+        }
+
+        $headers = $parameters['header'];
+        if (is_string($headers)) {
+            if (preg_match_all('/^'.preg_quote($headerName, '/').':\s*(.+)$/im', $headers, $matches)) {
+                foreach ($matches[1] as $value) {
+                    $values[] = trim($value);
+                }
+            }
+
+            return $values;
+        }
+
+        if (is_array($headers)) {
+            foreach (array($headerName, strtolower($headerName)) as $key) {
+                if (!empty($headers[$key])) {
+                    $values[] = $this->flattenValue($headers[$key]);
+                }
+            }
+        }
+
+        return array_values(array_filter($values));
     }
 
     private function extractSenderEmail(array $parameters)
