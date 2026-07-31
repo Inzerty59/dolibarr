@@ -95,16 +95,6 @@ class MondayCandidateEmail
         );
     }
 
-    public function isManagedTask($taskId)
-    {
-        $task = $this->fetchTaskContext($taskId);
-        if (!$task) {
-            return false;
-        }
-
-        return $this->isManagedWorkspaceLabel($task['workspace_label']);
-    }
-
     public function getBaseEmail()
     {
         return trim((string) getDolGlobalString('MONDAY_INBOUND_EMAIL_BASE', ''));

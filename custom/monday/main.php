@@ -4,12 +4,13 @@ require_once DOL_DOCUMENT_ROOT.'/core/lib/admin.lib.php';
 require_once DOL_DOCUMENT_ROOT.'/core/lib/functions.lib.php';
 require_once __DIR__.'/planity_kanban.php';
 require_once DOL_DOCUMENT_ROOT.'/core/class/CMailFile.class.php';
-require_once __DIR__.'/class/mondaycollectorbootstrap.class.php';
+require_once __DIR__.'/class/mondayinboundemailprocessor.class.php';
 
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
-MondayCollectorBootstrap::ensureEmailCollectorHookActions($db);
+$mondayInboundEmailProcessor = new MondayInboundEmailProcessor($db);
+$mondayInboundEmailProcessor->ensureEmailCollectorHookActions();
 
 
 $langs->loadLangs(array("mymodule@mymodule", "monday@monday"));
@@ -3209,7 +3210,6 @@ window.mondayCandidateEmailConfig = <?php echo json_encode(array(
     'endpoint' => DOL_URL_ROOT.'/custom/monday/ajax/candidate_email.php',
     'token' => $formtoken,
     'labels' => array(
-        'title' => $langs->transnoentities('CandidateEmailBlockTitle'),
         'copy' => $langs->transnoentities('CandidateEmailCopy'),
         'loading' => $langs->transnoentities('CandidateEmailLoading'),
         'notConfigured' => $langs->transnoentities('CandidateEmailConfigMissing')

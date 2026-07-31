@@ -31,7 +31,6 @@ MONDAY_INBOUND_EMAIL_MAX_SIZE = Taille maximale des pièces jointes par e-mail
 MONDAY_INBOUND_EMAIL_MAX_SIZETooltip = Taille maximale cumulée des pièces jointes par e-mail entrant, en octets.
 MONDAY_INBOUND_ATTACHMENT_FORBIDDEN_EXTENSIONS = Extensions de pièces jointes refusées
 MONDAY_INBOUND_ATTACHMENT_FORBIDDEN_EXTENSIONSTooltip = Extensions refusées, séparées par des virgules.
-CandidateEmailBlockTitle = Adresse e-mail unique
 CandidateEmailLabel = Mail de suivi
 CandidateEmailCopy = Copier
 CandidateEmailLoading = Chargement...

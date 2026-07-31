@@ -58,7 +58,7 @@ if (!$res) {
 // Libraries
 require_once DOL_DOCUMENT_ROOT."/core/lib/admin.lib.php";
 require_once '../lib/monday.lib.php';
-require_once __DIR__.'/../class/mondaycollectorbootstrap.class.php';
+require_once __DIR__.'/../class/mondayinboundemailprocessor.class.php';
 //require_once "../class/myclass.class.php";
 
 /**
@@ -72,7 +72,8 @@ require_once __DIR__.'/../class/mondaycollectorbootstrap.class.php';
 // Translations
 $langs->loadLangs(array("admin", "monday@monday"));
 
-MondayCollectorBootstrap::ensureEmailCollectorHookActions($db);
+$mondayInboundEmailProcessor = new MondayInboundEmailProcessor($db);
+$mondayInboundEmailProcessor->ensureEmailCollectorHookActions();
 
 // Initialize a technical object to manage hooks of page. Note that conf->hooks_modules contains an array of hook context
 /** @var HookManager $hookmanager */

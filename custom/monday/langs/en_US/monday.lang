@@ -31,7 +31,6 @@ MONDAY_INBOUND_EMAIL_MAX_SIZE = Max inbound e-mail attachment size
 MONDAY_INBOUND_EMAIL_MAX_SIZETooltip = Maximum total attachment size allowed per inbound e-mail, in bytes.
 MONDAY_INBOUND_ATTACHMENT_FORBIDDEN_EXTENSIONS = Forbidden inbound attachment extensions
 MONDAY_INBOUND_ATTACHMENT_FORBIDDEN_EXTENSIONSTooltip = Forbidden extensions, separated by commas.
-CandidateEmailBlockTitle = Unique e-mail address
 CandidateEmailLabel = Mail
 CandidateEmailCopy = Copy
 CandidateEmailLoading = Loading...

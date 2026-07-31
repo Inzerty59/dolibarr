@@ -54,12 +54,10 @@
     activeTaskId = taskId;
     const $block = $('#candidate-email-block');
     const loadingLabel = labels.loading || 'Chargement...';
-    const title = labels.title || 'Adresse e-mail unique';
 
     $block.removeAttr('hidden').removeClass('is-error is-empty');
     $block.html(`
       <div class="candidate-email-card is-loading">
-        <div class="candidate-email-title">${escapeHtml(title)}</div>
         <div class="candidate-email-message">${escapeHtml(loadingLabel)}</div>
       </div>
     `);
