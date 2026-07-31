@@ -21,6 +21,21 @@ MONDAY_MYPARAM1 = Mon paramètre 1
 MONDAY_MYPARAM1Tooltip = Tooltip de mon paramètre 1
 MONDAY_MYPARAM2=Mon paramètre 2
 MONDAY_MYPARAM2Tooltip=Tooltip de mon paramètre 2
+MONDAY_INBOUND_EMAIL_BASE = Adresse e-mail de base
+MONDAY_INBOUND_EMAIL_BASETooltip = Adresse de base utilisée pour générer l’adresse e-mail unique de chaque candidat.
+MONDAY_INBOUND_ATTACHMENT_MAX_SIZE = Taille maximale par pièce jointe entrante
+MONDAY_INBOUND_ATTACHMENT_MAX_SIZETooltip = Taille maximale autorisée pour une pièce jointe entrante, en octets.
+MONDAY_INBOUND_ATTACHMENT_MAX_COUNT = Nombre maximal de pièces jointes entrantes
+MONDAY_INBOUND_ATTACHMENT_MAX_COUNTTooltip = Nombre maximal de pièces jointes autorisées par e-mail entrant.
+MONDAY_INBOUND_EMAIL_MAX_SIZE = Taille maximale des pièces jointes par e-mail
+MONDAY_INBOUND_EMAIL_MAX_SIZETooltip = Taille maximale cumulée des pièces jointes par e-mail entrant, en octets.
+MONDAY_INBOUND_ATTACHMENT_FORBIDDEN_EXTENSIONS = Extensions de pièces jointes refusées
+MONDAY_INBOUND_ATTACHMENT_FORBIDDEN_EXTENSIONSTooltip = Extensions refusées, séparées par des virgules.
+CandidateEmailBlockTitle = Adresse e-mail unique
+CandidateEmailLabel = Mail de suivi
+CandidateEmailCopy = Copier
+CandidateEmailLoading = Chargement...
+CandidateEmailConfigMissing = La constante MONDAY_INBOUND_EMAIL_BASE n’est pas configurée.
 
 
 #

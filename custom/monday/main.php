@@ -4,12 +4,15 @@ require_once DOL_DOCUMENT_ROOT.'/core/lib/admin.lib.php';
 require_once DOL_DOCUMENT_ROOT.'/core/lib/functions.lib.php';
 require_once __DIR__.'/planity_kanban.php';
 require_once DOL_DOCUMENT_ROOT.'/core/class/CMailFile.class.php';
+require_once __DIR__.'/class/mondaycollectorbootstrap.class.php';
 
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
+MondayCollectorBootstrap::ensureEmailCollectorHookActions($db);
 
-$langs->load("mymodule@mymodule");
+
+$langs->loadLangs(array("mymodule@mymodule", "monday@monday"));
 
 function monday_normalize_kpi_label($label)
 {
@@ -3147,6 +3150,10 @@ ob_start();
             <strong>Créée :</strong>
             <span id="task-created-display"></span>
           </div>
+          <div class="task-meta-item candidate-email-meta-item">
+            <strong><?php echo $langs->transnoentities('CandidateEmailLabel'); ?> :</strong>
+            <span id="candidate-email-block" class="candidate-email-inline" hidden></span>
+          </div>
         </div>
       </div>
 
@@ -3198,9 +3205,20 @@ window.t24TransferConfig = <?php echo json_encode(monday_get_t24_transfer_client
 window.mondayConfig = <?php echo json_encode($mondayJsConfig); ?>;
 window.planityKanbanUrl = <?php echo json_encode(DOL_URL_ROOT.'/custom/monday/ajax/planity_kanban.php'); ?>;
 window.planityKanbanIsAdmin = <?php echo planity_kanban_user_is_admin($user) ? 'true' : 'false'; ?>;
+window.mondayCandidateEmailConfig = <?php echo json_encode(array(
+    'endpoint' => DOL_URL_ROOT.'/custom/monday/ajax/candidate_email.php',
+    'token' => $formtoken,
+    'labels' => array(
+        'title' => $langs->transnoentities('CandidateEmailBlockTitle'),
+        'copy' => $langs->transnoentities('CandidateEmailCopy'),
+        'loading' => $langs->transnoentities('CandidateEmailLoading'),
+        'notConfigured' => $langs->transnoentities('CandidateEmailConfigMissing')
+    )
+)); ?>;
 
 </script>
 <script src="<?php echo DOL_URL_ROOT ?>/custom/monday/js/main.js?v=<?php echo time(); ?>"></script>
+<script src="<?php echo DOL_URL_ROOT ?>/custom/monday/js/candidate-email.js?v=<?php echo time(); ?>"></script>
 <script src="<?php echo DOL_URL_ROOT ?>/custom/monday/js/candidate-status-mail.js?v=<?php echo time(); ?>"></script>
 <?php
 echo ob_get_clean();
