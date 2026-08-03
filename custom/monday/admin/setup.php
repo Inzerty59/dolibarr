@@ -212,8 +212,8 @@ $item->defaultFieldValue = '104857600';
 $item->helpText = 'Taille maximale cumulée des pièces jointes par e-mail entrant, en octets.';
 
 $item = $formSetup->newItem('MONDAY_INBOUND_ATTACHMENT_FORBIDDEN_EXTENSIONS');
-$item->fieldAttr['placeholder'] = 'exe,msi,bat,cmd,com,scr,ps1,vbs,js,jar,dll,iso,sh,run,bin';
-$item->defaultFieldValue = 'exe,msi,bat,cmd,com,scr,ps1,vbs,js,jar,dll,iso,sh,run,bin';
+$item->fieldAttr['placeholder'] = 'exe,msi,bat,cmd,com,scr,ps1,vbs,js,jar,dll,iso,sh,run,bin,php,phtml,html,htm,htaccess';
+$item->defaultFieldValue = 'exe,msi,bat,cmd,com,scr,ps1,vbs,js,jar,dll,iso,sh,run,bin,php,phtml,html,htm,htaccess';
 $item->helpText = 'Extensions de pièces jointes refusées, séparées par des virgules.';
 
 // End of definition of parameters

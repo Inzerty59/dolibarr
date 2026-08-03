@@ -9,10 +9,6 @@ require_once __DIR__.'/class/mondayinboundemailprocessor.class.php';
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
-$mondayInboundEmailProcessor = new MondayInboundEmailProcessor($db);
-$mondayInboundEmailProcessor->ensureEmailCollectorHookActions();
-
-
 $langs->loadLangs(array("mymodule@mymodule", "monday@monday"));
 
 function monday_normalize_kpi_label($label)
@@ -3067,7 +3063,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['delete_file_id'])) {
     $uid = $user->id;
 
     if ($type === 'task') {
-        $res = $db->query("SELECT filename, fk_user FROM llx_myworkspace_task_file WHERE rowid = $file_id");
+        $res = $db->query("SELECT filename, fk_user, fk_task FROM llx_myworkspace_task_file WHERE rowid = $file_id");
         $subdir = 'tasks';
         $table = 'llx_myworkspace_task_file';
     } else {
@@ -3077,8 +3073,15 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['delete_file_id'])) {
     }
 
     $file = $db->fetch_object($res);
+    $canDelete = false;
+    if ($file) {
+        $canDelete = !empty($user->admin) || ((int) $file->fk_user === (int) $uid);
+        if (!$canDelete && $type === 'task' && (int) $file->fk_user === 0 && monday_user_can_read_workspace()) {
+            $canDelete = true;
+        }
+    }
 
-    if ($file && $file->fk_user == $uid) {
+    if ($file && $canDelete) {
         $filepath = '/var/www/documents/myworkspace/'.$subdir.'/' . $file->filename;
         if (file_exists($filepath)) {
             unlink($filepath);

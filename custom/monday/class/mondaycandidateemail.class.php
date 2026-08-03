@@ -8,7 +8,6 @@ class MondayCandidateEmail
     const TOKEN_ATTEMPTS = 20;
 
     private $db;
-    private $schemaChecked = false;
     private $hasTokenColumn = null;
 
     public function __construct($db)
@@ -154,49 +153,19 @@ class MondayCandidateEmail
 
     private function ensureTokenStorageSchema()
     {
-        if ($this->schemaChecked && $this->hasTokenStorageColumn()) {
-            return true;
-        }
-
-        $this->schemaChecked = true;
-
         if (!$this->hasTokenStorageColumn()) {
-            $alterSql = "ALTER TABLE ".MAIN_DB_PREFIX."myworkspace_task
-                           ADD COLUMN inbound_email_token varchar(64) DEFAULT NULL AFTER position";
-            $res = $this->db->query($alterSql);
-            if (!$res) {
-                return false;
-            }
-            $this->hasTokenColumn = true;
-
-            if ($this->hasLegacyCandidateTokenColumn()) {
-                $copySql = "UPDATE ".MAIN_DB_PREFIX."myworkspace_task
-                               SET inbound_email_token = candidate_email_token
-                             WHERE inbound_email_token IS NULL AND candidate_email_token IS NOT NULL AND candidate_email_token <> ''";
-                $this->db->query($copySql);
-            }
+            dol_syslog(__CLASS__.' missing inbound_email_token column. Run Monday SQL migration.', LOG_ERR);
+            return false;
         }
 
         $indexSql = "SHOW INDEX FROM ".MAIN_DB_PREFIX."myworkspace_task WHERE Key_name = 'uk_inbound_email_token'";
         $indexRes = $this->db->query($indexSql);
-        if ($indexRes && $this->db->num_rows($indexRes) === 0) {
-            $addIndexSql = "ALTER TABLE ".MAIN_DB_PREFIX."myworkspace_task
-                              ADD UNIQUE KEY uk_inbound_email_token (inbound_email_token)";
-            $indexAddRes = $this->db->query($addIndexSql);
-            if (!$indexAddRes) {
-                return false;
-            }
+        if (!$indexRes || $this->db->num_rows($indexRes) === 0) {
+            dol_syslog(__CLASS__.' missing uk_inbound_email_token index. Run Monday SQL migration.', LOG_ERR);
+            return false;
         }
 
         return true;
-    }
-
-    private function hasLegacyCandidateTokenColumn()
-    {
-        $sql = "SHOW COLUMNS FROM ".MAIN_DB_PREFIX."myworkspace_task LIKE 'candidate_email_token'";
-        $res = $this->db->query($sql);
-
-        return $res && $this->db->num_rows($res) > 0;
     }
 
     public function buildInboundEmail($token)
@@ -231,20 +200,7 @@ class MondayCandidateEmail
             return '';
         }
 
-        for ($i = 0; $i < self::TOKEN_ATTEMPTS; $i++) {
-            $token = bin2hex(random_bytes(self::TOKEN_BYTES));
-            $safeToken = $this->db->escape($token);
-            $sql = "SELECT rowid
-                      FROM ".MAIN_DB_PREFIX."myworkspace_task
-                     WHERE inbound_email_token = '".$safeToken."'
-                     LIMIT 1";
-            $res = $this->db->query($sql);
-            if ($res && $this->db->num_rows($res) === 0) {
-                return $token;
-            }
-        }
-
-        return '';
+        return bin2hex(random_bytes(self::TOKEN_BYTES));
     }
 
     public function ensureToken($taskId)
@@ -272,11 +228,15 @@ class MondayCandidateEmail
             $updateSql = "UPDATE ".MAIN_DB_PREFIX."myworkspace_task
                              SET inbound_email_token = '".$safeToken."'
                            WHERE rowid = ".(int) $task['id']." AND (inbound_email_token IS NULL OR inbound_email_token = '')";
-            $this->db->query($updateSql);
+            $updated = $this->db->query($updateSql);
 
             $check = $this->fetchTaskContext($task['id']);
             if ($check && !empty($check['token'])) {
                 return $check['token'];
+            }
+
+            if (!$updated) {
+                continue;
             }
         }
 

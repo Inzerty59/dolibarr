@@ -13,7 +13,7 @@ class MondayInboundEmailProcessor
     const DEFAULT_ATTACHMENT_MAX_SIZE = 26214400;
     const DEFAULT_ATTACHMENT_MAX_COUNT = 20;
     const DEFAULT_EMAIL_MAX_SIZE = 104857600;
-    const DEFAULT_FORBIDDEN_EXTENSIONS = 'exe,msi,bat,cmd,com,scr,ps1,vbs,js,jar,dll,iso,sh,run,bin';
+    const DEFAULT_FORBIDDEN_EXTENSIONS = 'exe,msi,bat,cmd,com,scr,ps1,vbs,js,jar,dll,iso,sh,run,bin,php,phtml,html,htm,htaccess';
 
     private $db;
     private $resolver;
@@ -172,6 +172,21 @@ class MondayInboundEmailProcessor
         $receivedDate = $this->extractReceivedDate($headers, $parameters);
         $messageKey = $this->buildMessageKey($parameters, $recipient, $subject, $body, $receivedDate);
 
+        if (!$this->ensureProcessedSchema()) {
+            return array(
+                'handled' => false,
+                'success' => false,
+                'status' => 'storage_unavailable',
+                'message' => 'La migration de suivi des e-mails entrants est requise.',
+                'candidate_found' => true,
+                'task_id' => $taskId,
+                'comment_added' => false,
+                'attachments_saved' => 0,
+                'attachment_errors' => array(),
+                'resolution' => $resolution
+            );
+        }
+
         if (!$this->isAllowedSender($parameters)) {
             return array(
                 'handled' => false,
@@ -188,25 +203,6 @@ class MondayInboundEmailProcessor
         }
 
         if ($messageKey !== '' && $this->isAlreadyProcessed($messageKey)) {
-            return array(
-                'handled' => true,
-                'success' => true,
-                'status' => 'duplicate',
-                'message' => 'Email déjà importé.',
-                'candidate_found' => true,
-                'task_id' => $taskId,
-                'comment_added' => false,
-                'attachments_saved' => 0,
-                'attachment_errors' => array(),
-                'resolution' => $resolution
-            );
-        }
-
-        if ($this->hasExistingCandidateComment($taskId, $recipient, $subject, $body)) {
-            if ($messageKey !== '') {
-                $this->markProcessed($messageKey, $taskId, 0);
-            }
-
             return array(
                 'handled' => true,
                 'success' => true,
@@ -311,7 +307,8 @@ class MondayInboundEmailProcessor
 
         $headers = $this->extractHeaderValues($parameters, 'Authentication-Results');
         if (empty($headers)) {
-            return false;
+            dol_syslog(__CLASS__.' Authentication-Results header unavailable, falling back to From check', LOG_WARNING);
+            return true;
         }
 
         foreach ($headers as $header) {
@@ -627,37 +624,18 @@ class MondayInboundEmailProcessor
 
     private function ensureProcessedSchema()
     {
-        $sql = "CREATE TABLE IF NOT EXISTS ".MAIN_DB_PREFIX.self::PROCESSED_TABLE." (
-            rowid int(11) AUTO_INCREMENT PRIMARY KEY,
-            message_key varchar(64) NOT NULL,
-            fk_task int(11) NOT NULL,
-            fk_comment int(11) NOT NULL DEFAULT 0,
-            datec datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE KEY uk_monday_inbound_email_message_key (message_key),
-            INDEX idx_monday_inbound_email_fk_task (fk_task)
-        ) ENGINE=innodb";
-
-        return (bool) $this->db->query($sql);
-    }
-
-    private function hasExistingCandidateComment($taskId, $recipient, $subject, $body)
-    {
-        $body = $this->normalizeBody($body);
-        $snippet = mb_substr($body, 0, 80, 'UTF-8');
-        if ($recipient === '' || $subject === '' || $snippet === '') {
+        $sql = "SELECT 1
+                  FROM information_schema.tables
+                 WHERE table_schema = DATABASE()
+                   AND table_name = '".$this->db->escape(MAIN_DB_PREFIX.self::PROCESSED_TABLE)."'
+                 LIMIT 1";
+        $res = $this->db->query($sql);
+        if (!$res || $this->db->num_rows($res) === 0) {
+            dol_syslog(__CLASS__.' missing '.MAIN_DB_PREFIX.self::PROCESSED_TABLE.' table. Run Monday SQL migration.', LOG_ERR);
             return false;
         }
 
-        $sql = "SELECT rowid
-                  FROM ".MAIN_DB_PREFIX."myworkspace_comment
-                 WHERE fk_task = ".((int) $taskId)."
-                   AND comment LIKE '%".$this->db->escape($recipient)."%'
-                   AND comment LIKE '%".$this->db->escape($subject)."%'
-                   AND comment LIKE '%".$this->db->escape($snippet)."%'
-                 LIMIT 1";
-        $res = $this->db->query($sql);
-
-        return $res && $this->db->num_rows($res) > 0;
+        return true;
     }
 
     private function saveAttachments($taskId, $attachments)

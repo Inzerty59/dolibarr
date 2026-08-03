@@ -1106,7 +1106,6 @@ $(function(){
           const fontColor = comment.font_color || '#000000';
           const commentStyle = `font-family: ${fontFamily}; font-size: ${fontSize}px; font-weight: ${fontWeight}; color: ${fontColor};`;
           const commentHtml = String(comment.comment || '')
-            .replace(/Email candidat reçu le/g, 'Email candidat envoyé le')
             .replace(/\\r\\n/g, '<br>')
             .replace(/\\n/g, '<br>')
             .replace(/\\r/g, '<br>');

@@ -57,6 +57,7 @@ services:
           echo date("c")." CRON_KEY is empty\n";
         } else {
           echo date("c")." run Dolibarr cron\n";
-          echo file_get_contents("http://dolibarr/public/cron/cron_run_jobs_by_url.php?securitykey=".urlencode(getDolGlobalString("CRON_KEY"))."&userlogin=".urlencode(getenv("DOLI_CRON_USER") ?: "admin"))."\n";
+          $$result = @file_get_contents("http://dolibarr/public/cron/cron_run_jobs_by_url.php?securitykey=".urlencode(getDolGlobalString("CRON_KEY"))."&userlogin=".urlencode(getenv("DOLI_CRON_USER") ?: "admin"));
+          echo date("c").($$result === false ? " cron call failed\n" : " cron call done\n");
         }'\''; sleep 60;
       done'
