@@ -586,6 +586,42 @@ $(function(){
     }
   };
 
+  // Comme updateExpandableTextarea, mais pour un lot de textareas : sépare
+  // lectures et écritures de layout pour éviter un reflow forcé par élément.
+  window.updateExpandableTextareasBatch = function(textareas) {
+    const items = textareas.map(textarea => {
+      const $wrapper = $(textarea).closest('.cell-expandable');
+      return {
+        textarea,
+        $toggle: $wrapper.find('.cell-expandable-toggle'),
+        expanded: $wrapper.attr('data-expanded') === '1'
+      };
+    });
+
+    items.forEach(item => { item.textarea.style.height = 'auto'; });
+
+    items.forEach(item => {
+      item.fullHeight = item.textarea.scrollHeight;
+      item.collapsedHeight = getCollapsedTextareaHeight(item.textarea);
+      item.hasOverflow = item.fullHeight > item.collapsedHeight + 1;
+    });
+
+    items.forEach(item => {
+      if (item.expanded || !item.hasOverflow) {
+        item.textarea.style.height = `${item.fullHeight}px`;
+      } else {
+        item.textarea.style.height = `${item.collapsedHeight}px`;
+        item.textarea.scrollTop = 0;
+      }
+
+      if (item.hasOverflow) {
+        item.$toggle.text(item.expanded ? 'voir moins' : 'voir plus').show();
+      } else {
+        item.$toggle.hide();
+      }
+    });
+  };
+
   window.handleExpandableTextareaInput = function(textarea, isNumber) {
     if (isNumber) {
       validateNumberInput(textarea);
@@ -2810,9 +2846,7 @@ $(function(){
 	                    });
 	                    Promise.all(taskPromises).then((taskRows) => {
 	                      renderGroupTables($grp, g, cols, ths, taskRows);
-	                      $grp.find('textarea.cell-textarea, textarea.cell-number-textarea').each(function() {
-	                        updateExpandableTextarea(this);
-	                      });
+	                      updateExpandableTextareasBatch($grp.find('textarea.cell-textarea, textarea.cell-number-textarea').get());
 
 	                      $grp.find('select.cell-select').each(function() {
 	                        applySelectColor($(this));
