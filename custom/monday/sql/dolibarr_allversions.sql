@@ -17,3 +17,9 @@ CREATE TABLE IF NOT EXISTS llx_monday_inbound_email (
     UNIQUE KEY uk_monday_inbound_email_message_key (message_key),
     INDEX idx_monday_inbound_email_fk_task (fk_task)
 ) ENGINE=innodb;
+
+ALTER TABLE llx_myworkspace_task_file
+    ADD COLUMN IF NOT EXISTS fk_inbound_email int(11) DEFAULT NULL AFTER fk_task;
+
+ALTER TABLE llx_myworkspace_task_file
+    ADD INDEX IF NOT EXISTS idx_fk_inbound_email (fk_inbound_email);

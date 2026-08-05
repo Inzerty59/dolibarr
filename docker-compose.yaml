@@ -27,7 +27,10 @@ services:
       DOLI_DB_PASSWORD: secret_password
       DOLI_MAIN_DOCUMENTS_DIR: /var/www/html/documents
       PHP_INI_ALLOW_URL_FOPEN: 1
+      PHP_INI_MEMORY_LIMIT: 1024M
     volumes:
+      - ./dolibarr_source/conf/conf.php:/var/www/html/conf/conf.php:ro
+      - ./data/dolibarr:/var/www/documents
       - ./data/dolibarr:/var/www/html/documents
       - ./custom:/var/www/html/custom
 
@@ -45,8 +48,11 @@ services:
       DOLI_DB_PASSWORD: secret_password
       DOLI_MAIN_DOCUMENTS_DIR: /var/www/html/documents
       PHP_INI_ALLOW_URL_FOPEN: 1
+      PHP_INI_MEMORY_LIMIT: 1024M
       DOLI_CRON_USER: amina.chelighem
     volumes:
+      - ./dolibarr_source/conf/conf.php:/var/www/html/conf/conf.php:ro
+      - ./data/dolibarr:/var/www/documents
       - ./data/dolibarr:/var/www/html/documents
       - ./custom:/var/www/html/custom
     command: >
@@ -57,7 +63,8 @@ services:
           echo date("c")." CRON_KEY is empty\n";
         } else {
           echo date("c")." run Dolibarr cron\n";
-          $$result = @file_get_contents("http://dolibarr/public/cron/cron_run_jobs_by_url.php?securitykey=".urlencode(getDolGlobalString("CRON_KEY"))."&userlogin=".urlencode(getenv("DOLI_CRON_USER") ?: "admin"));
+          $$context = stream_context_create(["http" => ["timeout" => 300]]);
+          $$result = @file_get_contents("http://dolibarr/public/cron/cron_run_jobs_by_url.php?securitykey=".urlencode(getDolGlobalString("CRON_KEY"))."&userlogin=".urlencode(getenv("DOLI_CRON_USER") ?: "admin"), false, $$context);
           echo date("c").($$result === false ? " cron call failed\n" : " cron call done\n");
         }'\''; sleep 60;
       done'

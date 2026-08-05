@@ -142,6 +142,7 @@ CREATE TABLE llx_myworkspace_comment (
 CREATE TABLE llx_myworkspace_task_file (
     rowid int(11) AUTO_INCREMENT PRIMARY KEY,
     fk_task int(11) NOT NULL,
+    fk_inbound_email int(11) DEFAULT NULL,
     original_name varchar(255) NOT NULL,
     filename varchar(255) NOT NULL,
     filesize int(11) NOT NULL,
@@ -150,6 +151,7 @@ CREATE TABLE llx_myworkspace_task_file (
     datec datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
     tms timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_fk_task (fk_task),
+    INDEX idx_fk_inbound_email (fk_inbound_email),
     INDEX idx_fk_user (fk_user),
     INDEX idx_datec (datec),
     FOREIGN KEY (fk_task) REFERENCES llx_myworkspace_task(rowid) ON DELETE CASCADE

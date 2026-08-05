@@ -102,6 +102,68 @@ class MondayInboundEmailProcessor
             dol_syslog(__CLASS__.' hook action seeded for emailcollector', LOG_INFO);
         }
 
+        return $this->ensureEmailCollectorCcFilters($collectorIds, $creatorId, $now);
+    }
+
+    private function ensureEmailCollectorCcFilters(array $collectorIds, $creatorId, $now)
+    {
+        $baseEmail = strtolower(trim((string) getDolGlobalString('MONDAY_INBOUND_EMAIL_BASE', '')));
+        if ($baseEmail === '' || strpos($baseEmail, '@') === false) {
+            return true;
+        }
+
+        $localPart = substr($baseEmail, 0, strpos($baseEmail, '@'));
+        if ($localPart === '') {
+            return true;
+        }
+
+        foreach ($collectorIds as $collectorId) {
+            $legacySql = "UPDATE ".MAIN_DB_PREFIX."emailcollector_emailcollectorfilter
+                             SET status = 0
+                           WHERE fk_emailcollector = ".((int) $collectorId)."
+                             AND type = 'header'
+                             AND rulevalue = '".$this->db->escape('Cc '.$localPart)."'";
+            if (!$this->db->query($legacySql)) {
+                dol_syslog(__CLASS__.' failed to disable legacy emailcollector header Cc filter for collector='.$collectorId, LOG_ERR);
+                return false;
+            }
+
+            $sql = "SELECT rowid, status
+                      FROM ".MAIN_DB_PREFIX."emailcollector_emailcollectorfilter
+                     WHERE fk_emailcollector = ".((int) $collectorId)."
+                       AND type = 'cc'
+                       AND rulevalue = '".$this->db->escape($localPart)."'
+                     LIMIT 1";
+            $res = $this->db->query($sql);
+            if (!$res) {
+                dol_syslog(__CLASS__.' failed to read emailcollector Cc filter for collector='.$collectorId, LOG_ERR);
+                return false;
+            }
+
+            $existing = $this->db->fetch_object($res);
+            if ($existing) {
+                if ((int) $existing->status === 0) {
+                    $updateSql = "UPDATE ".MAIN_DB_PREFIX."emailcollector_emailcollectorfilter
+                                     SET status = 1
+                                   WHERE rowid = ".((int) $existing->rowid);
+                    if (!$this->db->query($updateSql)) {
+                        dol_syslog(__CLASS__.' failed to reactivate emailcollector Cc filter for collector='.$collectorId, LOG_ERR);
+                        return false;
+                    }
+                }
+                continue;
+            }
+
+            $insertSql = "INSERT INTO ".MAIN_DB_PREFIX."emailcollector_emailcollectorfilter
+                (fk_emailcollector, type, rulevalue, date_creation, fk_user_creat, status)
+                VALUES
+                (".((int) $collectorId).", 'cc', '".$this->db->escape($localPart)."', '".$now."', ".((int) $creatorId).", 1)";
+            if (!$this->db->query($insertSql)) {
+                dol_syslog(__CLASS__.' failed to seed emailcollector Cc filter for collector='.$collectorId, LOG_ERR);
+                return false;
+            }
+        }
+
         return true;
     }
 
@@ -218,10 +280,11 @@ class MondayInboundEmailProcessor
         }
 
         $commentId = $this->addCandidateComment($taskId, $recipient, $subject, $body, $receivedDate, $messageKey);
-        $attachmentResult = $this->saveAttachments($taskId, $parameters['attachments'] ?? array());
+        $inboundEmailId = 0;
         if ($messageKey !== '' && $commentId > 0) {
-            $this->markProcessed($messageKey, $taskId, $commentId);
+            $inboundEmailId = $this->markProcessed($messageKey, $taskId, $commentId);
         }
+        $attachmentResult = $this->saveAttachments($taskId, $parameters['attachments'] ?? array(), $inboundEmailId);
 
         $result = array(
             'handled' => true,
@@ -243,41 +306,25 @@ class MondayInboundEmailProcessor
 
     private function buildResolvableHeaders(array $parameters)
     {
-        $headers = isset($parameters['header']) ? $parameters['header'] : array();
-        if (is_string($headers)) {
-            $merged = $headers;
-        } elseif (is_array($headers)) {
-            $merged = $headers;
-        } elseif (is_object($headers)) {
-            $merged = get_object_vars($headers);
-        } else {
-            $merged = array();
-        }
-
-        if (!is_array($merged)) {
-            return $merged;
+        $merged = array();
+        $headerCc = $this->extractHeaderValues($parameters, 'Cc');
+        if (!empty($headerCc)) {
+            $merged['Cc'] = implode(', ', $headerCc);
         }
 
         if (isset($parameters['overview'])) {
             $overview = $parameters['overview'];
-            foreach (array('to' => 'To', 'cc' => 'Cc', 'delivered_to' => 'Delivered-To', 'x_original_to' => 'X-Original-To') as $sourceKey => $headerName) {
-                $value = $this->readValue($overview, $sourceKey);
-                if ($value === '' && strpos($sourceKey, '_') !== false) {
-                    $value = $this->readValue($overview, str_replace('_', '-', $sourceKey));
-                }
-                if ($value !== '') {
-                    $existingValue = isset($merged[$headerName]) ? $this->flattenValue($merged[$headerName]) : '';
-                    $merged[$headerName] = trim(($existingValue !== '' ? $existingValue.', ' : '').$value);
-                }
+            $value = $this->readValue($overview, 'cc');
+            if ($value !== '') {
+                $existingValue = isset($merged['Cc']) ? $this->flattenValue($merged['Cc']) : '';
+                $merged['Cc'] = trim(($existingValue !== '' ? $existingValue.', ' : '').$value);
             }
         }
 
-        foreach (array('to' => 'To', 'cc' => 'Cc') as $parameterKey => $headerName) {
-            $value = $this->readValue($parameters, $parameterKey);
-            if ($value !== '') {
-                $existingValue = isset($merged[$headerName]) ? $this->flattenValue($merged[$headerName]) : '';
-                $merged[$headerName] = trim(($existingValue !== '' ? $existingValue.', ' : '').$value);
-            }
+        $value = $this->readValue($parameters, 'cc');
+        if ($value !== '') {
+            $existingValue = isset($merged['Cc']) ? $this->flattenValue($merged['Cc']) : '';
+            $merged['Cc'] = trim(($existingValue !== '' ? $existingValue.', ' : '').$value);
         }
 
         return $merged;
@@ -508,9 +555,7 @@ class MondayInboundEmailProcessor
         if (trim((string) $recipient) !== '') {
             $comment .= '<strong>Destinataire :</strong> '.dol_escape_htmltag($recipient).'<br>';
         }
-        if (trim((string) $subject) !== '') {
-            $comment .= '<strong>Sujet :</strong> '.dol_escape_htmltag($subject).'<br>';
-        }
+        $comment .= '<strong>Sujet :</strong> '.dol_escape_htmltag($subject).'<br>';
         $comment .= '<strong>Message :</strong><br>';
         $comment .= nl2br(dol_escape_htmltag($this->normalizeBody($body)));
         $comment .= '</div>';
@@ -611,7 +656,7 @@ class MondayInboundEmailProcessor
     private function markProcessed($messageKey, $taskId, $commentId)
     {
         if (!$this->ensureProcessedSchema()) {
-            return false;
+            return 0;
         }
 
         $sql = "INSERT IGNORE INTO ".MAIN_DB_PREFIX.self::PROCESSED_TABLE."
@@ -619,7 +664,21 @@ class MondayInboundEmailProcessor
                 VALUES
                 ('".$this->db->escape($messageKey)."', ".((int) $taskId).", ".((int) $commentId).", '".$this->db->idate(dol_now())."')";
 
-        return (bool) $this->db->query($sql);
+        if (!$this->db->query($sql)) {
+            return 0;
+        }
+
+        $selectSql = "SELECT rowid
+                        FROM ".MAIN_DB_PREFIX.self::PROCESSED_TABLE."
+                       WHERE message_key = '".$this->db->escape($messageKey)."'
+                       LIMIT 1";
+        $res = $this->db->query($selectSql);
+        if (!$res) {
+            return 0;
+        }
+
+        $row = $this->db->fetch_object($res);
+        return $row ? (int) $row->rowid : 0;
     }
 
     private function ensureProcessedSchema()
@@ -638,7 +697,7 @@ class MondayInboundEmailProcessor
         return true;
     }
 
-    private function saveAttachments($taskId, $attachments)
+    private function saveAttachments($taskId, $attachments, $inboundEmailId = 0)
     {
         $result = array(
             'saved' => 0,
@@ -716,9 +775,9 @@ class MondayInboundEmailProcessor
             }
 
             $sql = "INSERT INTO ".MAIN_DB_PREFIX."myworkspace_task_file
-                    (fk_task, original_name, filename, filesize, mimetype, fk_user, datec)
+                    (fk_task, fk_inbound_email, original_name, filename, filesize, mimetype, fk_user, datec)
                     VALUES
-                    (".((int) $taskId).", '".$this->db->escape($safeOriginalName)."', '".$this->db->escape($storedName)."', ".((int) $attachment['filesize']).", '".$this->db->escape($attachment['mimetype'])."', 0, '".$this->db->idate(dol_now())."')";
+                    (".((int) $taskId).", ".((int) $inboundEmailId).", '".$this->db->escape($safeOriginalName)."', '".$this->db->escape($storedName)."', ".((int) $attachment['filesize']).", '".$this->db->escape($attachment['mimetype'])."', 0, '".$this->db->idate(dol_now())."')";
             if (!$this->db->query($sql)) {
                 @unlink($filePath);
                 $result['errors'][] = 'db_insert_failed';

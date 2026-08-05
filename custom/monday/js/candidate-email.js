@@ -18,10 +18,12 @@
   function hideBlock() {
     const $block = $('#candidate-email-block');
     $block.attr('hidden', true).empty().removeClass('is-loading is-error is-empty');
+    $block.closest('.candidate-email-meta-item').hide();
   }
 
   function renderMessage(message, className) {
     const $block = $('#candidate-email-block');
+    $block.closest('.candidate-email-meta-item').show();
     $block.removeAttr('hidden').removeClass('is-loading is-error is-empty');
     $block.html(`<span class="candidate-email-message ${className || ''}">${escapeHtml(message)}</span>`);
   }
@@ -29,6 +31,7 @@
   function renderEmail(email) {
     const $block = $('#candidate-email-block');
     const copyLabel = labels.copy || 'Copier';
+    $block.closest('.candidate-email-meta-item').show();
     $block.removeAttr('hidden').removeClass('is-loading is-error is-empty');
     $block.html(`
       <span class="candidate-email-inline-text" id="candidate-email-address">${escapeHtml(email)}</span>

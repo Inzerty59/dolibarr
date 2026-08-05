@@ -254,7 +254,7 @@ class MondayInboundEmailResolver
     private function extractAddressesFromHeaders($headers)
     {
         $addresses = array();
-        foreach (array('to', 'cc', 'delivered-to', 'x-original-to') as $headerName) {
+        foreach (array('cc') as $headerName) {
             if (empty($headers[$headerName])) {
                 continue;
             }

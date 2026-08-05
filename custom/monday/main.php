@@ -2849,10 +2849,34 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['delete_comment_id'])) {
     $cid = (int)$_POST['delete_comment_id'];
     $uid = $user->id;
 
-    $res = $db->query("SELECT fk_user FROM llx_myworkspace_comment WHERE rowid = $cid");
-    $owner = $db->fetch_object($res);
+    $res = $db->query("
+        SELECT c.fk_user, i.rowid AS inbound_id
+        FROM llx_myworkspace_comment c
+        LEFT JOIN llx_monday_inbound_email i ON i.fk_comment = c.rowid
+        WHERE c.rowid = $cid
+    ");
+    $comment = $db->fetch_object($res);
 
-    if ($owner && $owner->fk_user == $uid) {
+    $canDelete = false;
+    if ($comment) {
+        $canDelete = ((int) $comment->fk_user === (int) $uid);
+        if (!$canDelete && !empty($comment->inbound_id) && (int) $comment->fk_user === 0 && monday_user_can_read_workspace()) {
+            $canDelete = true;
+        }
+    }
+
+    if ($comment && $canDelete) {
+        if (!empty($comment->inbound_id)) {
+            $fileRes = $db->query("SELECT rowid, filename FROM llx_myworkspace_task_file WHERE fk_inbound_email = ".((int) $comment->inbound_id));
+            while ($fileRes && ($file = $db->fetch_object($fileRes))) {
+                $filepath = '/var/www/documents/myworkspace/tasks/' . $file->filename;
+                if (file_exists($filepath)) {
+                    unlink($filepath);
+                }
+                $db->query("DELETE FROM llx_myworkspace_task_file WHERE rowid = ".((int) $file->rowid));
+            }
+            $db->query("UPDATE llx_monday_inbound_email SET fk_comment = 0 WHERE rowid = ".((int) $comment->inbound_id));
+        }
         $db->query("DELETE FROM llx_myworkspace_comment_file WHERE fk_comment = $cid");
         $db->query("DELETE FROM llx_myworkspace_comment WHERE rowid = $cid");
         echo 'OK';
@@ -3154,7 +3178,7 @@ ob_start();
             <strong>Créée :</strong>
             <span id="task-created-display"></span>
           </div>
-          <div class="task-meta-item candidate-email-meta-item">
+          <div class="task-meta-item candidate-email-meta-item" style="display:none;">
             <strong><?php echo $langs->transnoentities('CandidateEmailLabel'); ?> :</strong>
             <span id="candidate-email-block" class="candidate-email-inline" hidden></span>
           </div>
