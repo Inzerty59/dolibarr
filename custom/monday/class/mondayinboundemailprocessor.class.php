@@ -347,6 +347,10 @@ class MondayInboundEmailProcessor
 
     private function hasTrustedAuthenticationResults(array $parameters, $baseEmail)
     {
+        if (!getDolGlobalInt('MONDAY_INBOUND_REQUIRE_AUTH_RESULTS')) {
+            return true;
+        }
+
         $domain = strtolower((string) substr(strrchr($baseEmail, '@'), 1));
         if ($domain === '') {
             return false;
@@ -354,8 +358,8 @@ class MondayInboundEmailProcessor
 
         $headers = $this->extractHeaderValues($parameters, 'Authentication-Results');
         if (empty($headers)) {
-            dol_syslog(__CLASS__.' Authentication-Results header unavailable, falling back to From check', LOG_WARNING);
-            return true;
+            dol_syslog(__CLASS__.' Authentication-Results header unavailable, rejecting inbound email', LOG_WARNING);
+            return false;
         }
 
         foreach ($headers as $header) {

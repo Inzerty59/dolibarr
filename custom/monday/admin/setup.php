@@ -193,6 +193,10 @@ $item = $formSetup->newItem('MONDAY_INBOUND_EMAIL_BASE')->setAsEmail();
 $item->fieldAttr['placeholder'] = 'reception@domaine.tld';
 $item->helpText = 'Adresse de base utilisée pour générer les adresses e-mail uniques des candidats.';
 
+$item = $formSetup->newItem('MONDAY_INBOUND_REQUIRE_AUTH_RESULTS')->setAsYesNo();
+$item->defaultFieldValue = '0';
+$item->helpText = 'Si activé, les e-mails entrants doivent contenir un résultat SPF, DKIM ou DMARC valide pour le domaine de l’adresse de base.';
+
 $item = $formSetup->newItem('MONDAY_INBOUND_ATTACHMENT_MAX_SIZE');
 $item->fieldAttr['type'] = 'number';
 $item->fieldAttr['min'] = '1';
