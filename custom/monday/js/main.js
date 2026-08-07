@@ -1968,14 +1968,17 @@ $(function(){
 
   function renderKpiChart(metric) {
     const series = metric.series || [];
-    const legend = series.map(item => `
-      <div class="kpi-legend-row">
+    const legend = series.map(item => {
+      const label = escapeHtml(item.label);
+      return `
+      <div class="kpi-legend-row" title="${label}">
         <span class="kpi-legend-color" style="background:${escapeHtml(item.color || '#cccccc')}"></span>
-        <span class="kpi-legend-label">${escapeHtml(item.label)}</span>
+        <span class="kpi-legend-label">${label}</span>
         <strong>${formatKpiPercent(item.percentage)}</strong>
         <span class="kpi-legend-count">${item.count}</span>
       </div>
-    `).join('');
+    `;
+    }).join('');
 
     const labels = series
       .filter(item => Number(item.percentage) >= 5)
@@ -2004,9 +2007,10 @@ $(function(){
     return series.map(item => {
       const percentage = Number(item.percentage || 0);
       const width = Math.max(percentage, percentage > 0 ? 5 : 0);
+      const label = escapeHtml(item.label);
       return `
-        <div class="kpi-bar-row">
-          <span class="kpi-bar-label" title="${escapeHtml(item.label)}">${escapeHtml(item.label)}</span>
+        <div class="kpi-bar-row" title="${label}">
+          <span class="kpi-bar-label">${label}</span>
           <div class="kpi-bar-track">
             <div class="kpi-bar-fill" style="width:${width}%;background:${escapeHtml(item.color || '#6b5fad')}"></div>
           </div>
@@ -2045,7 +2049,7 @@ $(function(){
           <h3>${escapeHtml(actionCorrective?.title || 'Actions correctives')}</h3>
           <span>${Number(actionCorrective?.filled || 0)} / ${Number(actionCorrective?.total || 0)} lignes renseignées</span>
         </div>
-        <div class="kpi-top-bars kpi-scroll-bars">
+        <div class="kpi-top-bars kpi-scroll-bars kpi-action-bars">
           ${series.length ? renderKpiBars(series) : '<div class="kpi-empty">Aucune action corrective renseignée.</div>'}
         </div>
       </section>

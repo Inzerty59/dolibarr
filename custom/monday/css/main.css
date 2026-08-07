@@ -1993,7 +1993,6 @@ form[method="POST"] input[name="new_workspace"]:focus {
 
 .kpi-filters input,
 .kpi-filters select {
-  height: 34px;
   border: 1px solid #cfd6df;
   border-radius: 4px;
   padding: 5px 8px;
@@ -2050,6 +2049,7 @@ form[method="POST"] input[name="new_workspace"]:focus {
   border-radius: 8px;
   background: #ffffff;
   padding: 16px;
+  container-type: inline-size;
 }
 
 .kpi-export-card {
@@ -2088,7 +2088,7 @@ form[method="POST"] input[name="new_workspace"]:focus {
 
 .kpi-chart-body {
   display: grid;
-  grid-template-columns: 190px minmax(0, 1fr);
+  grid-template-columns: minmax(170px, 190px) minmax(0, 1fr);
   gap: 16px;
   align-items: center;
 }
@@ -2138,6 +2138,7 @@ form[method="POST"] input[name="new_workspace"]:focus {
 
 .kpi-legend {
   min-width: 0;
+  width: 100%;
 }
 
 .kpi-legend-row {
@@ -2148,6 +2149,8 @@ form[method="POST"] input[name="new_workspace"]:focus {
   padding: 6px 0;
   border-bottom: 1px solid #eef1f4;
   font-size: 13px;
+  min-width: 0;
+  white-space: nowrap;
 }
 
 .kpi-legend-row:last-child {
@@ -2161,10 +2164,15 @@ form[method="POST"] input[name="new_workspace"]:focus {
 }
 
 .kpi-legend-label {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: #172b4d;
+}
+
+.kpi-legend-row strong {
+  text-align: right;
 }
 
 .kpi-legend-count {
@@ -2172,11 +2180,23 @@ form[method="POST"] input[name="new_workspace"]:focus {
   text-align: right;
 }
 
+@container (max-width: 520px) {
+  .kpi-chart-body {
+    grid-template-columns: 1fr;
+    justify-items: stretch;
+  }
+
+  .kpi-donut-wrap {
+    margin: 0 auto;
+  }
+}
+
 .kpi-delay-layout {
   display: grid;
   grid-template-columns: 190px minmax(0, 1fr);
   gap: 18px;
   align-items: stretch;
+  min-width: 0;
 }
 
 .kpi-stat-tile {
@@ -2211,6 +2231,7 @@ form[method="POST"] input[name="new_workspace"]:focus {
   flex-direction: column;
   gap: 12px;
   justify-content: center;
+  min-width: 0;
 }
 
 .kpi-scroll-bars {
@@ -2222,16 +2243,19 @@ form[method="POST"] input[name="new_workspace"]:focus {
 
 .kpi-bar-row {
   display: grid;
-  grid-template-columns: minmax(92px, 150px) minmax(90px, 1fr) 54px;
+  grid-template-columns: minmax(0, 160px) minmax(90px, 1fr) 54px;
   align-items: center;
   gap: 10px;
   min-height: 24px;
+  min-width: 0;
+  white-space: nowrap;
 }
 
 .kpi-bar-label {
   color: #667085;
   font-size: 13px;
   text-align: right;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2253,6 +2277,25 @@ form[method="POST"] input[name="new_workspace"]:focus {
 .kpi-bar-row strong {
   color: #667085;
   font-size: 13px;
+  text-align: right;
+}
+
+.kpi-action-bars .kpi-bar-row {
+  grid-template-columns: minmax(0, 260px) minmax(80px, 1fr) 54px;
+}
+
+@container (max-width: 560px) {
+  .kpi-delay-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .kpi-bar-row {
+    grid-template-columns: minmax(0, 1fr) minmax(90px, 1.5fr) 54px;
+  }
+
+  .kpi-action-bars .kpi-bar-row {
+    grid-template-columns: minmax(0, 1fr) minmax(80px, 1fr) 54px;
+  }
 }
 
 .kpi-export-controls {
