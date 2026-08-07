@@ -58,6 +58,7 @@ if (!$res) {
 // Libraries
 require_once DOL_DOCUMENT_ROOT."/core/lib/admin.lib.php";
 require_once '../lib/monday.lib.php';
+require_once __DIR__.'/../class/mondayinboundemailprocessor.class.php';
 //require_once "../class/myclass.class.php";
 
 /**
@@ -70,6 +71,9 @@ require_once '../lib/monday.lib.php';
 
 // Translations
 $langs->loadLangs(array("admin", "monday@monday"));
+
+$mondayInboundEmailProcessor = new MondayInboundEmailProcessor($db);
+$mondayInboundEmailProcessor->ensureEmailCollectorHookActions();
 
 // Initialize a technical object to manage hooks of page. Note that conf->hooks_modules contains an array of hook context
 /** @var HookManager $hookmanager */
@@ -184,6 +188,37 @@ $item->fieldOverride = "Value forced, can't be modified";
 $item->cssClass = 'minwidth500';
 
 //$item = $formSetup->newItem('MONDAY_MYPARAM13')->setAsDate();	// Not yet implemented
+
+$item = $formSetup->newItem('MONDAY_INBOUND_EMAIL_BASE')->setAsEmail();
+$item->fieldAttr['placeholder'] = 'reception@domaine.tld';
+$item->helpText = 'Adresse de base utilisée pour générer les adresses e-mail uniques des candidats.';
+
+$item = $formSetup->newItem('MONDAY_INBOUND_REQUIRE_AUTH_RESULTS')->setAsYesNo();
+$item->defaultFieldValue = '0';
+$item->helpText = 'Si activé, les e-mails entrants doivent contenir un résultat SPF, DKIM ou DMARC valide pour le domaine de l’adresse de base.';
+
+$item = $formSetup->newItem('MONDAY_INBOUND_ATTACHMENT_MAX_SIZE');
+$item->fieldAttr['type'] = 'number';
+$item->fieldAttr['min'] = '1';
+$item->defaultFieldValue = '26214400';
+$item->helpText = 'Taille maximale autorisée pour une pièce jointe entrante, en octets.';
+
+$item = $formSetup->newItem('MONDAY_INBOUND_ATTACHMENT_MAX_COUNT');
+$item->fieldAttr['type'] = 'number';
+$item->fieldAttr['min'] = '1';
+$item->defaultFieldValue = '20';
+$item->helpText = 'Nombre maximal de pièces jointes autorisées par e-mail entrant.';
+
+$item = $formSetup->newItem('MONDAY_INBOUND_EMAIL_MAX_SIZE');
+$item->fieldAttr['type'] = 'number';
+$item->fieldAttr['min'] = '1';
+$item->defaultFieldValue = '104857600';
+$item->helpText = 'Taille maximale cumulée des pièces jointes par e-mail entrant, en octets.';
+
+$item = $formSetup->newItem('MONDAY_INBOUND_ATTACHMENT_FORBIDDEN_EXTENSIONS');
+$item->fieldAttr['placeholder'] = 'exe,msi,bat,cmd,com,scr,ps1,vbs,js,jar,dll,iso,sh,run,bin,php,phtml,html,htm,htaccess';
+$item->defaultFieldValue = 'exe,msi,bat,cmd,com,scr,ps1,vbs,js,jar,dll,iso,sh,run,bin,php,phtml,html,htm,htaccess';
+$item->helpText = 'Extensions de pièces jointes refusées, séparées par des virgules.';
 
 // End of definition of parameters
 

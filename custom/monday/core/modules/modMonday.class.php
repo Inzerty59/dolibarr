@@ -120,10 +120,9 @@ class modMonday extends DolibarrModules
 			// Set here all hooks context managed by module. To find available hook context, make a "grep -r '>initHooks(' *" on source code. You can also set hook context to 'all'
 			/* BEGIN MODULEBUILDER HOOKSCONTEXTS */
 			'hooks' => array(
-				//   'data' => array(
-				//       'hookcontext1',
-				//       'hookcontext2',
-				//   ),
+				'data' => array(
+					'emailcolector',
+				),
 				//   'entity' => '0',
 			),
 			/* END MODULEBUILDER HOOKSCONTEXTS */
@@ -266,20 +265,6 @@ class modMonday extends DolibarrModules
 		// unit_frequency must be 60 for minute, 3600 for hour, 86400 for day, 604800 for week
 		/* BEGIN MODULEBUILDER CRON */
 		$this->cronjobs = array(
-			//  0 => array(
-			//      'label' => 'MyJob label',
-			//      'jobtype' => 'method',
-			//      'class' => '/monday/class/myobject.class.php',
-			//      'objectname' => 'MyObject',
-			//      'method' => 'doScheduledJob',
-			//      'parameters' => '',
-			//      'comment' => 'Comment',
-			//      'frequency' => 2,
-			//      'unitfrequency' => 3600,
-			//      'status' => 0,
-			//      'test' => 'isModEnabled("monday")',
-			//      'priority' => 50,
-			//  ),
 		);
 		/* END MODULEBUILDER CRON */
 		// Example: $this->cronjobs=array(
@@ -520,7 +505,16 @@ class modMonday extends DolibarrModules
 			}
 		}
 
-		return $this->_init($sql, $options);
+		$result = $this->_init($sql, $options);
+		if ($result > 0) {
+			dol_include_once('/monday/class/mondayinboundemailprocessor.class.php');
+			if (class_exists('MondayInboundEmailProcessor')) {
+				$processor = new MondayInboundEmailProcessor($this->db);
+				$processor->ensureEmailCollectorHookActions();
+			}
+		}
+
+		return $result;
 	}
 
 	/**
@@ -534,6 +528,8 @@ class modMonday extends DolibarrModules
 	public function remove($options = '')
 	{
 		$sql = array();
+		$sql[] = "DELETE FROM ".MAIN_DB_PREFIX."emailcollector_emailcollectoraction WHERE type = 'hookmondayinbound'";
 		return $this->_remove($sql, $options);
 	}
+
 }

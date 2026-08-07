@@ -21,6 +21,22 @@ MONDAY_MYPARAM1 = My param 1
 MONDAY_MYPARAM1Tooltip = My param 1 tooltip
 MONDAY_MYPARAM2=My param 2
 MONDAY_MYPARAM2Tooltip=My param 2 tooltip
+MONDAY_INBOUND_EMAIL_BASE = Base email address
+MONDAY_INBOUND_EMAIL_BASETooltip = Base address used to generate each candidate's unique e-mail address.
+MONDAY_INBOUND_REQUIRE_AUTH_RESULTS = Require SPF/DKIM/DMARC for inbound e-mails
+MONDAY_INBOUND_REQUIRE_AUTH_RESULTSTooltip = If enabled, inbound e-mails must contain a valid SPF, DKIM or DMARC result for the base address domain.
+MONDAY_INBOUND_ATTACHMENT_MAX_SIZE = Max inbound attachment size
+MONDAY_INBOUND_ATTACHMENT_MAX_SIZETooltip = Maximum size allowed for one inbound attachment, in bytes.
+MONDAY_INBOUND_ATTACHMENT_MAX_COUNT = Max inbound attachment count
+MONDAY_INBOUND_ATTACHMENT_MAX_COUNTTooltip = Maximum number of attachments allowed per inbound e-mail.
+MONDAY_INBOUND_EMAIL_MAX_SIZE = Max inbound e-mail attachment size
+MONDAY_INBOUND_EMAIL_MAX_SIZETooltip = Maximum total attachment size allowed per inbound e-mail, in bytes.
+MONDAY_INBOUND_ATTACHMENT_FORBIDDEN_EXTENSIONS = Forbidden inbound attachment extensions
+MONDAY_INBOUND_ATTACHMENT_FORBIDDEN_EXTENSIONSTooltip = Forbidden extensions, separated by commas.
+CandidateEmailLabel = Mail
+CandidateEmailCopy = Copy
+CandidateEmailLoading = Loading...
+CandidateEmailConfigMissing = The MONDAY_INBOUND_EMAIL_BASE constant is not configured.
 
 
 #
