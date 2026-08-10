@@ -266,20 +266,20 @@ class modMonday extends DolibarrModules
 		// unit_frequency must be 60 for minute, 3600 for hour, 86400 for day, 604800 for week
 		/* BEGIN MODULEBUILDER CRON */
 		$this->cronjobs = array(
-			//  0 => array(
-			//      'label' => 'MyJob label',
-			//      'jobtype' => 'method',
-			//      'class' => '/monday/class/myobject.class.php',
-			//      'objectname' => 'MyObject',
-			//      'method' => 'doScheduledJob',
-			//      'parameters' => '',
-			//      'comment' => 'Comment',
-			//      'frequency' => 2,
-			//      'unitfrequency' => 3600,
-			//      'status' => 0,
-			//      'test' => 'isModEnabled("monday")',
-			//      'priority' => 50,
-			//  ),
+			0 => array(
+				'label' => 'Envoi automatique des emails candidats de plus de 2 ans',
+				'jobtype' => 'method',
+				'class' => '/monday/class/candidateretentionmailservice.class.php',
+				'objectname' => 'CandidateRetentionMailService',
+				'method' => 'doScheduledJob',
+				'parameters' => 'limit=100',
+				'comment' => 'Envoie une seule fois le mail de conservation des données aux candidats âgés de 2 ans ou plus dans les tableaux ciblés.',
+				'frequency' => 1,
+				'unitfrequency' => 86400,
+				'status' => 1,
+				'test' => 'isModEnabled("monday")',
+				'priority' => 50,
+			),
 		);
 		/* END MODULEBUILDER CRON */
 		// Example: $this->cronjobs=array(

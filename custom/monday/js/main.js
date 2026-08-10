@@ -1025,6 +1025,8 @@ $(function(){
     fetch(`?task_details=${taskId}`)
       .then(r => r.json())
       .then(task => {
+        $('#task-retention-mail-alert').remove();
+
         if (task.datec) {
           const createdDate = new Date(task.datec);
           const formattedDate = createdDate.toLocaleDateString('fr-FR', {
@@ -1042,6 +1044,19 @@ $(function(){
 
         $('#task-name-display').text(task.label);
         $('#task-group-display').text(task.group_label);
+
+        if (task.retention_mail_failure) {
+          const failure = task.retention_mail_failure;
+          const message = failure.error_message || 'Erreur inconnue';
+          $('.task-meta').after(`
+            <div id="task-retention-mail-alert" class="task-retention-mail-alert">
+              <strong>Email automatique non envoyé</strong><br>
+              Ce candidat a plus de 2 ans dans Dolibarr. Une tentative d’envoi du mail pour l’informer de la conservation de ses données a été faite, mais elle n’a pas réussi.<br>
+              <strong>Raison :</strong> ${escapeHtml(message)}<br>
+              Vérifiez l’adresse email puis envoyez le mail manuellement si nécessaire.
+            </div>
+          `);
+        }
       })
       .catch(err => {
         console.error('Erreur lors du chargement des détails:', err);
@@ -2574,6 +2589,10 @@ $(function(){
 		                        const isNeedRow = flattenNeedRows && (parentTaskId > 0 || Number(t.level_depth || 0) > 0);
 		                        const candidatesToggle = isNeedRow ? renderClientNeedCandidatesToggle(taskId) : '';
 		                        const candidatesPanel = isNeedRow ? renderClientNeedCandidatesPanel(taskId) : '';
+                            const retentionMailFailure = t.retention_mail_failure || null;
+                            const retentionMailAlert = retentionMailFailure
+                              ? `<span class="task-retention-mail-row-alert" title="Email automatique non envoyé : ${escapeHtml(retentionMailFailure.error_message || 'Erreur inconnue')}">⚠ Email</span>`
+                              : '';
 
 	                        let tds = `
 	                          <td style="border:1px solid #ddd;${indentStyle}" class="task-cell" data-level="${t.level_depth || 0}">
@@ -2582,6 +2601,7 @@ $(function(){
 	                              <span style="color: #999; font-family: monospace;">${subtaskIndicator}</span>
 	                              ${checkboxHtml}
 	                              <span class="task-label" style="${completedStyle}">${escapeHtml(t.label)}</span>
+                                ${retentionMailAlert}
 	                              ${candidatesToggle}
 	                              <button class="add-subtask-btn" data-task-id="${taskId}" style="opacity: 0; transition: opacity 0.2s; background: none; border: none; cursor: pointer; color: #007cba; font-size: 12px;" title="Ajouter une sous-tâche">+</button>
 	                            </div>
