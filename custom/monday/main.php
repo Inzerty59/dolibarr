@@ -558,7 +558,7 @@ function monday_user_can_read_workspace()
 {
     global $user;
 
-    return !empty($user->admin) || (method_exists($user, 'hasRight') && $user->hasRight('monday', 'myobject', 'read'));
+    return !empty($user->id);
 }
 
 
@@ -1616,11 +1616,16 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['tasks_group_id_with_cells
 }
 
 if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['client_need_candidates_group_id'])) {
-    if (!isset($_GET['token']) || $_GET['token'] !== $_SESSION['newtoken']) {
-        accessforbidden('CSRF token invalid');
+    header('Content-Type: application/json');
+    if (empty($_GET['token']) || !hash_equals((string) currentToken(), (string) $_GET['token'])) {
+        http_response_code(403);
+        echo json_encode(['enabled' => false, 'error' => 'CSRF token invalid']);
+        exit;
     }
     if (!monday_user_can_read_workspace()) {
-        accessforbidden('Permission denied');
+        http_response_code(403);
+        echo json_encode(['enabled' => false, 'error' => 'Permission denied']);
+        exit;
     }
 
     $gid = (int) $_GET['client_need_candidates_group_id'];
@@ -1631,7 +1636,6 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['client_need_candidates_gr
                              WHERE g.rowid = ".$gid);
     $group = $groupRes ? $db->fetch_object($groupRes) : null;
     if (!$group || !monday_is_client_need_workspace((int) $group->fk_workspace, $group->workspace_label)) {
-        header('Content-Type: application/json');
         echo json_encode(['enabled' => false, 'candidates_by_need' => []]);
         exit;
     }
@@ -1682,7 +1686,6 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['client_need_candidates_gr
 
     if ($requestedNeedId > 0) {
         if (empty($needs[$requestedNeedId])) {
-            header('Content-Type: application/json');
             echo json_encode(['enabled' => true, 'candidates_by_need' => []]);
             exit;
         }
@@ -1702,7 +1705,6 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['client_need_candidates_gr
 
     $kpiWorkspaceId = monday_get_kpi_recruitment_workspace_id($db);
     if ($kpiWorkspaceId <= 0 || empty($needs)) {
-        header('Content-Type: application/json');
         echo json_encode(['enabled' => true, 'candidates_by_need' => $emptyNeedsById]);
         exit;
     }
@@ -1716,7 +1718,6 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['client_need_candidates_gr
     }
 
     if (empty($eligibleGroupIds)) {
-        header('Content-Type: application/json');
         echo json_encode(['enabled' => true, 'candidates_by_need' => $emptyNeedsById]);
         exit;
     }
@@ -1845,7 +1846,6 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['client_need_candidates_gr
         $out[$needId] = $need['candidates'];
     }
 
-    header('Content-Type: application/json');
     echo json_encode(['enabled' => true, 'candidates_by_need' => $out]);
     exit;
 }
@@ -3250,6 +3250,7 @@ ob_start();
 <script>
 window.leftmenu = <?php echo json_encode($leftmenu); ?>;
 window.formtoken = <?php echo json_encode($formtoken); ?>;
+window.ajaxToken = <?php echo json_encode(currentToken()); ?>;
 window.userId = <?php echo $user->id; ?>;
 
 window.t24TransferConfig = <?php echo json_encode(monday_get_t24_transfer_client_config()); ?>;

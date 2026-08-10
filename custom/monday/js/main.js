@@ -1,6 +1,7 @@
 $(function(){
   $('.side-nav .vmenu').prepend(window.leftmenu || '');
   const token = window.formtoken;
+  const ajaxToken = window.ajaxToken || token;
   const userId = window.userId;
   const mondayConfig = window.mondayConfig || {};
   const planityKanbanUrl = window.planityKanbanUrl || 'ajax/planity_kanban.php';
@@ -1909,8 +1910,13 @@ $(function(){
     }
 
     $panel.html('<div class="candidates-empty">Chargement...</div>');
-    fetch(`?client_need_candidates_group_id=${groupId}&client_need_id=${needId}&token=${encodeURIComponent(token)}`)
-      .then(r => r.json())
+    fetch(`?client_need_candidates_group_id=${groupId}&client_need_id=${needId}&token=${encodeURIComponent(ajaxToken)}`)
+      .then(r => r.json().then(payload => {
+        if (!r.ok) {
+          throw new Error(payload?.error || `HTTP ${r.status}`);
+        }
+        return payload;
+      }))
       .then(payload => {
         const candidatesByNeed = payload?.candidates_by_need || {};
         const candidates = getClientNeedCandidateRows(needId, candidatesByNeed) || [];
@@ -1919,8 +1925,10 @@ $(function(){
         $button.find('.count').remove();
         $button.append(`<span class="count">${candidates.length}</span>`);
       })
-      .catch(() => {
-        $panel.html('<div class="candidates-empty">Erreur de chargement</div>');
+      .catch(error => {
+        console.error('Erreur chargement candidatures', error);
+        const message = error?.message ? `Erreur de chargement : ${escapeHtml(error.message)}` : 'Erreur de chargement';
+        $panel.html(`<div class="candidates-empty">${message}</div>`);
       });
   }
 
