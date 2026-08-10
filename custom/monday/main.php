@@ -4,6 +4,7 @@ require_once DOL_DOCUMENT_ROOT.'/core/lib/admin.lib.php';
 require_once DOL_DOCUMENT_ROOT.'/core/lib/functions.lib.php';
 require_once __DIR__.'/planity_kanban.php';
 require_once DOL_DOCUMENT_ROOT.'/core/class/CMailFile.class.php';
+require_once __DIR__.'/class/candidateretentionmailservice.class.php';
 
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
@@ -1535,7 +1536,8 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['tasks_group_id_with_cells
             'level_depth'=>$o->level_depth,
             'is_completed'=>(int)$o->is_completed,
             'position'=>(int)$o->position,
-            'cells' => []
+            'cells' => [],
+            'retention_mail_failure' => null
         ];
     }
 
@@ -1557,6 +1559,36 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['tasks_group_id_with_cells
                 $task['cells'] = $cellsByTask[$task['id']];
             }
         }
+        unset($task);
+
+        $resFailures = $db->query("SELECT l.fk_task, l.status, l.error_message, l.recipient, l.subject, l.date_attempt
+                                     FROM llx_monday_candidate_retention_mail_log l
+                                     JOIN (
+                                          SELECT fk_task, MAX(rowid) AS max_rowid
+                                            FROM llx_monday_candidate_retention_mail_log
+                                           WHERE fk_task IN ($taskIdsList)
+                                        GROUP BY fk_task
+                                     ) latest ON latest.max_rowid = l.rowid");
+        $failuresByTask = [];
+        while ($resFailures && $failure = $db->fetch_object($resFailures)) {
+            if ($failure->status !== 'failed') {
+                continue;
+            }
+
+            $failuresByTask[(int) $failure->fk_task] = [
+                'error_message' => $failure->error_message,
+                'recipient' => $failure->recipient,
+                'subject' => $failure->subject,
+                'date_attempt' => $failure->date_attempt,
+            ];
+        }
+
+        foreach ($out as &$task) {
+            if (isset($failuresByTask[(int) $task['id']])) {
+                $task['retention_mail_failure'] = $failuresByTask[(int) $task['id']];
+            }
+        }
+        unset($task);
     }
 
     header('Content-Type: application/json');
@@ -2873,12 +2905,14 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['task_details'])) {
     ");
 
     if ($task = $db->fetch_object($res)) {
+        $retentionMailService = new CandidateRetentionMailService($db);
         header('Content-Type: application/json');
         echo json_encode([
             'id' => $task->rowid,
             'label' => $task->label,
             'datec' => $task->datec,
-            'group_label' => $task->group_label
+            'group_label' => $task->group_label,
+            'retention_mail_failure' => $retentionMailService->getLatestFailure((int) $task->rowid)
         ]);
     } else {
         http_response_code(404);
