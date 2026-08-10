@@ -246,6 +246,9 @@ function monday_build_candidate_mail_draft($db, $taskId, $columnId, $eventType)
     }
 
     $body = monday_replace_candidate_placeholders($body, $values);
+    if ($body !== '') {
+        $body .= monday_get_candidate_mail_signature();
+    }
 
     return [
         'task_id' => $taskId,
@@ -255,6 +258,17 @@ function monday_build_candidate_mail_draft($db, $taskId, $columnId, $eventType)
         'subject' => $subject,
         'body' => $body
     ];
+}
+
+function monday_get_candidate_mail_signature()
+{
+    return "\n\n"
+        ."Melina BENSAID - Chargée de recrutement\n"
+        ."03 20 61 70 70 - 06 81 01 55 80\n"
+        ."2 boulevard Thomson - CS 60500 - 59810 LESQUIN Cedex\n"
+        ."3 Cité d'Hauteville, 75010 Paris\n\n"
+        ."www.inzerty.fr\n"
+        ."www.groupevitaminet.com";
 }
 
 function monday_json_response($payload, $statusCode = 200)
@@ -1239,9 +1253,12 @@ function monday_transfer_candidate_to_target($db, $taskId)
 
     $targetGroupId = (int) $targetGroup['id'];
     $db->begin();
-    $posRes = $db->query("SELECT MAX(position) as m FROM llx_myworkspace_task WHERE fk_group = $targetGroupId AND parent_task_id IS NULL");
-    $position = ($posRes && $row = $db->fetch_object($posRes)) ? ((int) $row->m + 1) : 0;
+    $position = 0;
     $db->query("DELETE FROM llx_myworkspace_cell WHERE fk_task = $taskId");
+    $db->query("UPDATE llx_myworkspace_task
+                   SET position = position + 1
+                 WHERE fk_group = $targetGroupId
+                   AND parent_task_id IS NULL");
     $db->query("UPDATE llx_myworkspace_task
                    SET fk_group = $targetGroupId,
                        position = $position,
@@ -1258,7 +1275,9 @@ function monday_transfer_candidate_to_target($db, $taskId)
 
     $result['success'] = true;
     $result['moved'] = true;
-    $result['message'] = 'Candidature deplacee vers '.$targetGroup['workspace_label'].' / '.$targetGroup['label'];
+    $result['candidate_label'] = $task->label;
+    $result['destination_label'] = $targetGroup['workspace_label'].' / '.$targetGroup['label'];
+    $result['message'] = 'Candidat(e) '.$task->label.' déplacé(e) vers '.$result['destination_label'];
     return $result;
 }
 
@@ -1993,9 +2012,10 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['kpi_recruitment'])) {
     $startDate = isset($_GET['start_date']) ? trim($_GET['start_date']) : '';
     $endDate = isset($_GET['end_date']) ? trim($_GET['end_date']) : '';
     $year = isset($_GET['year']) ? (int) $_GET['year'] : 0;
+    $hasYearFilter = $year > 0;
     $clientFilter = isset($_GET['client']) ? trim($_GET['client']) : '';
 
-    if ($year > 0) {
+    if ($hasYearFilter) {
         $startDate = sprintf('%04d-01-01', $year);
         $endDate = sprintf('%04d-12-31', $year);
     }
@@ -2114,7 +2134,11 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['kpi_recruitment'])) {
         $sentDate = $sentColumnId && isset($task['cells'][$sentColumnId]) ? monday_parse_kpi_date($task['cells'][$sentColumnId]) : null;
         $returnDate = $returnColumnId && isset($task['cells'][$returnColumnId]) ? monday_parse_kpi_date($task['cells'][$returnColumnId]) : null;
 
-        if ($hasDateFilter && (!monday_is_kpi_date_in_range($sentDate, $filterStartDate, $filterEndDate) || !monday_is_kpi_date_in_range($returnDate, $filterStartDate, $filterEndDate))) {
+        if ($hasYearFilter) {
+            if (!$sentDate || !$returnDate || (int) $returnDate->format('Y') !== $year) {
+                continue;
+            }
+        } elseif ($hasDateFilter && (!monday_is_kpi_date_in_range($sentDate, $filterStartDate, $filterEndDate) || !monday_is_kpi_date_in_range($returnDate, $filterStartDate, $filterEndDate))) {
             continue;
         }
 
@@ -2287,15 +2311,15 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['add_task_group_id'], $_
             $level_depth = $o->level_depth + 1;
         }
         $r = $db->query("SELECT MAX(position) as m FROM llx_myworkspace_task WHERE fk_group=$gid AND parent_task_id=$parent_task_id");
+        $p = ($r && $o=$db->fetch_object($r)) ? $o->m+1 : 0;
     } else {
-        $r = $db->query("SELECT MAX(position) as m FROM llx_myworkspace_task WHERE fk_group=$gid AND parent_task_id IS NULL");
+        $p = 0;
     }
-
-    $p = ($r && $o=$db->fetch_object($r)) ? $o->m+1 : 0;
 
     if ($parent_task_id) {
         $db->query("INSERT INTO llx_myworkspace_task (fk_group,label,position,datec,parent_task_id,level_depth) VALUES ($gid,'$label',$p,'$datec',$parent_task_id,$level_depth)");
     } else {
+        $db->query("UPDATE llx_myworkspace_task SET position = position + 1 WHERE fk_group=$gid AND parent_task_id IS NULL");
         $db->query("INSERT INTO llx_myworkspace_task (fk_group,label,position,datec,level_depth) VALUES ($gid,'$label',$p,'$datec',$level_depth)");
     }
 

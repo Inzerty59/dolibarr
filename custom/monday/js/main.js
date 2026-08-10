@@ -520,7 +520,12 @@ $(function(){
           return;
         }
         if (result.moved) {
-          CustomPopup.success(result.message || 'Candidature déplacée.', 'Transfert T24');
+          const destination = result.destination_label || '';
+          const candidate = result.candidate_label || '';
+          const message = result.message || (candidate && destination
+            ? `Candidat(e) ${candidate} déplacé(e) vers ${destination}`
+            : 'Candidature déplacée.');
+          CustomPopup.success(message, 'Transfert réussi', 'custom-popup-btn-success');
           if (activeWorkspaceId) {
             loadGroups(activeWorkspaceId);
           }
@@ -2037,6 +2042,7 @@ $(function(){
 
   function renderResponseDelaySection(delay) {
     const series = delay?.series || [];
+    const hasAverage = delay?.average_days !== null && delay?.average_days !== undefined;
     return `
       <section class="kpi-wide-card">
         <div class="kpi-section-title">
@@ -2045,7 +2051,7 @@ $(function(){
         </div>
           <div class="kpi-delay-layout">
           <div class="kpi-stat-tile">
-            <strong>${escapeHtml(delay?.average_label || 'Aucune donnée')}</strong>
+            <strong class="${hasAverage ? '' : 'kpi-stat-empty'}">${escapeHtml(delay?.average_label || 'Aucune donnée')}</strong>
             <span>Délai moyen exact</span>
           </div>
           <div class="kpi-top-bars">
@@ -4205,8 +4211,18 @@ $(function(){
       });
     },
 
-    success: function(message, title = 'Succès') {
-      this.alert(message, title, 'success');
+    success: function(message, title = 'Succès', buttonClass = 'custom-popup-btn-primary') {
+      this.show({
+        type: 'success',
+        title: title,
+        message: message,
+        buttons: [
+          {
+            text: 'OK',
+            class: buttonClass
+          }
+        ]
+      });
     },
 
     error: function(message, title = 'Erreur') {
