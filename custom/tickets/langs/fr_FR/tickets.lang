@@ -3,6 +3,13 @@ ModuleTicketsDesc=Module Tickets personnalisé
 TicketsDescription=Module Tickets personnalisé
 TicketsSetup=Configuration
 TicketsAbout=À propos
+SupportKpi=Support KPI
+SupportKpiTitle=Support KPI
+SupportKpiMenu=Support KPI
+SupportKpiSubtitle=KPI projets, tickets et tâches
+TicketProjects=Support KPI
+PeriodStart=Début période
+PeriodEnd=Fin période
 
 TicketTemplates=Modèles de ticket
 NewTicketTemplate=Créer un modèle

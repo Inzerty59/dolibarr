@@ -29,35 +29,33 @@ class SupportKpiService
 	{
 		$filters = $this->sanitizeFilters($inputFilters);
 		$projects = $this->fetchProjects($user, $filters);
-		$tickets = $this->fetchTickets($user, $filters);
-		$projects = $this->buildProjectRows($projects, $tickets);
+		$ticketStats = $this->fetchTicketStats($user, $filters);
+		$taskStats = $this->fetchTaskConsumptionStats($user, $filters);
+		$projects = $this->buildProjectRows($projects, $ticketStats, $taskStats);
+		$summary = $this->buildSummary($projects);
+		$statusMetric = $this->buildStatusMetric($projects);
+		$resolutionMetric = $this->buildResolutionMetric($projects);
+		foreach ($projects as &$project) {
+			unset($project['resolution_seconds_total']);
+		}
+		unset($project);
 
 		return array(
 			'filters' => $filters,
 			'filter_options' => array(
 				'projects' => $this->getProjectOptions($user),
-				'assignees' => $this->getAssigneeOptions($user),
-				'statuses' => $this->getStatusOptions(),
 			),
-			'summary' => $this->buildSummary($projects, $tickets),
-			'status_metric' => $this->buildStatusMetric($projects),
-			'resolution_metric' => $this->buildResolutionMetric($projects, $tickets),
+			'summary' => $summary,
+			'status_metric' => $statusMetric,
+			'resolution_metric' => $resolutionMetric,
 			'projects' => array_values($projects),
-			'tickets' => $tickets,
 		);
 	}
 
 	public function sanitizeFilters(array $input)
 	{
-		$status = isset($input['status']) ? trim((string) $input['status']) : '';
-		if (!in_array($status, array('', self::STATUS_OPEN, self::STATUS_IN_PROGRESS, self::STATUS_CLOSED), true)) {
-			$status = '';
-		}
-
 		return array(
 			'project_id' => !empty($input['project_id']) ? max(0, (int) $input['project_id']) : 0,
-			'assignee_id' => !empty($input['assignee_id']) ? max(0, (int) $input['assignee_id']) : 0,
-			'status' => $status,
 			'start_date' => $this->sanitizeDate(isset($input['start_date']) ? $input['start_date'] : ''),
 			'end_date' => $this->sanitizeDate(isset($input['end_date']) ? $input['end_date'] : ''),
 		);
@@ -82,7 +80,7 @@ class SupportKpiService
 		tickets_support_kpi_csv_put_row($out, array());
 
 		tickets_support_kpi_csv_put_row($out, array('Projets Dolibarr'));
-		tickets_support_kpi_csv_put_row($out, array('Projet', 'Type', 'Client', 'Ouverts', 'En cours', 'Fermes', 'Delai moyen'));
+		tickets_support_kpi_csv_put_row($out, array('Projet', 'Type', 'Client', 'Ouverts', 'En cours', 'Fermes', 'Taches avec temps', 'Temps consomme moyen'));
 		foreach ($data['projects'] as $project) {
 			tickets_support_kpi_csv_put_row($out, array(
 				$project['project_ref'].' - '.$project['project_title'],
@@ -91,24 +89,8 @@ class SupportKpiService
 				$project['open'],
 				$project['in_progress'],
 				$project['closed'],
+				$project['resolution_count'],
 				$project['avg_resolution_label'],
-			));
-		}
-
-		tickets_support_kpi_csv_put_row($out, array());
-		tickets_support_kpi_csv_put_row($out, array('Tickets'));
-		tickets_support_kpi_csv_put_row($out, array('Ref', 'Sujet', 'Projet', 'Client', 'Statut', 'Assigne', 'Date creation', 'Date fermeture', 'Delai resolution'));
-		foreach ($data['tickets'] as $ticket) {
-			tickets_support_kpi_csv_put_row($out, array(
-				$ticket['ref'],
-				$ticket['subject'],
-				$ticket['project_ref'].' - '.$ticket['project_title'],
-				$ticket['thirdparty_name'],
-				$ticket['status_label'],
-				$ticket['assignee_name'],
-				$ticket['date_creation_label'],
-				$ticket['date_close_label'],
-				$ticket['resolution_label'],
 			));
 		}
 
@@ -163,15 +145,11 @@ class SupportKpiService
 		return $projects;
 	}
 
-	private function fetchTickets(User $user, array $filters)
+	private function fetchTicketStats(User $user, array $filters)
 	{
-		$sql = "SELECT t.rowid, t.ref, t.subject, t.fk_statut, t.fk_user_assign, t.datec, t.date_close,";
-		$sql .= " p.rowid as project_id, p.ref as project_ref, p.title as project_title,";
-		$sql .= " s.nom as thirdparty_name, u.firstname as assignee_firstname, u.lastname as assignee_lastname";
+		$sql = "SELECT p.rowid as project_id, t.fk_statut, COUNT(t.rowid) as ticket_count";
 		$sql .= " FROM ".MAIN_DB_PREFIX."ticket as t";
 		$sql .= " INNER JOIN ".MAIN_DB_PREFIX."projet as p ON p.rowid = t.fk_project";
-		$sql .= " LEFT JOIN ".MAIN_DB_PREFIX."societe as s ON s.rowid = p.fk_soc";
-		$sql .= " LEFT JOIN ".MAIN_DB_PREFIX."user as u ON u.rowid = t.fk_user_assign";
 		$sql .= " WHERE t.entity IN (".getEntity('ticket').")";
 		$sql .= " AND p.entity IN (".getEntity('project').")";
 		$sql .= " AND p.fk_statut = 1";
@@ -181,12 +159,6 @@ class SupportKpiService
 		if ($filters['project_id'] > 0) {
 			$sql .= " AND t.fk_project = ".((int) $filters['project_id']);
 		}
-		if ($filters['assignee_id'] > 0) {
-			$sql .= " AND t.fk_user_assign = ".((int) $filters['assignee_id']);
-		}
-		if ($filters['status'] !== '') {
-			$sql .= " AND t.fk_statut IN (".implode(',', $this->getStatusIdsForFilter($filters['status'])).")";
-		}
 		if ($filters['start_date'] !== '') {
 			$sql .= " AND t.datec >= '".$this->db->idate($this->parseDateStart($filters['start_date']))."'";
 		}
@@ -194,7 +166,7 @@ class SupportKpiService
 			$sql .= " AND t.datec <= '".$this->db->idate($this->parseDateEnd($filters['end_date']))."'";
 		}
 
-		$sql .= " ORDER BY p.title ASC, t.datec DESC, t.rowid DESC";
+		$sql .= " GROUP BY p.rowid, t.fk_statut";
 
 		$resql = $this->db->query($sql);
 		if (!$resql) {
@@ -202,59 +174,79 @@ class SupportKpiService
 			return array();
 		}
 
-		$tickets = array();
+		$stats = array();
 		while ($obj = $this->db->fetch_object($resql)) {
-			$createdTs = $this->db->jdate($obj->datec);
-			$closedTs = $this->db->jdate($obj->date_close);
-			$resolutionSeconds = $this->getResolutionSeconds($createdTs, $closedTs);
+			$projectId = (int) $obj->project_id;
+			if (!isset($stats[$projectId])) {
+				$stats[$projectId] = array('open' => 0, 'in_progress' => 0, 'closed' => 0);
+			}
+			$statusGroup = $this->getStatusGroup((int) $obj->fk_statut);
+			$stats[$projectId][$statusGroup] += (int) $obj->ticket_count;
+		}
 
-			$tickets[] = array(
-				'id' => (int) $obj->rowid,
-				'ref' => (string) $obj->ref,
-				'subject' => (string) $obj->subject,
-				'status' => (int) $obj->fk_statut,
-				'status_group' => $this->getStatusGroup((int) $obj->fk_statut),
-				'status_label' => $this->getTicketStatusLabel((int) $obj->fk_statut),
-				'assignee_id' => (int) $obj->fk_user_assign,
-				'assignee_name' => $this->formatUserName($obj->assignee_firstname, $obj->assignee_lastname),
-				'project_id' => (int) $obj->project_id,
-				'project_ref' => (string) $obj->project_ref,
-				'project_title' => (string) $obj->project_title,
-				'thirdparty_name' => (string) $obj->thirdparty_name,
-				'date_creation' => $createdTs,
-				'date_creation_label' => $createdTs ? dol_print_date($createdTs, 'dayhour') : '',
-				'date_close' => $closedTs,
-				'date_close_label' => $closedTs ? dol_print_date($closedTs, 'dayhour') : '',
-				'resolution_seconds' => $resolutionSeconds,
-				'resolution_label' => $this->formatDuration($resolutionSeconds),
-				'ticket_url' => DOL_URL_ROOT.'/ticket/card.php?id='.(int) $obj->rowid,
+		return $stats;
+	}
+
+	private function fetchTaskConsumptionStats(User $user, array $filters)
+	{
+		$sql = "SELECT p.rowid as project_id, COUNT(task.rowid) as task_count, SUM(task.duration_effective) as duration_total";
+		$sql .= " FROM ".MAIN_DB_PREFIX."projet_task as task";
+		$sql .= " INNER JOIN ".MAIN_DB_PREFIX."projet as p ON p.rowid = task.fk_projet";
+		$sql .= " WHERE task.entity IN (".getEntity('project').")";
+		$sql .= " AND p.entity IN (".getEntity('project').")";
+		$sql .= " AND p.fk_statut = 1";
+		$sql .= " AND task.duration_effective IS NOT NULL";
+		$sql .= " AND task.duration_effective > 0";
+		$sql .= $this->buildProjectAccessSql($user);
+
+		if ($filters['project_id'] > 0) {
+			$sql .= " AND task.fk_projet = ".((int) $filters['project_id']);
+		}
+		if ($filters['start_date'] !== '') {
+			$sql .= " AND task.dateo >= '".$this->db->idate($this->parseDateStart($filters['start_date']))."'";
+		}
+		if ($filters['end_date'] !== '') {
+			$sql .= " AND task.dateo <= '".$this->db->idate($this->parseDateEnd($filters['end_date']))."'";
+		}
+
+		$sql .= " GROUP BY p.rowid";
+
+		$resql = $this->db->query($sql);
+		if (!$resql) {
+			dol_syslog(__METHOD__.' SQL error: '.$this->db->lasterror(), LOG_ERR);
+			return array();
+		}
+
+		$stats = array();
+		while ($obj = $this->db->fetch_object($resql)) {
+			$stats[(int) $obj->project_id] = array(
+				'count' => (int) $obj->task_count,
+				'total_seconds' => (int) $obj->duration_total,
 			);
 		}
 
-		return $tickets;
+		return $stats;
 	}
 
-	private function buildProjectRows(array $projects, array $tickets)
+	private function buildProjectRows(array $projects, array $ticketStats, array $taskStats)
 	{
-		foreach ($tickets as $ticket) {
-			$projectId = $ticket['project_id'];
+		foreach ($ticketStats as $projectId => $stats) {
 			if (!isset($projects[$projectId])) {
 				continue;
 			}
 
-			$projects[$projectId]['total']++;
-			if ($ticket['status_group'] === self::STATUS_IN_PROGRESS) {
-				$projects[$projectId]['in_progress']++;
-			} elseif ($ticket['status_group'] === self::STATUS_CLOSED) {
-				$projects[$projectId]['closed']++;
-			} else {
-				$projects[$projectId]['open']++;
-			}
+			$projects[$projectId]['open'] = (int) $stats['open'];
+			$projects[$projectId]['in_progress'] = (int) $stats['in_progress'];
+			$projects[$projectId]['closed'] = (int) $stats['closed'];
+			$projects[$projectId]['total'] = $projects[$projectId]['open'] + $projects[$projectId]['in_progress'] + $projects[$projectId]['closed'];
+		}
 
-			if ($ticket['resolution_seconds'] !== null) {
-				$projects[$projectId]['resolution_count']++;
-				$projects[$projectId]['resolution_seconds_total'] += $ticket['resolution_seconds'];
+		foreach ($taskStats as $projectId => $stats) {
+			if (!isset($projects[$projectId])) {
+				continue;
 			}
+			$projects[$projectId]['resolution_count'] = (int) $stats['count'];
+			$projects[$projectId]['resolution_seconds_total'] = (int) $stats['total_seconds'];
 		}
 
 		foreach ($projects as &$project) {
@@ -262,20 +254,19 @@ class SupportKpiService
 				$project['avg_resolution_seconds'] = (int) round($project['resolution_seconds_total'] / $project['resolution_count']);
 				$project['avg_resolution_label'] = $this->formatDuration($project['avg_resolution_seconds']);
 			}
-			unset($project['resolution_count'], $project['resolution_seconds_total']);
 		}
 		unset($project);
 
 		return $projects;
 	}
 
-	private function buildSummary(array $projects, array $tickets)
+	private function buildSummary(array $projects)
 	{
 		$summary = array(
 			'open' => 0,
 			'in_progress' => 0,
 			'closed' => 0,
-			'total' => count($tickets),
+			'total' => 0,
 			'resolution_count' => 0,
 			'resolution_seconds_total' => 0,
 			'avg_resolution_seconds' => null,
@@ -286,13 +277,9 @@ class SupportKpiService
 			$summary['open'] += $project['open'];
 			$summary['in_progress'] += $project['in_progress'];
 			$summary['closed'] += $project['closed'];
-		}
-
-		foreach ($tickets as $ticket) {
-			if ($ticket['resolution_seconds'] !== null) {
-				$summary['resolution_count']++;
-				$summary['resolution_seconds_total'] += $ticket['resolution_seconds'];
-			}
+			$summary['total'] += $project['total'];
+			$summary['resolution_count'] += $project['resolution_count'];
+			$summary['resolution_seconds_total'] += $project['resolution_seconds_total'];
 		}
 
 		if ($summary['resolution_count'] > 0) {
@@ -333,18 +320,18 @@ class SupportKpiService
 		);
 	}
 
-	private function buildResolutionMetric(array $projects, array $tickets)
+	private function buildResolutionMetric(array $projects)
 	{
-		$validTickets = 0;
+		$validTasks = 0;
 		$totalSeconds = 0;
-		foreach ($tickets as $ticket) {
-			if ($ticket['resolution_seconds'] !== null) {
-				$validTickets++;
-				$totalSeconds += $ticket['resolution_seconds'];
+		foreach ($projects as $project) {
+			if ($project['avg_resolution_seconds'] !== null) {
+				$validTasks += (int) $project['resolution_count'];
+				$totalSeconds += (int) $project['resolution_seconds_total'];
 			}
 		}
 
-		$average = $validTickets > 0 ? (int) round($totalSeconds / $validTickets) : null;
+		$average = $validTasks > 0 ? (int) round($totalSeconds / $validTasks) : null;
 		$maxAverage = 0;
 		foreach ($projects as $project) {
 			if ($project['avg_resolution_seconds'] !== null) {
@@ -367,7 +354,7 @@ class SupportKpiService
 
 		return array(
 			'title' => 'Delai moyen de resolution',
-			'valid_rows' => $validTickets,
+			'valid_rows' => $validTasks,
 			'average_label' => $this->formatDuration($average),
 			'series' => $series,
 		);
@@ -380,31 +367,6 @@ class SupportKpiService
 			$options[] = array(
 				'id' => (int) $project['project_id'],
 				'label' => trim($project['project_ref'].' - '.$project['project_title']),
-			);
-		}
-
-		return $options;
-	}
-
-	private function getAssigneeOptions(User $user)
-	{
-		$sql = "SELECT DISTINCT u.rowid, u.firstname, u.lastname";
-		$sql .= " FROM ".MAIN_DB_PREFIX."ticket as t";
-		$sql .= " INNER JOIN ".MAIN_DB_PREFIX."projet as p ON p.rowid = t.fk_project";
-		$sql .= " INNER JOIN ".MAIN_DB_PREFIX."user as u ON u.rowid = t.fk_user_assign";
-		$sql .= " WHERE t.entity IN (".getEntity('ticket').")";
-		$sql .= " AND p.entity IN (".getEntity('project').")";
-		$sql .= " AND p.fk_statut = 1";
-		$sql .= " AND t.fk_user_assign > 0";
-		$sql .= $this->buildProjectAccessSql($user);
-		$sql .= " ORDER BY u.lastname ASC, u.firstname ASC";
-
-		$resql = $this->db->query($sql);
-		$options = array();
-		while ($resql && $obj = $this->db->fetch_object($resql)) {
-			$options[] = array(
-				'id' => (int) $obj->rowid,
-				'label' => $this->formatUserName($obj->firstname, $obj->lastname),
 			);
 		}
 
@@ -429,15 +391,6 @@ class SupportKpiService
 		return 'Projet';
 	}
 
-	private function getStatusOptions()
-	{
-		return array(
-			array('id' => self::STATUS_OPEN, 'label' => 'Ouverts'),
-			array('id' => self::STATUS_IN_PROGRESS, 'label' => 'En cours'),
-			array('id' => self::STATUS_CLOSED, 'label' => 'Fermes'),
-		);
-	}
-
 	private function buildProjectAccessSql(User $user)
 	{
 		if ($user->hasRight('projet', 'all', 'lire')) {
@@ -458,18 +411,6 @@ class SupportKpiService
 		return ' AND p.rowid IN ('.implode(',', $ids).')';
 	}
 
-	private function getStatusIdsForFilter($status)
-	{
-		if ($status === self::STATUS_IN_PROGRESS) {
-			return array(Ticket::STATUS_IN_PROGRESS);
-		}
-		if ($status === self::STATUS_CLOSED) {
-			return array(Ticket::STATUS_CLOSED, Ticket::STATUS_CANCELED);
-		}
-
-		return array(Ticket::STATUS_NOT_READ, Ticket::STATUS_READ, Ticket::STATUS_ASSIGNED, Ticket::STATUS_NEED_MORE_INFO, Ticket::STATUS_WAITING);
-	}
-
 	private function getStatusGroup($status)
 	{
 		if ($status === Ticket::STATUS_IN_PROGRESS) {
@@ -480,22 +421,6 @@ class SupportKpiService
 		}
 
 		return self::STATUS_OPEN;
-	}
-
-	private function getTicketStatusLabel($status)
-	{
-		$labels = array(
-			Ticket::STATUS_NOT_READ => 'Non lu',
-			Ticket::STATUS_READ => 'Lu',
-			Ticket::STATUS_ASSIGNED => 'Assigne',
-			Ticket::STATUS_IN_PROGRESS => 'En cours',
-			Ticket::STATUS_NEED_MORE_INFO => 'Attente info',
-			Ticket::STATUS_WAITING => 'En attente',
-			Ticket::STATUS_CLOSED => 'Ferme / resolu',
-			Ticket::STATUS_CANCELED => 'Annule',
-		);
-
-		return isset($labels[$status]) ? $labels[$status] : 'Inconnu';
 	}
 
 	private function sanitizeDate($value)
@@ -512,15 +437,6 @@ class SupportKpiService
 	private function parseDateEnd($date)
 	{
 		return strtotime($date.' 23:59:59');
-	}
-
-	private function getResolutionSeconds($createdTs, $closedTs)
-	{
-		if (empty($createdTs) || empty($closedTs) || $closedTs < $createdTs) {
-			return null;
-		}
-
-		return (int) $closedTs - (int) $createdTs;
 	}
 
 	private function formatDuration($seconds)
@@ -544,9 +460,4 @@ class SupportKpiService
 		return max(1, (int) ceil($seconds / 3600)).' h';
 	}
 
-	private function formatUserName($firstname, $lastname)
-	{
-		$name = trim((string) $firstname.' '.(string) $lastname);
-		return $name !== '' ? $name : 'Non assigne';
-	}
 }

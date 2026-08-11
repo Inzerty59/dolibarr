@@ -19,9 +19,7 @@ $langs->load('projects');
 
 $token = newToken();
 
-llxHeader('', $langs->trans('SupportKpiTitle'), '', '', 0, 0, array('/custom/tickets/js/support_kpi.js'), array('/custom/monday/css/main.css'));
-
-print load_fiche_titre($langs->trans('SupportKpiTitle'), '', 'ticket');
+llxHeader('', $langs->trans('SupportKpi'), '', '', 0, 0, array('/custom/tickets/js/support_kpi.js'), array('/custom/monday/css/main.css'));
 ?>
 <script>
 window.supportKpiConfig = <?php echo json_encode(array(
@@ -30,14 +28,25 @@ window.supportKpiConfig = <?php echo json_encode(array(
 	'token' => $token,
 )); ?>;
 </script>
+<style>
+#support-kpi-results .kpi-analytics-grid + .kpi-wide-card {
+	margin-top: 18px;
+}
+.vmenu a[href*="/custom/tickets/support_kpi.php"]::before,
+.vmenu a[href*="support_kpi.php"]::before {
+	content: "\f201";
+	display: inline-block;
+	width: 18px;
+	margin-right: 6px;
+	color: #655aa8;
+	font-family: FontAwesome, "Font Awesome 5 Free";
+	font-weight: 900;
+}
+</style>
 
 <div class="kpi-page">
-	<div class="kpi-header">
-		<h2><?php echo dol_escape_htmltag($langs->trans('SupportKpiTitle')); ?></h2>
-	</div>
-
 	<div class="kpi-summary">
-		<strong><?php echo dol_escape_htmltag($langs->trans('TicketProjects')); ?></strong>
+		<strong><?php echo dol_escape_htmltag($langs->trans('SupportKpi')); ?></strong>
 		<span><?php echo dol_escape_htmltag($langs->trans('SupportKpiSubtitle')); ?></span>
 	</div>
 
@@ -55,18 +64,6 @@ window.supportKpiConfig = <?php echo json_encode(array(
 		<label>
 			<span><?php echo dol_escape_htmltag($langs->trans('PeriodEnd')); ?></span>
 			<input type="date" id="support-kpi-end-date">
-		</label>
-		<label>
-			<span><?php echo dol_escape_htmltag($langs->trans('Status')); ?></span>
-			<select id="support-kpi-status">
-				<option value=""><?php echo dol_escape_htmltag($langs->trans('AllStatuses')); ?></option>
-			</select>
-		</label>
-		<label>
-			<span><?php echo dol_escape_htmltag($langs->trans('AssignedTo')); ?></span>
-			<select id="support-kpi-assignee">
-				<option value=""><?php echo dol_escape_htmltag($langs->trans('AllAssignees')); ?></option>
-			</select>
 		</label>
 		<div class="kpi-export-controls">
 			<button id="support-kpi-apply" type="button"><?php echo dol_escape_htmltag($langs->trans('Apply')); ?></button>

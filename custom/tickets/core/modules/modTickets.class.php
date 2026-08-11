@@ -134,6 +134,22 @@ $this->menu[$r++] = array(
 	'user' => 0
 );
 
+$this->menu[$r++] = array(
+	'fk_menu' => 'fk_mainmenu=ticket',
+	'type' => 'left',
+	'titre' => 'SupportKpi',
+	'prefix' => '<span class="fa fa-line-chart fas fa-chart-line paddingright pictofixedwidth em092" style="color:#655aa8"></span>',
+	'mainmenu' => 'ticket',
+	'leftmenu' => 'support_kpi',
+	'url' => '/custom/tickets/support_kpi.php',
+	'langs' => 'tickets@tickets',
+	'position' => 116,
+	'enabled' => 'isModEnabled("tickets")',
+	'perms' => '$user->hasRight("tickets", "tickets", "read")',
+	'target' => '',
+	'user' => 0
+);
+
 
 		$this->hidden = 0;
 		$this->disabled = 0;

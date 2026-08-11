@@ -19,8 +19,6 @@
 			project_id: $('#support-kpi-project').val() || '',
 			start_date: $('#support-kpi-start-date').val() || '',
 			end_date: $('#support-kpi-end-date').val() || '',
-			status: $('#support-kpi-status').val() || '',
-			assignee_id: $('#support-kpi-assignee').val() || '',
 		};
 	}
 
@@ -128,7 +126,7 @@
 			<section class="kpi-wide-card">
 				<div class="kpi-section-title">
 					<h3>${escapeHtml(metric.title || 'Délai moyen de résolution')}</h3>
-					<span>${Number(metric.valid_rows || 0)} ticket(s) fermé(s) avec dates valides</span>
+					<span>${Number(metric.valid_rows || 0)} tâche(s) avec temps consommé</span>
 				</div>
 				<div class="kpi-delay-layout">
 					<div class="kpi-stat-tile">
@@ -136,7 +134,7 @@
 						<span>Délai moyen</span>
 					</div>
 					<div class="kpi-top-bars kpi-scroll-bars">
-						${series.length ? renderBars(series) : '<div class="kpi-empty">Aucun ticket fermé avec date de résolution.</div>'}
+						${series.length ? renderBars(series) : '<div class="kpi-empty">Aucune tâche avec temps consommé.</div>'}
 					</div>
 				</div>
 			</section>
@@ -145,7 +143,7 @@
 
 	function renderProjectRows(projects) {
 		if (!projects.length) {
-			return '<tr><td colspan="7" class="kpi-empty">Aucun projet ticket sur cette période.</td></tr>';
+			return '<tr><td colspan="8" class="kpi-empty">Aucun projet sur cette période.</td></tr>';
 		}
 
 		return projects.map(project => `
@@ -159,27 +157,8 @@
 				<td class="right">${Number(project.open || 0)}</td>
 				<td class="right">${Number(project.in_progress || 0)}</td>
 				<td class="right">${Number(project.closed || 0)}</td>
+				<td class="right">${Number(project.resolution_count || 0)}</td>
 				<td>${escapeHtml(project.avg_resolution_label)}</td>
-			</tr>
-		`).join('');
-	}
-
-	function renderTicketRows(tickets) {
-		if (!tickets.length) {
-			return '<tr><td colspan="9" class="kpi-empty">Aucun ticket ne correspond aux filtres.</td></tr>';
-		}
-
-		return tickets.map(ticket => `
-			<tr>
-				<td><a href="${escapeHtml(ticket.ticket_url)}">${escapeHtml(ticket.ref)}</a></td>
-				<td>${escapeHtml(ticket.subject)}</td>
-				<td>${escapeHtml(ticket.project_ref)} - ${escapeHtml(ticket.project_title)}</td>
-				<td>${escapeHtml(ticket.status_label)}</td>
-				<td>${escapeHtml(ticket.assignee_name)}</td>
-				<td>${escapeHtml(ticket.date_creation_label)}</td>
-				<td>${escapeHtml(ticket.date_close_label || '-')}</td>
-				<td>${escapeHtml(ticket.resolution_label)}</td>
-				<td>${escapeHtml(ticket.thirdparty_name || '-')}</td>
 			</tr>
 		`).join('');
 	}
@@ -201,35 +180,11 @@
 								<th class="right">Ouverts</th>
 								<th class="right">En cours</th>
 								<th class="right">Fermés</th>
-								<th>Délai moyen</th>
+								<th class="right">Tâches avec temps</th>
+								<th>Temps consommé moyen</th>
 							</tr>
 						</thead>
 						<tbody>${renderProjectRows(data.projects || [])}</tbody>
-					</table>
-				</div>
-			</section>
-
-			<section class="kpi-wide-card">
-				<div class="kpi-section-title">
-					<h3>Tickets filtrés</h3>
-					<span>${Number((data.tickets || []).length)} ticket(s)</span>
-				</div>
-				<div class="div-table-responsive">
-					<table class="liste centpercent">
-						<thead>
-							<tr class="liste_titre">
-								<th>Ticket</th>
-								<th>Sujet</th>
-								<th>Projet</th>
-								<th>Statut</th>
-								<th>Assigné</th>
-								<th>Création</th>
-								<th>Fermeture</th>
-								<th>Délai</th>
-								<th>Client</th>
-							</tr>
-						</thead>
-						<tbody>${renderTicketRows(data.tickets || [])}</tbody>
 					</table>
 				</div>
 			</section>
@@ -251,8 +206,6 @@
 			.then(data => {
 				const options = data.filter_options || {};
 				setSelectOptions('#support-kpi-project', options.projects || [], 'Tous les projets', selected.project_id);
-				setSelectOptions('#support-kpi-status', options.statuses || [], 'Tous les statuts', selected.status);
-				setSelectOptions('#support-kpi-assignee', options.assignees || [], 'Tous les assignés', selected.assignee_id);
 
 				$('#support-kpi-results').html(`
 					<div class="kpi-summary">
@@ -280,9 +233,9 @@
 	$(function () {
 		$('#support-kpi-apply').on('click', loadDashboard);
 		$('#support-kpi-export').on('click', exportDashboard);
-		$('#support-kpi-project, #support-kpi-status, #support-kpi-assignee').on('change', loadDashboard);
+		$('#support-kpi-project').on('change', loadDashboard);
 		$('#kpi-reset-filter').on('click', function () {
-			$('#support-kpi-project, #support-kpi-start-date, #support-kpi-end-date, #support-kpi-status, #support-kpi-assignee').val('');
+			$('#support-kpi-project, #support-kpi-start-date, #support-kpi-end-date').val('');
 			loadDashboard();
 		});
 
