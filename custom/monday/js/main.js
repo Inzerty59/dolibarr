@@ -2396,7 +2396,7 @@ $(function(){
     return `
       <div class="kanban-card planity-kanban-card" draggable="true" data-id="${card.id}" data-status="${escapeHtml(status)}">
         <span class="kanban-task-label">Référence événement : ${escapeHtml(card.ref)}</span>
-        ${planityKanbanIsAdmin && card.recipient_name ? `<span class="kanban-task-user">Destinataire : ${escapeHtml(card.recipient_name)}</span>` : ''}
+        ${card.recipient_names ? `<span class="kanban-task-user">Destinataire : ${escapeHtml(card.recipient_names)}</span>` : (planityKanbanIsAdmin && card.recipient_name ? `<span class="kanban-task-user">Destinataire : ${escapeHtml(card.recipient_name)}</span>` : '')}
         <span class="kanban-task-user">Tiers : ${escapeHtml(card.thirdparty_name || ('#' + card.socid))}</span>
         <span class="kanban-task-progress">Événement : ${escapeHtml(card.label || card.ref)}</span>
         ${dateText ? `<span class="kanban-task-progress">Date : ${escapeHtml(dateText)}</span>` : ''}
@@ -2408,6 +2408,7 @@ $(function(){
             <option value="running" ${status === 'running' ? 'selected' : ''}>En cours</option>
             <option value="archived" ${status === 'archived' ? 'selected' : ''}>Archives</option>
           </select>
+          <button type="button" class="planity-kanban-delete" title="Supprimer" aria-label="Supprimer"><span class="fa fa-trash" aria-hidden="true"></span></button>
         </label>
       </div>
     `;
@@ -2421,7 +2422,7 @@ $(function(){
     };
 
     $('#main-content').html(`
-      <h2>Kanban planity</h2>
+      <h2>Liste des besoins</h2>
       <div id="kanban-board" class="planity-kanban-board">
         ${Object.keys(statuses).map(status => `
           <div class="kanban-column" data-status="${status}" style="background:${statuses[status].color};">
@@ -2449,6 +2450,7 @@ $(function(){
         });
         initPlanityKanbanDragDrop();
         initPlanityKanbanStatusSelect();
+        initPlanityKanbanDelete();
       })
       .catch(error => {
         $('#main-content').append(`<div class="error">${escapeHtml(error.message)}</div>`);
@@ -2527,6 +2529,63 @@ $(function(){
             event.target.disabled = false;
           });
       });
+    });
+  }
+
+  function deletePlanityKanbanCard(card) {
+    const fd = new FormData();
+    fd.append('planity_kanban_card_id', card.dataset.id);
+    fd.append('action', 'delete');
+    fd.append('token', token);
+    return fetch(planityKanbanUrl, {method: 'POST', body: fd, credentials: 'same-origin'}).then(response => {
+      return response.json().then(json => {
+        if (!response.ok || json.success === false) throw new Error(json.error || 'Erreur serveur');
+        return json;
+      });
+    });
+  }
+
+  function initPlanityKanbanDelete() {
+    document.querySelectorAll('.planity-kanban-delete').forEach(button => {
+      button.addEventListener('mousedown', event => event.stopPropagation());
+      button.addEventListener('click', event => {
+        event.preventDefault();
+        event.stopPropagation();
+        const card = event.target.closest('.planity-kanban-card');
+        if (!card) return;
+        openPlanityDeleteConfirm(() => {
+          button.disabled = true;
+          deletePlanityKanbanCard(card)
+            .then(() => loadPlanityKanban())
+            .catch(error => {
+              alert(error.message);
+              button.disabled = false;
+            });
+        });
+      });
+    });
+  }
+
+  function openPlanityDeleteConfirm(onConfirm) {
+    const overlay = document.createElement('div');
+    overlay.className = 'thirdpartynotify-dialog-overlay';
+    overlay.innerHTML = `
+      <div class="thirdpartynotify-dialog planity-delete-confirm">
+        <div class="thirdpartynotify-dialog-title">Supprimer cette etiquette ?</div>
+        <div class="thirdpartynotify-dialog-actions">
+          <button type="button" class="button planity-delete-cancel">Annuler</button>
+          <button type="button" class="button planity-delete-ok">Supprimer</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    function close() {
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+    }
+    overlay.querySelector('.planity-delete-cancel').addEventListener('click', close);
+    overlay.querySelector('.planity-delete-ok').addEventListener('click', () => {
+      close();
+      onConfirm();
     });
   }
 
