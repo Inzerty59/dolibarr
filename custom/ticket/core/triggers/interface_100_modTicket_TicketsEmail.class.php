@@ -17,7 +17,9 @@ class InterfaceTicketsEmail extends DolibarrTriggers
 	const CONTACT_LINK_STATUS_ALL = -1;
 	const CONTACT_TYPE_ASSIGNED_USER = 'SUPPORTTEC';
 	const MAIL_BODY_IS_HTML_AUTO = -1;
+	const TICKET_STATUS_READ = 1;
 	const TICKET_STATUS_IN_PROGRESS = 3;
+	const TICKET_STATUS_NEED_MORE_INFO = 5;
 	const TRIGGER_RESULT_ERROR = -1;
 	const TRIGGER_RESULT_NONE = 0;
 	const TRIGGER_RESULT_OK = 1;
@@ -76,6 +78,14 @@ class InterfaceTicketsEmail extends DolibarrTriggers
 
 			if ($this->isStatusTransitionTo($object, self::TICKET_STATUS_IN_PROGRESS)) {
 				$this->collectMailResult($this->sendCustomerMail($object, 'in_progress'), $sent, $error);
+			}
+
+			if ($this->isStatusTransitionTo($object, self::TICKET_STATUS_READ)) {
+				$this->collectMailResult($this->sendCustomerMail($object, 'read'), $sent, $error);
+			}
+
+			if ($this->isStatusTransitionTo($object, self::TICKET_STATUS_NEED_MORE_INFO) && GETPOSTINT('ticket_custom_status_mail_confirm')) {
+				$this->collectMailResult($this->sendCustomerMail($object, 'need_more_info'), $sent, $error);
 			}
 		}
 
@@ -386,7 +396,7 @@ class InterfaceTicketsEmail extends DolibarrTriggers
 	}
 
 	/**
-	 * Build the short customer templates for create, in progress and close.
+	 * Build the short customer templates for create, status updates and close.
 	 */
 	private function buildCustomerTemplate($event, $object, $recipientName = '')
 	{
@@ -403,6 +413,16 @@ class InterfaceTicketsEmail extends DolibarrTriggers
 			);
 		}
 
+		if ($event === 'read') {
+			return array(
+				'subject' => $this->trans('TicketCustomSubjectRead', '[Inzerty] Votre ticket %s a ete lu', $object->ref),
+				'body' => $greeting
+					.'<p>'.$this->trans('TicketCustomBodyReadIntro', 'Votre ticket a ete lu et sera pris en charge dans les plus brefs delais.').'</p>'
+					.$summary
+					.'<p>'.$this->trans('TicketCustomBodyReadFooter', 'Notre equipe reviendra vers vous des que possible.').'</p>',
+			);
+		}
+
 		if ($event === 'in_progress') {
 			return array(
 				'subject' => $this->trans('TicketCustomSubjectInProgress', '[Inzerty] Votre ticket %s est en cours de traitement', $object->ref),
@@ -410,6 +430,16 @@ class InterfaceTicketsEmail extends DolibarrTriggers
 					.'<p>'.$this->trans('TicketCustomBodyInProgressIntro', 'Votre ticket est maintenant en cours de traitement.').'</p>'
 					.$summary
 					.'<p>'.$this->trans('TicketCustomBodyInProgressFooter', 'Nous vous tiendrons informe de son avancement.').'</p>',
+			);
+		}
+
+		if ($event === 'need_more_info') {
+			return array(
+				'subject' => $this->getCustomerCustomSubject($this->trans('TicketCustomSubjectNeedMoreInfo', '[Inzerty] Complement attendu pour votre ticket %s', $object->ref)),
+				'body' => $this->getCustomerCustomBody($greeting
+					.'<p>'.$this->trans('TicketCustomBodyNeedMoreInfoIntro', 'Votre ticket est en attente de retour de votre part.').'</p>'
+					.$summary
+					.'<p>'.$this->trans('TicketCustomBodyNeedMoreInfoFooter', 'Vous pouvez repondre a ce message avec les informations attendues.').'</p>'),
 			);
 		}
 
@@ -688,6 +718,71 @@ class InterfaceTicketsEmail extends DolibarrTriggers
 		}
 
 		return '<p><strong>'.$this->escape($this->trans('TicketCustomFieldResolution', 'Resolution')).' :</strong><br>'.nl2br($this->escape($object->resolution)).'</p>';
+	}
+
+	/**
+	 * Return a subject overridden from the status popup when available.
+	 */
+	private function getCustomerCustomSubject($defaultSubject)
+	{
+		$subject = GETPOST('ticket_custom_customer_subject', 'alphanohtml');
+		if (trim((string) $subject) === '') {
+			return $defaultSubject;
+		}
+
+		return $subject;
+	}
+
+	/**
+	 * Return a body overridden from the status popup when available.
+	 */
+	private function getCustomerCustomBody($defaultBody)
+	{
+		$message = GETPOST('ticket_custom_customer_message', 'restricthtml');
+		if (trim((string) $message) === '') {
+			return $defaultBody;
+		}
+
+		return $this->formatCustomerCustomBody($message);
+	}
+
+	/**
+	 * Format textarea content as HTML, including summary fields in bold.
+	 */
+	private function formatCustomerCustomBody($message)
+	{
+		$message = stripcslashes((string) $message);
+		$message = preg_replace('/\\\\+r\\\\+n|\\\\+n|\\\\+r/', "\n", $message);
+		$message = str_replace(array("\r\n", "\r"), "\n", $message);
+
+		$lines = preg_split('/\n+/', $message);
+		$html = '';
+		$summary = '';
+
+		foreach ($lines as $line) {
+			$line = trim((string) $line);
+			if ($line === '') {
+				continue;
+			}
+
+			if (preg_match('/^(Ticket|Sujet|Severite|Sévérité|Date|Assigne a|Assigné à)\s*:\s*(.*)$/u', $line, $matches)) {
+				$summary .= '<strong>'.$this->escape($matches[1]).' :</strong> '.$this->escape($matches[2]).'<br>';
+				continue;
+			}
+
+			if ($summary !== '') {
+				$html .= '<p>'.$summary.'</p>';
+				$summary = '';
+			}
+
+			$html .= '<p>'.$this->escape($line).'</p>';
+		}
+
+		if ($summary !== '') {
+			$html .= '<p>'.$summary.'</p>';
+		}
+
+		return $html;
 	}
 
 	/**
