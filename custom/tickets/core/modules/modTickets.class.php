@@ -61,8 +61,7 @@ class modTickets extends DolibarrModules
 				'data' => array(
 					'ticketcard',
 					'ticket',
-					'projectcard',
-					'all'
+					'projectcard'
 				),
 				'entity' => '0',
 			),
