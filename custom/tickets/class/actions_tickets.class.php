@@ -39,6 +39,23 @@ class ActionsTickets extends CommonHookActions
 
 		$langs->load('tickets@tickets');
 
+		if ($this->isTicketList()) {
+			if (!empty($parameters['arrayfields']) && is_array($parameters['arrayfields'])) {
+				if (!empty($parameters['arrayfields']['t.fk_project'])) {
+					$parameters['arrayfields']['t.fk_project']['checked'] = 1;
+				}
+
+				$templateid = $this->getTicketListTemplateId();
+				if ($templateid > 0 && is_object($extrafields) && is_object($object) && $object->table_element === 'ticket') {
+					$allowedTemplateFields = $this->fetchTemplateExtraFieldKeys($templateid);
+					$this->filterTicketListExtraFields($extrafields, $parameters['arrayfields'], $object->table_element, $allowedTemplateFields);
+					$this->filterTicketListNativeFields($parameters['arrayfields']);
+				}
+			}
+
+			return 0;
+		}
+
 		if (!$this->isTicketCard()) {
 			return 0;
 		}
@@ -95,6 +112,85 @@ class ActionsTickets extends CommonHookActions
 	private function isTicketCard()
 	{
 		return strpos($_SERVER['PHP_SELF'] ?? '', '/ticket/card.php') !== false;
+	}
+
+	/**
+	 * True when the current request is handled by native ticket/list.php.
+	 */
+	private function isTicketList()
+	{
+		return strpos($_SERVER['PHP_SELF'] ?? '', '/ticket/list.php') !== false;
+	}
+
+	/**
+	 * Keep the selected ticket template in list pagination and sorting links.
+	 */
+	public function printFieldListSearchParam($parameters, &$object, &$action, $hookmanager)
+	{
+		$templateid = $this->getTicketListTemplateId();
+		$this->resprints = $templateid > 0 ? '&search_fk_ticket_template='.$templateid : '';
+
+		return 0;
+	}
+
+	/**
+	 * Restrict the ticket list rows to tickets whose project uses the selected template.
+	 */
+	public function printFieldListWhere($parameters, &$object, &$action, $hookmanager)
+	{
+		global $conf;
+
+		$templateid = $this->getTicketListTemplateId();
+		if ($templateid <= 0 || !$this->isTicketList()) {
+			$this->resprints = '';
+			return 0;
+		}
+
+		$this->resprints = " AND EXISTS (";
+		$this->resprints .= "SELECT 1";
+		$this->resprints .= " FROM ".MAIN_DB_PREFIX."tickets_project_template as tpt";
+		$this->resprints .= " WHERE tpt.fk_project = t.fk_project";
+		$this->resprints .= " AND tpt.fk_template = ".$templateid;
+		$this->resprints .= " AND tpt.entity = ".((int) $conf->entity);
+		$this->resprints .= ")";
+
+		return 0;
+	}
+
+	/**
+	 * Render the ticket template selector above the native ticket list filters.
+	 */
+	public function printFieldPreListTitle($parameters, &$object, &$action, $hookmanager)
+	{
+		global $langs;
+
+		if (!$this->isTicketList()) {
+			$this->resprints = '';
+			return 0;
+		}
+
+		$options = $this->fetchTicketTemplateOptions();
+		if (empty($options)) {
+			$this->resprints = '';
+			return 0;
+		}
+
+		$templateid = $this->getTicketListTemplateId();
+		$out = '<div class="divsearchfield">';
+		$out .= $langs->trans("TicketTemplate").': ';
+		$out .= '<select class="flat minwidth200" name="search_fk_ticket_template">';
+		$out .= '<option value="0"></option>';
+		foreach ($options as $rowid => $label) {
+			$selected = ((int) $rowid === $templateid) ? ' selected' : '';
+			$out .= '<option value="'.((int) $rowid).'"'.$selected.'>'.dol_escape_htmltag($label).'</option>';
+		}
+		$out .= '</select>';
+		$out .= '<input type="submit" class="button smallpaddingimp" name="button_search" value="'.$langs->trans("Search").'">';
+		$out .= '</div>';
+
+		$this->resprints = $out;
+
+		return 0;
 	}
 
 	/**
@@ -194,6 +290,108 @@ class ActionsTickets extends CommonHookActions
 	private function isProjectCard()
 	{
 		return strpos($_SERVER['PHP_SELF'] ?? '', '/projet/card.php') !== false;
+	}
+
+	private function getTicketListTemplateId()
+	{
+		if (GETPOST('button_removefilter_x', 'alpha') || GETPOST('button_removefilter.x', 'alpha') || GETPOST('button_removefilter', 'alpha')) {
+			return 0;
+		}
+
+		return GETPOSTINT('search_fk_ticket_template');
+	}
+
+	private function fetchTicketTemplateOptions()
+	{
+		global $conf;
+
+		$options = array();
+		$sql = "SELECT rowid, label";
+		$sql .= " FROM ".MAIN_DB_PREFIX."tickets_template";
+		$sql .= " WHERE entity = ".((int) $conf->entity);
+		$sql .= " ORDER BY label";
+
+		$resql = $this->db->query($sql);
+		while ($resql && ($obj = $this->db->fetch_object($resql))) {
+			$options[(int) $obj->rowid] = $obj->label;
+		}
+
+		return $options;
+	}
+
+	private function fetchTemplateExtraFieldKeys($templateid)
+	{
+		$keys = array();
+		foreach ($this->fetchTemplateFields($templateid) as $field) {
+			$keys[$this->getTechnicalAttrname($field)] = true;
+		}
+
+		return $keys;
+	}
+
+	private function filterTicketListNativeFields(&$arrayfields)
+	{
+		$allowedNativeFields = array(
+			't.ref' => true,
+			't.fk_user_create' => true,
+			't.subject' => true,
+			't.type_code' => true,
+			't.severity_code' => true,
+			't.fk_soc' => true,
+			't.fk_project' => true,
+			't.datec' => true,
+			't.fk_user_assign' => true,
+			't.fk_statut' => true,
+		);
+
+		foreach (array_keys($arrayfields) as $key) {
+			if (strpos($key, 't.') === 0 && empty($allowedNativeFields[$key])) {
+				unset($arrayfields[$key]);
+			}
+		}
+
+		foreach ($allowedNativeFields as $key => $enabled) {
+			if (!empty($arrayfields[$key])) {
+				$arrayfields[$key]['checked'] = 1;
+			}
+		}
+	}
+
+	private function filterTicketListExtraFields($extrafields, &$arrayfields, $elementtype, $allowedExtraFields)
+	{
+		if (!empty($extrafields->attributes[$elementtype]['label']) && is_array($extrafields->attributes[$elementtype]['label'])) {
+			foreach (array_keys($extrafields->attributes[$elementtype]['label']) as $key) {
+				if (empty($allowedExtraFields[$key])) {
+					$this->removeLoadedExtraField($extrafields, $elementtype, $key);
+				}
+			}
+		}
+
+		foreach (array_keys($arrayfields) as $key) {
+			if (strpos($key, 'ef.') === 0 && empty($allowedExtraFields[substr($key, 3)])) {
+				unset($arrayfields[$key]);
+			}
+		}
+
+		foreach (array_keys($allowedExtraFields) as $key) {
+			if (empty($extrafields->attributes[$elementtype]['label'][$key])) {
+				continue;
+			}
+
+			$arraykey = 'ef.'.$key;
+			if (empty($arrayfields[$arraykey])) {
+				$arrayfields[$arraykey] = array(
+					'label' => $extrafields->attributes[$elementtype]['label'][$key],
+					'type' => $extrafields->attributes[$elementtype]['type'][$key],
+					'position' => $extrafields->attributes[$elementtype]['pos'][$key],
+					'perms' => '1',
+					'enabled' => '1',
+					'langfile' => $extrafields->attributes[$elementtype]['langfile'][$key],
+					'help' => $extrafields->attributes[$elementtype]['help'][$key],
+				);
+			}
+			$arrayfields[$arraykey]['checked'] = 1;
+		}
 	}
 
 	/**

@@ -60,6 +60,7 @@ class modTickets extends DolibarrModules
 			'hooks' => array(
 				'data' => array(
 					'ticketcard',
+					'ticketlist',
 					'ticket',
 					'projectcard'
 				),
