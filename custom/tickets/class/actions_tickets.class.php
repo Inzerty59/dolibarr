@@ -12,7 +12,6 @@
 require_once DOL_DOCUMENT_ROOT.'/core/class/commonhookactions.class.php';
 require_once DOL_DOCUMENT_ROOT.'/core/class/extrafields.class.php';
 require_once DOL_DOCUMENT_ROOT.'/ticket/class/ticket.class.php';
-require_once DOL_DOCUMENT_ROOT.'/user/class/user.class.php';
 
 class ActionsTickets extends CommonHookActions
 {
@@ -50,6 +49,7 @@ class ActionsTickets extends CommonHookActions
 		$projectid = $this->getProjectIdFromRequest($ticketForOptionals);
 
 		if (in_array($action, array('add', 'update'), true)) {
+			$this->ensureTicketLevelExtraField();
 			$this->syncAllTemplateExtraFieldsForStorage();
 			if (is_object($extrafields)) {
 				$extrafields->fetch_name_optionals_label($object->table_element, true);
@@ -128,20 +128,20 @@ class ActionsTickets extends CommonHookActions
 		}
 
 		if ($this->isTicketCard() && in_array($action, array('create', 'edit'), true)) {
+			$this->ensureTicketLevelExtraField();
 			$ticketForOptionals = $this->fetchCurrentTicketForOptionals($object, $action);
 			$projectid = $this->getProjectIdFromRequest($ticketForOptionals);
 
 			$template = $projectid > 0 ? $this->fetchProjectTemplate($projectid) : null;
-			if (empty($template)) {
-				return 0;
-			}
-
-			$templateFields = $this->fetchTemplateFields((int) $template->rowid);
+			$templateFields = !empty($template) ? $this->fetchTemplateFields((int) $template->rowid) : array();
 			if (!empty($templateFields)) {
 				$this->syncDolibarrExtraFields($templateFields);
 			}
 
-			print $this->renderTicketTemplateOptionals($ticketForOptionals, $templateFields);
+			print $this->renderTicketLevelField($ticketForOptionals);
+			if (!empty($templateFields)) {
+				print $this->renderTicketTemplateOptionals($ticketForOptionals, $templateFields);
+			}
 
 			return 1;
 		}
@@ -331,9 +331,9 @@ class ActionsTickets extends CommonHookActions
 			$lines[] = 'Date : '.dol_print_date($object->datec, 'dayhour');
 		}
 
-		$assignedUserName = $this->getTicketAssignedUserName($object);
-		if ($assignedUserName !== '') {
-			$lines[] = 'Assigne a : '.$assignedUserName;
+		$levelLabel = $this->getTicketLevelLabel($object);
+		if ($levelLabel !== '') {
+			$lines[] = 'Niveau : '.$levelLabel;
 		}
 
 		$lines[] = '';
@@ -342,28 +342,27 @@ class ActionsTickets extends CommonHookActions
 		return implode("\n", $lines);
 	}
 
-	private function getTicketAssignedUserName($object)
+	private function getTicketLevelLabel($object)
 	{
-		$assignedUserId = !empty($object->fk_user_assign) ? (int) $object->fk_user_assign : 0;
-		if ($assignedUserId <= 0 && !empty($object->id)) {
-			$sql = "SELECT fk_user_assign FROM ".MAIN_DB_PREFIX."ticket WHERE rowid = ".((int) $object->id);
-			$resql = $this->db->query($sql);
-			if ($resql && ($row = $this->db->fetch_object($resql)) && !empty($row->fk_user_assign)) {
-				$assignedUserId = (int) $row->fk_user_assign;
-			}
+		if (method_exists($object, 'fetch_optionals')) {
+			$object->fetch_optionals();
 		}
 
-		if ($assignedUserId <= 0) {
+		$value = '';
+		if (!empty($object->array_options['options_ticket_niveau'])) {
+			$value = (string) $object->array_options['options_ticket_niveau'];
+		}
+		if ($value === '') {
 			return '';
 		}
 
-		$assignedUser = new User($this->db);
-		if ($assignedUser->fetch($assignedUserId) <= 0) {
-			return '';
-		}
+		$labels = array(
+			'1' => 'Niveau 1',
+			'2' => 'Niveau 2',
+			'3' => 'Niveau 3',
+		);
 
-		global $langs;
-		return $assignedUser->getFullName($langs);
+		return !empty($labels[$value]) ? $labels[$value] : $value;
 	}
 
 	/**
@@ -458,6 +457,66 @@ class ActionsTickets extends CommonHookActions
 		}
 
 		return $out;
+	}
+
+	private function renderTicketLevelField($ticket)
+	{
+		$extrafields = new ExtraFields($this->db);
+		$extrafields->fetch_name_optionals_label('ticket', true);
+
+		if (empty($extrafields->attributes['ticket']['label']['ticket_niveau'])) {
+			return '';
+		}
+
+		$value = GETPOSTISSET('options_ticket_niveau') ? GETPOST('options_ticket_niveau', 'alphanohtml') : '';
+		if ($value === '' && is_object($ticket) && !empty($ticket->array_options['options_ticket_niveau'])) {
+			$value = $ticket->array_options['options_ticket_niveau'];
+		}
+
+		return '<tr>'
+			.'<td class="titlefieldcreate">'.$extrafields->attributes['ticket']['label']['ticket_niveau'].'</td>'
+			.'<td>'.$extrafields->showInputField('ticket_niveau', $value, '', '', 'options_', '', $ticket, 'ticket').'</td>'
+			.'</tr>';
+	}
+
+	private function ensureTicketLevelExtraField()
+	{
+		global $conf;
+
+		$sql = "SELECT rowid FROM ".MAIN_DB_PREFIX."extrafields";
+		$sql .= " WHERE elementtype = 'ticket'";
+		$sql .= " AND name = 'ticket_niveau'";
+		$sql .= " AND entity = ".((int) $conf->entity);
+		$resql = $this->db->query($sql);
+		if ($resql && $this->db->num_rows($resql) > 0) {
+			return;
+		}
+
+		$extrafields = new ExtraFields($this->db);
+		$extrafields->addExtraField(
+			'ticket_niveau',
+			'Niveau',
+			'select',
+			95,
+			'',
+			'ticket',
+			0,
+			0,
+			'',
+			array('options' => array(
+				'1' => 'Niveau 1',
+				'2' => 'Niveau 2',
+				'3' => 'Niveau 3',
+			)),
+			1,
+			'',
+			'1',
+			'',
+			'',
+			$conf->entity,
+			'tickets@tickets',
+			'1'
+		);
 	}
 
 	/**

@@ -506,7 +506,7 @@ class InterfaceTicketsEmail extends DolibarrTriggers
 		);
 
 		if ($includeAssignedUser) {
-			$rows[$this->trans('TicketCustomFieldAssignedTo', 'Assigne a')] = $this->getAssignedUserName($object);
+			$rows[$this->trans('TicketCustomFieldLevel', 'Niveau')] = $this->getTicketLevelLabel($object);
 		}
 
 		$html = '<p>';
@@ -582,17 +582,28 @@ class InterfaceTicketsEmail extends DolibarrTriggers
 		return !empty($object->thirdparty->name) ? $object->thirdparty->name : '';
 	}
 
-	/**
-	 * Fetch the assigned user display name.
-	 */
-	private function getAssignedUserName($object)
+	private function getTicketLevelLabel($object)
 	{
-		$assignedUser = $this->getAssignedUser($object);
-		if (empty($assignedUser)) {
+		if (method_exists($object, 'fetch_optionals')) {
+			$object->fetch_optionals();
+		}
+
+		$value = '';
+		if (!empty($object->array_options['options_ticket_niveau'])) {
+			$value = (string) $object->array_options['options_ticket_niveau'];
+		}
+
+		if ($value === '') {
 			return '';
 		}
 
-		return $assignedUser->getFullName($this->langs);
+		$labels = array(
+			'1' => 'Niveau 1',
+			'2' => 'Niveau 2',
+			'3' => 'Niveau 3',
+		);
+
+		return !empty($labels[$value]) ? $labels[$value] : $value;
 	}
 
 	/**
@@ -765,7 +776,7 @@ class InterfaceTicketsEmail extends DolibarrTriggers
 				continue;
 			}
 
-			if (preg_match('/^(Ticket|Sujet|Severite|Sévérité|Date|Assigne a|Assigné à)\s*:\s*(.*)$/u', $line, $matches)) {
+			if (preg_match('/^(Ticket|Sujet|Severite|Sévérité|Date|Niveau)\s*:\s*(.*)$/u', $line, $matches)) {
 				$summary .= '<strong>'.$this->escape($matches[1]).' :</strong> '.$this->escape($matches[2]).'<br>';
 				continue;
 			}

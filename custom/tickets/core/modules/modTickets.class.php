@@ -8,6 +8,7 @@
  */
 
 include_once DOL_DOCUMENT_ROOT.'/core/modules/DolibarrModules.class.php';
+include_once DOL_DOCUMENT_ROOT.'/core/class/extrafields.class.php';
 
 class modTickets extends DolibarrModules
 {
@@ -154,9 +155,50 @@ $this->menu[$r++] = array(
 	 */
 	public function init($langs = null)
 	{
-	   $sql = array();
-       $this->_load_tables('/tickets/sql/');
-       return $this->_init($sql, $langs);
+		$sql = array();
+		$this->_load_tables('/tickets/sql/');
+		$this->registerTicketLevelExtraField();
+		return $this->_init($sql, $langs);
+	}
+
+	private function registerTicketLevelExtraField()
+	{
+		global $conf;
+
+		$sql = "SELECT rowid FROM ".MAIN_DB_PREFIX."extrafields";
+		$sql .= " WHERE elementtype = 'ticket'";
+		$sql .= " AND name = 'ticket_niveau'";
+		$sql .= " AND entity = ".((int) $conf->entity);
+		$resql = $this->db->query($sql);
+		if ($resql && $this->db->num_rows($resql) > 0) {
+			return;
+		}
+
+		$extrafields = new ExtraFields($this->db);
+		$extrafields->addExtraField(
+			'ticket_niveau',
+			'Niveau',
+			'select',
+			95,
+			'',
+			'ticket',
+			0,
+			0,
+			'',
+			array('options' => array(
+				'1' => 'Niveau 1',
+				'2' => 'Niveau 2',
+				'3' => 'Niveau 3',
+			)),
+			1,
+			'',
+			'1',
+			'',
+			'',
+			$conf->entity,
+			'tickets@tickets',
+			'1'
+		);
 	}
 
 	/**

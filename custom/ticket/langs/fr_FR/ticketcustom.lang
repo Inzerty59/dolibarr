@@ -24,4 +24,5 @@ TicketCustomFieldSubject=Sujet
 TicketCustomFieldSeverity=Sévérité
 TicketCustomFieldDate=Date
 TicketCustomFieldAssignedTo=Assigné à
+TicketCustomFieldLevel=Niveau
 TicketCustomFieldResolution=Résolution
