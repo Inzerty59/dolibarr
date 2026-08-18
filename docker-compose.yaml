@@ -16,6 +16,8 @@ services:
     container_name: dolibarr_app
     depends_on:
       - db
+    env_file:
+      - .env
     ports:
       - "8080:80"
     restart: unless-stopped
