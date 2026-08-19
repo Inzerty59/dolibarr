@@ -203,8 +203,30 @@ class OutlooksyncImporter
 
 	private function cleanOutlookBody($body)
 	{
-		$body = preg_replace('/<a[^>]+href="https:\/\/teams\.microsoft\.com\/[^"]+"[^>]*>.*?<\/a>/is', '', $body);
-		return trim($body);
+		$body = trim((string) $body);
+		if ($body === '') {
+			return '';
+		}
+
+		$html = '<?xml encoding="UTF-8"><html><body>'.$body.'</body></html>';
+		$previous = libxml_use_internal_errors(true);
+		$dom = new DOMDocument('1.0', 'UTF-8');
+		$loaded = $dom->loadHTML($html, LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
+		libxml_clear_errors();
+		libxml_use_internal_errors($previous);
+
+		if ($loaded) {
+			$text = $dom->textContent;
+			$text = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+			$text = preg_replace("/[ \t]+/", ' ', $text);
+			$text = preg_replace("/\R{3,}/", "\n\n", $text);
+			return trim($text);
+		}
+
+		$text = strip_tags($body);
+		$text = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+		$text = preg_replace("/[ \t]+/", ' ', $text);
+		return trim($text);
 	}
 
 	private function resolveAssignedUsers(array $event, $organizerId)

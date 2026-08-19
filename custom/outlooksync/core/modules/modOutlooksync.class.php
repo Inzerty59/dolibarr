@@ -49,7 +49,7 @@ class modOutlooksync extends DolibarrModules
 		$this->cronjobs[] = array(
 			'label' => 'OutlooksyncImportOutlookEvents',
 			'jobtype' => 'method',
-			'class' => '/custom/outlooksync/class/outlooksyncimporter.class.php',
+			'class' => 'custom/outlooksync/class/outlooksyncimporter.class.php',
 			'objectname' => 'OutlooksyncImporter',
 			'method' => 'syncFromOutlook',
 			'parameters' => '',

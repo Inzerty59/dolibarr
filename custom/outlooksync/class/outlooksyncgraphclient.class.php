@@ -132,6 +132,6 @@ class OutlooksyncGraphClient
 		if ($secret === '' && !empty($_SERVER['OUTLOOKSYNC_CLIENT_SECRET'])) {
 			$secret = $_SERVER['OUTLOOKSYNC_CLIENT_SECRET'];
 		}
-		return (string) $secret;
+		return trim((string) $secret);
 	}
 }
