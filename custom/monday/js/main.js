@@ -43,8 +43,6 @@ $(function(){
 
   // State pour gérer les tâches collapsées
   const taskCollapseState = new Set();
-  const clientNeedCandidateState = new Set();
-  const clientNeedCandidateCache = new Map();
   let currentWorkspaceId = 0;
   let currentWorkspaceLabel = '';
 
@@ -78,8 +76,53 @@ $(function(){
     return configuredLabels.includes(normalizedWorkspace);
   }
 
+  function isKpiRecruitmentWorkspace(workspaceId, label) {
+    const configuredId = Number(mondayConfig.kpiRecruitmentWorkspaceId || 0);
+    if (configuredId > 0) {
+      return Number(workspaceId) === configuredId;
+    }
+
+    const normalizedWorkspace = normalizeKpiLabel(label);
+    const configuredLabels = Array.isArray(mondayConfig.kpiRecruitmentWorkspaceLabels)
+      ? mondayConfig.kpiRecruitmentWorkspaceLabels
+      : [];
+
+    return configuredLabels.includes(normalizedWorkspace);
+  }
+
+  function getClientNeedColumnRole(column) {
+    const normalized = normalizeKpiLabel(column && column.label);
+    if (normalized === 'client') {
+      return 'client';
+    }
+    if (normalized === 'besoin' || normalized === 'besoins') {
+      return 'needs';
+    }
+    return '';
+  }
+
+  function getClientNeedWorkspaceCityLabel(workspaceLabel) {
+    const normalized = normalizeKpiLabel(workspaceLabel);
+    if (normalized.includes('lille')) {
+      return 'lille';
+    }
+    if (normalized.includes('paris')) {
+      return 'paris';
+    }
+    return '';
+  }
+
+  function isClientNeedManagedGroup(group) {
+    return normalizeKpiLabel(group && group.label) === 'clientsbesoins';
+  }
+
   const pendingColumnOptions = {};
   const groupSplitState = new Map();
+  const clientNeedDynamicOptionsCache = {
+    clients: null,
+    cities: null,
+    needsByClient: {}
+  };
 
   function getSplitableColumns(cols) {
     return cols.filter(c => c.type === 'select');
@@ -223,6 +266,65 @@ $(function(){
     }
 
     return pendingColumnOptions[columnId];
+  }
+
+  function getClientNeedClientOptions(cityId = 0) {
+    const cacheKey = cityId > 0 ? `city:${cityId}` : 'all';
+    if (clientNeedDynamicOptionsCache.clients && clientNeedDynamicOptionsCache.clients[cacheKey]) {
+      return Promise.resolve(clientNeedDynamicOptionsCache.clients[cacheKey]);
+    }
+
+    return fetch(`?client_need_dynamic_options=clients&city_id=${encodeURIComponent(cityId || '')}&token=${encodeURIComponent(token)}`, {credentials: 'same-origin'})
+      .then(r => r.json())
+      .then(options => {
+        if (!clientNeedDynamicOptionsCache.clients) {
+          clientNeedDynamicOptionsCache.clients = {};
+        }
+        clientNeedDynamicOptionsCache.clients[cacheKey] = options;
+        return options;
+      });
+  }
+
+  function getClientNeedRunningOptions(clientId) {
+    clientId = String(clientId || '');
+    if (!clientId) {
+      return Promise.resolve([]);
+    }
+    if (clientNeedDynamicOptionsCache.needsByClient[clientId]) {
+      return Promise.resolve(clientNeedDynamicOptionsCache.needsByClient[clientId]);
+    }
+
+    return fetch(`?client_need_dynamic_options=needs&client_id=${encodeURIComponent(clientId)}&token=${encodeURIComponent(token)}`, {credentials: 'same-origin'})
+      .then(r => r.json())
+      .then(options => {
+        clientNeedDynamicOptionsCache.needsByClient[clientId] = options;
+        return options;
+      });
+  }
+
+  function getClientNeedCityOptions() {
+    if (clientNeedDynamicOptionsCache.cities) {
+      return Promise.resolve(clientNeedDynamicOptionsCache.cities);
+    }
+
+    return fetch(`?client_need_dynamic_options=cities&token=${encodeURIComponent(token)}`, {credentials: 'same-origin'})
+      .then(r => r.json())
+      .then(options => {
+        clientNeedDynamicOptionsCache.cities = options;
+        return options;
+      });
+  }
+
+  function getClientNeedWorkspaceCityId() {
+    const cityLabel = getClientNeedWorkspaceCityLabel(currentWorkspaceLabel);
+    if (!cityLabel) {
+      return Promise.resolve(0);
+    }
+
+    return getClientNeedCityOptions().then(cities => {
+      const city = (cities || []).find(item => normalizeKpiLabel(item.label) === cityLabel);
+      return city ? Number(city.id) : 0;
+    });
   }
 
   function renderGroupTables($grp, g, cols, headerCells, taskRows) {
@@ -416,6 +518,8 @@ $(function(){
     const columnId = String($input.data('column'));
     const value = $input.val();
     const isSelect = $input.is('select');
+    const clientNeedRole = String($input.data('clientNeedRole') || '');
+    const clientWorkspaceRole = String($input.data('clientWorkspaceRole') || '');
 
     if (isSelect) {
       applySelectColor($input);
@@ -440,6 +544,21 @@ $(function(){
         return response.json();
       })
       .then(data => {
+        if (clientNeedRole === 'client') {
+          const $row = $input.closest('tr');
+          const $needsCell = $row.find('.tags-cell[data-client-needs-role="needs"]').first();
+          if ($needsCell.length) {
+            saveClientNeedTags($needsCell, []);
+          }
+        }
+
+        if (clientWorkspaceRole === 'client') {
+          const $needsCell = $input.closest('tr').find('.client-workspace-needs-cell').first();
+          if ($needsCell.length) {
+            loadClientWorkspaceNeeds($needsCell);
+          }
+        }
+
         if (data.mail_required && data.draft && typeof openCandidateStatusMailModal === 'function') {
           openCandidateStatusMailModal(data.draft);
         }
@@ -749,8 +868,14 @@ $(function(){
     const $cell = $(cell);
     const taskId = $cell.data('task');
     const columnId = $cell.data('column');
+    const clientNeedRole = String($cell.data('clientNeedsRole') || '');
+    const clientId = clientNeedRole === 'needs'
+      ? String($cell.closest('tr').find('select[data-client-need-role="client"]').val() || '')
+      : '';
 
-    const getOptionsPromise = dataCache.columnOptions[columnId]
+    const getOptionsPromise = clientNeedRole === 'needs'
+      ? getClientNeedRunningOptions(clientId)
+      : dataCache.columnOptions[columnId]
       ? Promise.resolve(dataCache.columnOptions[columnId])
       : fetch(`?column_options=${columnId}`)
           .then(r=>r.json())
@@ -789,7 +914,7 @@ $(function(){
                   }).join('')}
                 </div>
 
-                ${options.length === 0 ? '<p style="text-align:center;color:#666;font-style:italic;margin:20px 0;">Aucune étiquette disponible. Utilisez "Gérer options" dans le menu de la colonne pour en créer.</p>' : ''}
+                ${options.length === 0 ? `<p style="text-align:center;color:#666;font-style:italic;margin:20px 0;">${clientNeedRole === 'needs' ? (clientId ? 'Aucun besoin en cours pour ce client.' : 'Choisissez d’abord un client.') : 'Aucune étiquette disponible. Utilisez "Gérer options" dans le menu de la colonne pour en créer.'}</p>` : ''}
 
                 <div class="custom-popup-buttons">
                   <button id="save-tags" class="custom-popup-btn custom-popup-btn-primary">Sauvegarder</button>
@@ -834,7 +959,9 @@ $(function(){
               <div class="selected-tags" style="display:flex;flex-wrap:wrap;gap:3px;margin-bottom:5px;">
             `;
 
-            const getOptionsPromise = dataCache.columnOptions[columnId]
+            const getOptionsPromise = clientNeedRole === 'needs'
+              ? getClientNeedRunningOptions(clientId)
+              : dataCache.columnOptions[columnId]
               ? Promise.resolve(dataCache.columnOptions[columnId])
               : fetch(`?column_options=${columnId}`)
                   .then(r=>r.json())
@@ -900,6 +1027,18 @@ $(function(){
       console.log('Tag supprimé et sauvegardé');
     });
   };
+
+  function saveClientNeedTags($cell, selectedTagIds) {
+    const fd = new FormData();
+    fd.append('save_cell_task', $cell.data('task'));
+    fd.append('save_cell_column', $cell.data('column'));
+    fd.append('save_cell_value', JSON.stringify(selectedTagIds));
+    fd.append('token', token);
+
+    return fetch('', {method: 'POST', body: fd}).then(() => {
+      $cell.find('.selected-tags').empty();
+    });
+  }
 
   window.updateDeadline = function(input) {
     const $cell = $(input).closest('.deadline-cell');
@@ -1829,22 +1968,6 @@ $(function(){
     return Array.isArray(candidatesByNeed[key]) ? candidatesByNeed[key] : [];
   }
 
-  function isClientNeedCandidatesExpanded(taskId) {
-    return clientNeedCandidateState.has(String(taskId));
-  }
-
-  function renderClientNeedCandidatesToggle(taskId, count = '') {
-    const expanded = isClientNeedCandidatesExpanded(taskId);
-    const panelId = `client-need-candidates-${Number(taskId)}`;
-    const countHtml = count === '' || count === null ? '' : `<span class="count">${Number(count)}</span>`;
-    return `
-      <button class="candidates-toggle" type="button" data-need-id="${Number(taskId)}" aria-expanded="${expanded ? 'true' : 'false'}" aria-controls="${panelId}">
-        <span class="candidates-caret" aria-hidden="true">${expanded ? '▼' : '▶'}</span>
-        <span>Candidatures</span>
-        ${countHtml}
-      </button>`;
-  }
-
   function renderClientNeedCandidatesTable(candidates) {
     const candidateRows = (candidates || []).map(candidate => `
       <tr>
@@ -1877,75 +2000,63 @@ $(function(){
     `;
   }
 
-  function renderClientNeedCandidatesPanel(taskId, candidates = null) {
-    const expanded = isClientNeedCandidatesExpanded(taskId);
-    const panelId = `client-need-candidates-${Number(taskId)}`;
-    const content = Array.isArray(candidates)
-      ? renderClientNeedCandidatesTable(candidates)
-      :'';
+  function renderClientWorkspaceNeedCards(needs) {
+    const cards = (needs || []).map(need => {
+      return `
+        <div class="client-workspace-need-card" data-need-id="${Number(need.id)}">
+          <button type="button" class="client-workspace-need-card-header" aria-expanded="false">
+            <span class="client-workspace-need-caret">›</span>
+            <strong>${escapeHtml(decodeHtmlEntities(need.label))}</strong>
+          </button>
+          <div class="client-workspace-need-panel" hidden></div>
+        </div>
+      `;
+    }).join('');
 
-    return `
-      <div id="${panelId}" class="candidates-panel" data-need-id="${Number(taskId)}"${expanded ? '' : ' hidden'}>
-        ${content}
-      </div>
-    `;
+    return cards || '<div class="candidates-empty">Aucun besoin en cours</div>';
   }
 
-  function loadClientNeedCandidates($button) {
-    const needId = Number($button.data('need-id'));
-    const groupId = Number($button.closest('.group').data('id'));
-    const cacheKey = `${groupId}:${needId}`;
-    const $panel = $button.closest('.task-cell').find(`.candidates-panel[data-need-id="${needId}"]`);
-
-    if (!needId || !groupId || $panel.data('loaded') === true) {
+  function loadClientWorkspaceNeeds($cell) {
+    const groupId = Number($cell.closest('.group').data('id'));
+    const clientId = Number($cell.closest('tr').find('select[data-client-workspace-role="client"]').val() || 0);
+    if (!groupId || !clientId) {
+      $cell.html('<div class="candidates-empty">Choisir un client</div>');
       return;
     }
 
-    if (clientNeedCandidateCache.has(cacheKey)) {
-      const cachedCandidates = clientNeedCandidateCache.get(cacheKey);
-      $panel.html(renderClientNeedCandidatesTable(cachedCandidates)).data('loaded', true);
-      $button.find('.count').remove();
-      $button.append(`<span class="count">${cachedCandidates.length}</span>`);
+    $cell.html('<div class="candidates-empty">Chargement...</div>');
+    getClientNeedRunningOptions(clientId).then(needs => {
+      $cell.html(renderClientWorkspaceNeedCards(needs));
+    }).catch(error => {
+      console.error('Erreur chargement besoins client', error);
+      $cell.html('<div class="candidates-empty">Erreur de chargement</div>');
+    });
+  }
+
+  function loadClientWorkspaceNeedCandidates($card) {
+    const needId = Number($card.data('need-id'));
+    const groupId = Number($card.closest('.group').data('id'));
+    const clientId = Number($card.closest('tr').find('select[data-client-workspace-role="client"]').val() || 0);
+    const $panel = $card.find('.client-workspace-need-panel').first();
+
+    if (!needId || !groupId || !clientId || $panel.data('loaded') === true) {
       return;
     }
 
     $panel.html('<div class="candidates-empty">Chargement...</div>');
-    fetch(`?client_need_candidates_group_id=${groupId}&client_need_id=${needId}&token=${encodeURIComponent(ajaxToken)}`)
-      .then(r => r.json().then(payload => {
-        if (!r.ok) {
-          throw new Error(payload?.error || `HTTP ${r.status}`);
-        }
-        return payload;
-      }))
+    fetch(`?client_need_candidates_group_id=${groupId}&client_base_id=${clientId}&client_need_id=${needId}&token=${encodeURIComponent(ajaxToken)}`)
+      .then(r => r.json())
       .then(payload => {
-        const candidatesByNeed = payload?.candidates_by_need || {};
-        const candidates = getClientNeedCandidateRows(needId, candidatesByNeed) || [];
-        clientNeedCandidateCache.set(cacheKey, candidates);
+        const candidates = getClientNeedCandidateRows(needId, payload?.candidates_by_need || {}) || [];
         $panel.html(renderClientNeedCandidatesTable(candidates)).data('loaded', true);
-        $button.find('.count').remove();
-        $button.append(`<span class="count">${candidates.length}</span>`);
+        const $header = $card.find('.client-workspace-need-card-header').first();
+        $header.find('.client-workspace-need-count').remove();
+        $header.append(`<span class="client-workspace-need-count">${candidates.length}</span>`);
       })
       .catch(error => {
-        console.error('Erreur chargement candidatures', error);
-        const message = error?.message ? `Erreur de chargement : ${escapeHtml(error.message)}` : 'Erreur de chargement';
-        $panel.html(`<div class="candidates-empty">${message}</div>`);
+        console.error('Erreur chargement candidatures besoin', error);
+        $panel.html('<div class="candidates-empty">Erreur de chargement</div>');
       });
-  }
-
-  function setClientNeedCandidatesExpanded($button, expanded) {
-    const needId = String($button.data('need-id'));
-    const $panel = $button.closest('.task-cell').find(`.candidates-panel[data-need-id="${needId}"]`);
-
-    $panel.prop('hidden', !expanded);
-    $button.attr('aria-expanded', expanded ? 'true' : 'false');
-    $button.find('.candidates-caret').text(expanded ? '▼' : '▶');
-
-    if (expanded) {
-      clientNeedCandidateState.add(needId);
-      loadClientNeedCandidates($button);
-    } else {
-      clientNeedCandidateState.delete(needId);
-    }
   }
 
   function buildKpiQuery() {
@@ -2176,6 +2287,7 @@ $(function(){
       'color': '',
       'font-weight': ''
     });
+    $('.workspace-client-needs-entry').removeClass('active');
     $('.workspace-kpi-entry').addClass('active');
 
     const currentYear = new Date().getFullYear();
@@ -2236,7 +2348,152 @@ $(function(){
 
   $(document).on('click', '.workspace-kpi-entry', function() {
     closeTaskDetail({ immediate: true });
+    $('.workspace-client-needs-entry').removeClass('active');
     showKpiDashboard();
+  });
+
+  $(document).on('click', '#client-needs-board-link', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    showClientNeedsBoard();
+  });
+
+  $(document).on('click', '#add-client-need-client', function() {
+    CustomPopup.prompt('Nom du client :', function(label) {
+      if (!label) return;
+      postClientNeeds('add_client', {label})
+        .then(loadClientNeedsBoard)
+        .catch(error => CustomPopup.error(error.message, 'Client - Besoins'));
+    }, '', 'Ajouter un client');
+  });
+
+  $(document).on('click', '.client-need-add-btn', function() {
+    const clientId = Number($(this).data('client-id'));
+    if (!clientId) return;
+
+    CustomPopup.prompt('Nom du besoin :', function(label) {
+      if (!label) return;
+      postClientNeeds('add_need', {client_id: clientId, label})
+        .then(loadClientNeedsBoard)
+        .catch(error => CustomPopup.error(error.message, 'Client - Besoins'));
+    }, '', 'Ajouter un besoin');
+  });
+
+  $(document).on('change', '.client-need-city-select', function() {
+    const $select = $(this);
+    const clientId = Number($select.data('client-id'));
+    const previousValue = String($select.data('previous-value') || '');
+    const value = String($select.val() || '');
+    if (!clientId) return;
+
+    if (value === '__add__') {
+      $select.val(previousValue);
+      CustomPopup.prompt('Nom de la ville :', function(label) {
+        if (!label) return;
+        postClientNeeds('add_city_option', {label})
+          .then(data => {
+            const cityId = Number(data.city_id || 0);
+            if (!cityId) return loadClientNeedsBoard();
+            return postClientNeeds('update_client_city', {client_id: clientId, city_id: cityId})
+              .then(loadClientNeedsBoard);
+          })
+          .catch(error => CustomPopup.error(error.message, 'Clients - Besoins'));
+      }, '', 'Ajouter une ville');
+      return;
+    }
+
+    postClientNeeds('update_client_city', {client_id: clientId, city_id: value})
+      .then(loadClientNeedsBoard)
+      .catch(error => CustomPopup.error(error.message, 'Clients - Besoins'));
+  });
+
+  $(document).on('focus', '.client-need-city-select', function() {
+    $(this).data('previous-value', String($(this).val() || ''));
+  });
+
+  $(document).on('click', '.client-need-delete-btn', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const pill = this.closest('.client-need-pill');
+    if (!pill || pill.classList.contains('is-confirming-delete')) return;
+
+    pill.dataset.originalHtml = pill.innerHTML;
+    pill.classList.add('is-confirming-delete');
+    pill.setAttribute('draggable', 'false');
+    pill.innerHTML = `
+      <span class="client-needs-warning-icon" aria-hidden="true">⚠</span>
+      <span class="client-need-pill-label">Confirmer la suppression ?</span>
+      <button type="button" class="client-needs-confirm-delete-btn" title="Confirmer" aria-label="Confirmer">✓</button>
+      <button type="button" class="client-needs-cancel-delete-btn" title="Annuler" aria-label="Annuler">×</button>
+    `;
+    pill.dataset.confirmTimeout = String(window.setTimeout(() => resetClientNeedDeleteConfirm(pill), 5000));
+  });
+
+  $(document).on('click', '.client-need-pill .client-needs-cancel-delete-btn', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    resetClientNeedDeleteConfirm(this.closest('.client-need-pill'));
+  });
+
+  $(document).on('click', '.client-need-pill .client-needs-confirm-delete-btn', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    const pill = this.closest('.client-need-pill');
+    const needId = Number(pill ? pill.dataset.needId : 0);
+    if (!needId) return;
+
+    postClientNeeds('delete_need', {need_id: needId})
+      .then(loadClientNeedsBoard)
+      .catch(error => CustomPopup.error(error.message, 'Client - Besoins'));
+  });
+
+  $(document).on('click', '.client-needs-delete-client-btn', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const row = this.closest('tr');
+    if (!row || row.classList.contains('is-confirming-delete')) return;
+
+    const clientLabel = this.dataset.clientLabel || 'ce client';
+    row.classList.add('is-confirming-delete');
+    row.querySelectorAll('td').forEach(cell => {
+      cell.style.display = 'none';
+    });
+
+    const confirmCell = document.createElement('td');
+    confirmCell.className = 'client-needs-row-confirm-cell';
+    confirmCell.colSpan = 5;
+    confirmCell.innerHTML = `
+      <div class="client-needs-row-confirm">
+        <span class="client-needs-warning-icon" aria-hidden="true">⚠</span>
+        <span>Supprimer ${escapeHtml(clientLabel)} et ses besoins ?</span>
+        <span class="client-needs-confirm-actions">
+          <button type="button" class="client-needs-confirm-delete-btn" title="Confirmer" aria-label="Confirmer">✓</button>
+          <button type="button" class="client-needs-cancel-delete-btn" title="Annuler" aria-label="Annuler">×</button>
+        </span>
+      </div>
+    `;
+    row.appendChild(confirmCell);
+    row.dataset.confirmTimeout = String(window.setTimeout(() => resetClientDeleteConfirm(row), 5000));
+  });
+
+  $(document).on('click', '.client-needs-row-confirm .client-needs-cancel-delete-btn', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    resetClientDeleteConfirm(this.closest('tr'));
+  });
+
+  $(document).on('click', '.client-needs-row-confirm .client-needs-confirm-delete-btn', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    const row = this.closest('tr');
+    const clientId = Number(row ? row.dataset.clientId : 0);
+    if (!clientId) return;
+
+    postClientNeeds('delete_client', {client_id: clientId})
+      .then(loadClientNeedsBoard)
+      .catch(error => CustomPopup.error(error.message, 'Client - Besoins'));
   });
 
   $(document).on('click', '#planity-kanban-item', function(e){
@@ -2249,6 +2506,7 @@ $(function(){
       'font-weight': ''
     });
     $('.workspace-kpi-entry').removeClass('active');
+    $('.workspace-client-needs-entry').removeClass('active');
 
     $(this).addClass('active').css({
       'background-color': '#007cba',
@@ -2268,6 +2526,7 @@ $(function(){
     currentWorkspaceId = Number(wsId) || 0;
     currentWorkspaceLabel = wsLabel;
     $('.workspace-kpi-entry').removeClass('active');
+    $('.workspace-client-needs-entry').removeClass('active');
     $('#planity-kanban-item').removeClass('active').css({
       'background-color': '',
       'color': '',
@@ -2589,9 +2848,217 @@ $(function(){
     });
   }
 
+  function renderClientNeedPill(need, targetStatus) {
+    return `
+      <span class="client-need-pill client-need-pill-${escapeHtml(need.status || 'running')}" draggable="true" data-need-id="${Number(need.id)}" data-status="${escapeHtml(need.status || 'running')}">
+        <span class="client-need-pill-label">${escapeHtml(decodeHtmlEntities(need.label))}</span>
+        <button type="button" class="client-need-delete-btn" data-need-id="${Number(need.id)}" title="Supprimer" aria-label="Supprimer">×</button>
+      </span>
+    `;
+  }
+
+  function renderClientNeedCitySelect(client, cities) {
+    const selectedCityId = Number(client.city_id || 0);
+    const options = (cities || []).map(city => `
+      <option value="${Number(city.id)}" ${Number(city.id) === selectedCityId ? 'selected' : ''}>${escapeHtml(decodeHtmlEntities(city.label))}</option>
+    `).join('');
+
+    return `
+      <select class="client-need-city-select" data-client-id="${Number(client.id)}">
+        <option value="">-- Choisir --</option>
+        ${options}
+        <option value="__add__">+ Ajouter une ville</option>
+      </select>
+    `;
+  }
+
+  function renderClientNeedsBoard(clients, cities = []) {
+    const rows = (clients || []).map(client => `
+      <tr data-client-id="${Number(client.id)}">
+        <td class="client-needs-client-cell">${escapeHtml(decodeHtmlEntities(client.label))}</td>
+        <td class="client-needs-city-cell">${renderClientNeedCitySelect(client, cities)}</td>
+        <td class="client-needs-dropzone" data-status="running">
+          <div class="client-needs-cell-content">
+            <div class="client-need-pills">
+              ${(client.running || []).map(need => renderClientNeedPill(need, 'archived')).join('')}
+            </div>
+            <button type="button" class="client-need-add-btn" data-client-id="${Number(client.id)}" title="Ajouter un besoin" aria-label="Ajouter un besoin">+</button>
+          </div>
+        </td>
+        <td class="client-needs-dropzone" data-status="archived">
+          <div class="client-need-pills">
+            ${(client.archived || []).map(need => renderClientNeedPill(need, 'running')).join('')}
+          </div>
+        </td>
+        <td class="client-needs-actions-cell">
+          <button type="button" class="client-needs-delete-client-btn" data-client-id="${Number(client.id)}" data-client-label="${escapeHtml(decodeHtmlEntities(client.label))}" title="Supprimer le client" aria-label="Supprimer le client">
+            <span class="fa fa-trash" aria-hidden="true"></span>
+          </button>
+        </td>
+      </tr>
+    `).join('');
+
+    return `
+      <div class="client-needs-page">
+        <div class="client-needs-header">
+          <h2>Clients - Besoins</h2>
+          <button type="button" id="add-client-need-client" class="add-row-btn">+ Ajouter un client</button>
+        </div>
+        <div class="client-needs-table-wrap">
+          <table class="client-needs-table">
+            <thead>
+              <tr>
+                <th>Client</th>
+                <th>Ville</th>
+                <th>Besoins en cours</th>
+                <th>Besoins archivés</th>
+                <th class="client-needs-actions-head"></th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows || '<tr><td colspan="5" class="client-needs-empty">Aucun client pour le moment.</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
+  function postClientNeeds(action, payload = {}) {
+    const fd = new FormData();
+    fd.append('client_needs_action', action);
+    fd.append('token', token);
+    Object.keys(payload).forEach(key => fd.append(key, payload[key]));
+
+    return fetch('', {method: 'POST', body: fd, credentials: 'same-origin'})
+      .then(response => response.json().then(json => {
+        if (!response.ok || json.success === false) {
+          throw new Error(json.message || 'Erreur serveur');
+        }
+        clientNeedDynamicOptionsCache.clients = null;
+        clientNeedDynamicOptionsCache.cities = null;
+        clientNeedDynamicOptionsCache.needsByClient = {};
+        return json;
+      }));
+  }
+
+  function loadClientNeedsBoard() {
+    $('#main-content').html('<div class="kpi-loading">Chargement...</div>');
+    fetch(`?client_needs_board=1&token=${encodeURIComponent(token)}`, {credentials: 'same-origin'})
+      .then(response => response.json().then(json => {
+        if (!response.ok || json.success === false) {
+          throw new Error(json.message || 'Erreur serveur');
+        }
+        return json;
+      }))
+      .then(data => {
+        getClientNeedCityOptions().then(cities => {
+          $('#main-content').html(renderClientNeedsBoard(data.clients || [], cities));
+          initClientNeedsDragDrop();
+        });
+      })
+      .catch(error => {
+        $('#main-content').html(`<div class="kpi-error">${escapeHtml(error.message)}</div>`);
+      });
+  }
+
+  function showClientNeedsBoard() {
+    closeTaskDetail({ immediate: true });
+    $('.workspace-item').removeClass('active').css({
+      'background-color': '',
+      'color': '',
+      'font-weight': ''
+    });
+    $('#planity-kanban-item, .workspace-kpi-entry').removeClass('active').css({
+      'background-color': '',
+      'color': '',
+      'font-weight': ''
+    });
+    $('.workspace-client-needs-entry').addClass('active');
+    loadClientNeedsBoard();
+  }
+
+  function initClientNeedsDragDrop() {
+    let draggedNeed = null;
+
+    document.querySelectorAll('.client-need-pill:not(.is-confirming-delete)').forEach(pill => {
+      pill.addEventListener('dragstart', event => {
+        draggedNeed = pill;
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData('text/plain', pill.dataset.needId || '');
+        setTimeout(() => pill.classList.add('is-dragging'), 0);
+      });
+      pill.addEventListener('dragend', () => {
+        pill.classList.remove('is-dragging');
+        draggedNeed = null;
+        document.querySelectorAll('.client-needs-dropzone.is-over').forEach(zone => {
+          zone.classList.remove('is-over');
+        });
+      });
+    });
+
+    document.querySelectorAll('.client-needs-dropzone').forEach(zone => {
+      zone.addEventListener('dragover', event => {
+        if (!draggedNeed) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'move';
+        zone.classList.add('is-over');
+      });
+      zone.addEventListener('dragleave', event => {
+        if (!zone.contains(event.relatedTarget)) {
+          zone.classList.remove('is-over');
+        }
+      });
+      zone.addEventListener('drop', event => {
+        event.preventDefault();
+        zone.classList.remove('is-over');
+
+        const needId = draggedNeed ? Number(draggedNeed.dataset.needId) : Number(event.dataTransfer.getData('text/plain'));
+        const status = String(zone.dataset.status || '');
+        if (!needId || !status || (draggedNeed && draggedNeed.dataset.status === status)) {
+          return;
+        }
+
+        postClientNeeds('move_need', {need_id: needId, status})
+          .then(loadClientNeedsBoard)
+          .catch(error => CustomPopup.error(error.message, 'Client - Besoins'));
+      });
+    });
+  }
+
+  function resetClientNeedDeleteConfirm(pill) {
+    if (!pill || !pill.dataset.originalHtml) return;
+    window.clearTimeout(Number(pill.dataset.confirmTimeout || 0));
+    pill.innerHTML = pill.dataset.originalHtml;
+    pill.classList.remove('is-confirming-delete');
+    pill.setAttribute('draggable', 'true');
+    delete pill.dataset.originalHtml;
+    delete pill.dataset.confirmTimeout;
+  }
+
+  function resetClientDeleteConfirm(row) {
+    if (!row) return;
+    window.clearTimeout(Number(row.dataset.confirmTimeout || 0));
+    row.classList.remove('is-confirming-delete');
+    const confirmCell = row.querySelector('.client-needs-row-confirm-cell');
+    if (confirmCell) confirmCell.remove();
+    row.querySelectorAll('td').forEach(cell => {
+      cell.style.display = '';
+    });
+    delete row.dataset.confirmTimeout;
+  }
+
   function loadGroups(wid){
-      clientNeedCandidateState.clear();
-      fetch(`get_groups.php?wid=${wid}`)
+      const ensureClientNeedTable = isClientNeedWorkspace(wid, currentWorkspaceLabel)
+        ? (() => {
+            const fd = new FormData();
+            fd.append('ensure_client_need_workspace_table', wid);
+            fd.append('token', token);
+            return fetch('', {method: 'POST', body: fd});
+          })()
+        : Promise.resolve();
+
+      ensureClientNeedTable.then(() => fetch(`get_groups.php?wid=${wid}`))
         .then(r=>r.json()).then(groups=>{
           $('#group-list').empty();
           const $groupList = $('#group-list');
@@ -2602,12 +3069,17 @@ $(function(){
             fetch(`?columns_group_id=${g.id}`)
               .then(r=>r.json())
               .then(cols=>{
+                const managedClientNeedGroup = isClientNeedManagedGroup(g);
+                const taskColumnDisplayLabel = managedClientNeedGroup
+                  ? 'Identifiant'
+                  : decodeHtmlEntities(g.task_column_label || 'Tâche');
                 let ths = `
                   <th style="border:1px solid #ddd;padding:4px;position:relative;">
-                    <span class="task-column-label" data-gid="${g.id}" style="cursor:pointer;" title="Cliquer pour modifier">${escapeHtml(decodeHtmlEntities(g.task_column_label || 'Tâche'))}</span>
+                    <span class="task-column-label" data-gid="${g.id}" style="cursor:pointer;" title="Cliquer pour modifier">${escapeHtml(taskColumnDisplayLabel)}</span>
                   </th>
                 `;
                 cols.forEach(c=>{
+                  const isDynamicClientNeedColumn = (isKpiRecruitmentWorkspace(currentWorkspaceId, currentWorkspaceLabel) || managedClientNeedGroup) && !!getClientNeedColumnRole(c);
                   ths += `<th style="border:1px solid #ddd;padding:4px;position:relative;cursor:move;">
                             <span class="column-label" data-cid="${c.id}" style="cursor:pointer;" title="Glisser pour réorganiser">${escapeHtml(decodeHtmlEntities(c.label))}</span><span class="column-sort-indicator" data-cid="${c.id}"></span>
                             <button class="column-menu-btn" data-cid="${c.id}" type="button" aria-label="Menu de colonne">⋮</button>
@@ -2616,7 +3088,7 @@ $(function(){
                               <button class="sort-desc-btn" type="button" data-cid="${c.id}" data-type="${escapeHtml(c.type)}">Trier décroissant ↓</button>
                               <button class="rename-column-btn" type="button" data-cid="${c.id}">Renommer</button>
                               <button class="delete-column-btn" type="button" data-cid="${c.id}">Supprimer</button>
-                              ${(c.type === 'select' || c.type === 'tags') ? `<button class="manage-options-btn" type="button" data-cid="${c.id}">Gérer options</button>` : ''}
+                              ${!isDynamicClientNeedColumn && (c.type === 'select' || c.type === 'tags') ? `<button class="manage-options-btn" type="button" data-cid="${c.id}">Gérer options</button>` : ''}
                             </div>
                          </th>`;
                 });
@@ -2654,7 +3126,7 @@ $(function(){
 	                  $grp.find('.group-toggle').text('►');
 	                }
 	                $grp.find('.group-label').text(decodeHtmlEntities(g.label));
-	                $grp.find('.add-row-btn').text(`+ Ajouter ${decodeHtmlEntities(g.task_column_label || 'tâche')}`);
+	                $grp.find('.add-row-btn').text(managedClientNeedGroup ? '+ Ajouter client' : `+ Ajouter ${decodeHtmlEntities(g.task_column_label || 'tâche')}`);
                 const $slot = $groupList.find('.group-slot[data-id="' + g.id + '"]');
                 if ($slot.length) {
                   $slot.replaceWith($grp);
@@ -2676,7 +3148,8 @@ $(function(){
 
 		                fetch(`?tasks_group_id_with_cells=${g.id}`).then(r=>r.json())
 		                  .then(tasks=>{
-		                    const flattenNeedRows = isClientNeedWorkspace(wid, currentWorkspaceLabel);
+		                    const flattenNeedRows = false;
+                        const managedClientNeedGroup = isClientNeedManagedGroup(g);
 		                    const sortedTasks = sortTasksHierarchically(tasks);
 
 	                    const taskPromises = sortedTasks.map(t=>{
@@ -2699,9 +3172,8 @@ $(function(){
 	                        const completedStyle = t.is_completed ? 'text-decoration: line-through; color: #999;' : '';
 	                        const checkboxHtml = t.level_depth > 0 ? `<input type="checkbox" class="task-completion-checkbox" data-task-id="${taskId}" ${isCompleted} style="cursor:pointer;width:16px;height:16px;" onchange="window.toggleTaskCompletion(${taskId}, this.checked)">` : '';
 
-		                        const isNeedRow = flattenNeedRows && (parentTaskId > 0 || Number(t.level_depth || 0) > 0);
-		                        const candidatesToggle = isNeedRow ? renderClientNeedCandidatesToggle(taskId) : '';
-		                        const candidatesPanel = isNeedRow ? renderClientNeedCandidatesPanel(taskId) : '';
+		                        const candidatesToggle = '';
+		                        const candidatesPanel = '';
                             const retentionMailFailure = t.retention_mail_failure || null;
                             const retentionMailAlert = retentionMailFailure
                               ? `<span class="task-retention-mail-row-alert" title="Email automatique non envoyé : ${escapeHtml(retentionMailFailure.error_message || 'Erreur inconnue')}">⚠ Email</span>`
@@ -2726,11 +3198,93 @@ $(function(){
 		                        const cells = t.cells || {};
 		                        let cellPromises = [];
                             const rowCellValues = {};
+                            const useClientNeedKpiColumns = isKpiRecruitmentWorkspace(currentWorkspaceId, currentWorkspaceLabel);
+                            const useClientNeedWorkspaceColumns = managedClientNeedGroup;
+                            const clientNeedClientColumn = useClientNeedKpiColumns
+                              ? cols.find(col => getClientNeedColumnRole(col) === 'client')
+                              : null;
 		                        cols.forEach(c=>{
 		                          const cellValue = cells[c.id] || '';
                               rowCellValues[c.id] = String(cellValue || '');
+                              const clientNeedColumnRole = useClientNeedKpiColumns ? getClientNeedColumnRole(c) : '';
+                              const clientWorkspaceColumnRole = useClientNeedWorkspaceColumns ? getClientNeedColumnRole(c) : '';
 
-		                          if(c.type === 'select') {
+		                          if(c.type === 'select' && clientWorkspaceColumnRole === 'client') {
+		                              const promise = getClientNeedWorkspaceCityId()
+                                    .then(cityId => getClientNeedClientOptions(cityId))
+		                                .then(options=>{
+		                                  let selectHtml = `<select class="cell-select" data-client-workspace-role="client" data-task="${taskId}" data-column="${Number(c.id)}"
+		                                                           style="border:none;background:transparent;width:100%;padding:2px;"
+	                                                           onchange="saveCellValue(this)">
+	                                                     <option value="">-- Choisir --</option>`;
+	                                  options.forEach(opt=>{
+		                                    const selected = cellValue == opt.id ? 'selected' : '';
+		                                    const optionColor = opt.color || '#7fbfe5';
+		                                    selectHtml += `<option value="${Number(opt.id)}" ${selected} style="background:${escapeHtml(optionColor)};">${escapeHtml(decodeHtmlEntities(opt.label))}</option>`;
+		                                  });
+	                                  selectHtml += '</select>';
+	                                  return selectHtml;
+	                                });
+	                              cellPromises.push(promise);
+                              } else if(clientWorkspaceColumnRole === 'needs') {
+                                cellPromises.push(Promise.resolve(`
+                                  <div class="client-workspace-needs-cell" data-task="${taskId}" data-column="${Number(c.id)}">
+                                    <div class="candidates-empty">Choisir un client</div>
+                                  </div>
+                                `));
+		                          } else if(c.type === 'select' && clientNeedColumnRole === 'client') {
+		                              const promise = getClientNeedClientOptions()
+		                                .then(options=>{
+		                                  let selectHtml = `<select class="cell-select" data-client-need-role="client" data-task="${taskId}" data-column="${Number(c.id)}"
+		                                                           style="border:none;background:transparent;width:100%;padding:2px;"
+	                                                           onchange="saveCellValue(this)">
+	                                                     <option value="">-- Choisir --</option>`;
+	                                  options.forEach(opt=>{
+		                                    const selected = cellValue == opt.id ? 'selected' : '';
+		                                    const optionColor = opt.color || '#7fbfe5';
+		                                    selectHtml += `<option value="${Number(opt.id)}" ${selected} style="background:${escapeHtml(optionColor)};">${escapeHtml(decodeHtmlEntities(opt.label))}</option>`;
+		                                  });
+	                                  selectHtml += '</select>';
+	                                  return selectHtml;
+	                                });
+	                              cellPromises.push(promise);
+	                            } else if(c.type === 'tags' && clientNeedColumnRole === 'needs') {
+                                const selectedClientId = clientNeedClientColumn ? String(cells[clientNeedClientColumn.id] || '') : '';
+	                              const promise = getClientNeedRunningOptions(selectedClientId)
+		                                .then(options=>{
+		                                  let selectedTags = [];
+		                                  try {
+	                                    selectedTags = cellValue ? JSON.parse(cellValue) : [];
+	                                  } catch (e) {
+	                                    selectedTags = [];
+	                                  }
+
+	                                  let tagsHtml = `
+	                                    <div class="tags-cell" data-client-needs-role="needs" data-task="${taskId}" data-column="${Number(c.id)}" style="min-height:30px;padding:3px;border:1px dashed #ddd;cursor:pointer;" onclick="openTagsSelector(this)">
+	                                      <div class="selected-tags" style="display:flex;flex-wrap:wrap;gap:3px;margin-bottom:5px;">
+	                                  `;
+
+	                                  selectedTags.forEach(tagId => {
+		                                    const tag = options.find(opt => opt.id == tagId);
+		                                    if(tag) {
+		                                      tagsHtml += `
+		                                        <span class="tag-item" data-tag-id="${Number(tag.id)}" style="background:${escapeHtml(tag.color || '#7fbfe5')};color:white;padding:4px 8px;border-radius:12px;font-size:11px;display:flex;align-items:center;gap:4px;font-weight:700;">
+		                                          ${escapeHtml(decodeHtmlEntities(tag.label))}
+		                                          <span class="remove-tag" onclick="removeTag(event, this)" style="cursor:pointer;font-weight:bold;">×</span>
+		                                        </span>
+	                                      `;
+	                                    }
+	                                  });
+
+                                  tagsHtml += `
+                                      </div>
+                                    </div>
+                                  `;
+
+                                  return tagsHtml;
+                                });
+                              cellPromises.push(promise);
+		                          } else if(c.type === 'select') {
 		                              const promise = (dataCache.columnOptions[c.id]
 	                                ? Promise.resolve(dataCache.columnOptions[c.id])
 	                                : fetch(`?column_options=${c.id}`)
@@ -2925,7 +3479,7 @@ $(function(){
 	                          cellsHtml.forEach(cellHtml=>{
 	                            tds += `<td style="border:1px solid #ddd;padding:4px;">${cellHtml}</td>`;
 	                          });
-	                          tds += `<td style="border:1px solid #ddd;padding:4px;"></td>`;
+	                        tds += `<td style="border:1px solid #ddd;padding:4px;"></td>`;
 		                          const $taskRow = $(`<tr class="task-row" data-id="${taskId}" data-parent-id="${parentTaskId || ''}" style="cursor:pointer;">${tds}</tr>`);
 	                          $taskRow.data('cellValues', rowCellValues);
 	                          $taskRow.find('td:nth-child(1)').click(function(e) {
@@ -2948,6 +3502,9 @@ $(function(){
 	                      $grp.find('select.cell-select').each(function() {
 	                        applySelectColor($(this));
 	                      });
+                      $grp.find('.client-workspace-needs-cell').each(function() {
+                        loadClientWorkspaceNeeds($(this));
+                      });
 
                       initTaskSortable();
                       initColumnSortable();
@@ -2972,12 +3529,6 @@ $(function(){
   }
 
   function attachEventHandlers(wid) {
-    $('#group-list').off('click', '.candidates-toggle').on('click', '.candidates-toggle', function(e) {
-      e.stopPropagation();
-      const $button = $(this);
-      setClientNeedCandidatesExpanded($button, $button.attr('aria-expanded') !== 'true');
-    });
-
     $('#group-list').off('click', '.candidate-detail-link').on('click', '.candidate-detail-link', function(e) {
       e.preventDefault();
       e.stopPropagation();
@@ -2985,6 +3536,23 @@ $(function(){
       if (!candidateId) return;
       const candidateName = $(this).data('candidate-name') || $(this).text().trim();
       openTaskDetail(candidateId, candidateName, 'Candidat', 'Candidat');
+    });
+
+    $('#group-list').off('click', '.client-workspace-need-card-header').on('click', '.client-workspace-need-card-header', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      const $button = $(this);
+      const $card = $button.closest('.client-workspace-need-card');
+      const $panel = $card.find('.client-workspace-need-panel').first();
+      const expanded = $button.attr('aria-expanded') === 'true';
+
+      $button.attr('aria-expanded', expanded ? 'false' : 'true');
+      $card.toggleClass('is-expanded', !expanded);
+      $panel.prop('hidden', expanded);
+
+      if (!expanded) {
+        loadClientWorkspaceNeedCandidates($card);
+      }
     });
 
     $('#group-list').off('change','.group-split-select').on('change','.group-split-select',function(){
@@ -3245,7 +3813,18 @@ $(function(){
       })
       .off('click','.add-row-btn').on('click','.add-row-btn',function(){
         const $button = $(this);
-        const gid = $button.closest('.group').data('id');
+        const $group = $button.closest('.group');
+        const gid = $group.data('id');
+        const isManagedClientNeedGroup = normalizeKpiLabel($group.find('.group-label').first().text()) === 'clientsbesoins';
+        if (isManagedClientNeedGroup) {
+          const fd = new FormData();
+          fd.append('add_client_need_workspace_row_group_id', gid);
+          fd.append('token', token);
+          fetch('', {method: 'POST', body: fd}).then(() => {
+            loadGroups(wid);
+          });
+          return;
+        }
         const splitColumnId = $button.data('split-column-id');
         const splitOptionId = String($button.attr('data-split-option-id') || '');
         const taskColumnLabel = $(this).closest('.group').find('.task-column-label').first().text().toLowerCase();

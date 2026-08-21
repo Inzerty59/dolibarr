@@ -108,7 +108,17 @@ function monday_get_candidate_cell_context($db, $taskId)
             continue;
         }
 
-        if (in_array($row->type, ['select', 'tags'], true)) {
+        if ($row->type === 'select' && in_array($normalized, ['client', 'nomclient', 'societe', 'entreprise'], true)) {
+            $clientLabel = monday_get_client_need_client_label($db, (int) $value);
+            if ($clientLabel !== '') {
+                $value = $clientLabel;
+            }
+        } elseif ($row->type === 'tags' && in_array($normalized, ['besoin', 'besoins'], true)) {
+            $needLabels = monday_get_client_need_item_labels($db, $value);
+            if (!empty($needLabels)) {
+                $value = implode(', ', $needLabels);
+            }
+        } elseif (in_array($row->type, ['select', 'tags'], true)) {
             $optionIds = [];
             if ($row->type === 'tags') {
                 $decoded = json_decode($value, true);
@@ -277,6 +287,290 @@ function monday_json_response($payload, $statusCode = 200)
     header('Content-Type: application/json');
     echo json_encode($payload);
     exit;
+}
+
+function monday_ensure_client_needs_tables($db)
+{
+    $db->query("CREATE TABLE IF NOT EXISTS llx_monday_client_need_client (
+        rowid integer AUTO_INCREMENT PRIMARY KEY,
+        label varchar(255) NOT NULL,
+        position integer NOT NULL DEFAULT 0,
+        datec datetime NOT NULL,
+        tms timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=innodb DEFAULT CHARSET=utf8mb4");
+
+    $db->query("CREATE TABLE IF NOT EXISTS llx_monday_client_need_item (
+        rowid integer AUTO_INCREMENT PRIMARY KEY,
+        fk_client integer NOT NULL,
+        label varchar(255) NOT NULL,
+        status varchar(20) NOT NULL DEFAULT 'running',
+        position integer NOT NULL DEFAULT 0,
+        datec datetime NOT NULL,
+        tms timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_monday_client_need_item_client (fk_client),
+        INDEX idx_monday_client_need_item_status (status)
+    ) ENGINE=innodb DEFAULT CHARSET=utf8mb4");
+
+    $resCityColumn = $db->query("SHOW COLUMNS FROM llx_monday_client_need_client LIKE 'fk_city_option'");
+    if (!$resCityColumn || !$db->fetch_object($resCityColumn)) {
+        $db->query("ALTER TABLE llx_monday_client_need_client ADD COLUMN fk_city_option integer NOT NULL DEFAULT 0 AFTER label");
+    }
+
+    $db->query("CREATE TABLE IF NOT EXISTS llx_monday_client_need_city_option (
+        rowid integer AUTO_INCREMENT PRIMARY KEY,
+        label varchar(255) NOT NULL,
+        position integer NOT NULL DEFAULT 0,
+        UNIQUE KEY uk_monday_client_need_city_label (label)
+    ) ENGINE=innodb DEFAULT CHARSET=utf8mb4");
+
+    $defaultCities = ['Lille', 'Paris'];
+    foreach ($defaultCities as $position => $cityLabel) {
+        $safeCityLabel = $db->escape($cityLabel);
+        $resCity = $db->query("SELECT rowid FROM llx_monday_client_need_city_option WHERE label = '$safeCityLabel'");
+        if (!$resCity || !$db->fetch_object($resCity)) {
+            $db->query("INSERT INTO llx_monday_client_need_city_option (label, position) VALUES ('$safeCityLabel', $position)");
+        }
+    }
+}
+
+function monday_get_client_need_city_options($db)
+{
+    monday_ensure_client_needs_tables($db);
+
+    $out = [];
+    $res = $db->query("SELECT rowid, label FROM llx_monday_client_need_city_option ORDER BY position ASC, rowid ASC");
+    while ($res && $city = $db->fetch_object($res)) {
+        $out[] = [
+            'id' => (int) $city->rowid,
+            'label' => (string) $city->label,
+        ];
+    }
+
+    return $out;
+}
+
+function monday_get_client_needs_payload($db)
+{
+    monday_ensure_client_needs_tables($db);
+
+    $clients = [];
+    $res = $db->query("SELECT rowid, label, fk_city_option FROM llx_monday_client_need_client ORDER BY position ASC, rowid ASC");
+    while ($res && $client = $db->fetch_object($res)) {
+        $clients[(int) $client->rowid] = [
+            'id' => (int) $client->rowid,
+            'label' => (string) $client->label,
+            'city_id' => (int) $client->fk_city_option,
+            'running' => [],
+            'archived' => [],
+        ];
+    }
+
+    if (!empty($clients)) {
+        $resNeeds = $db->query("SELECT rowid, fk_client, label, status
+                                  FROM llx_monday_client_need_item
+                                 WHERE fk_client IN (".implode(',', array_keys($clients)).")
+                              ORDER BY position ASC, rowid ASC");
+        while ($resNeeds && $need = $db->fetch_object($resNeeds)) {
+            $clientId = (int) $need->fk_client;
+            if (!isset($clients[$clientId])) {
+                continue;
+            }
+            $status = $need->status === 'archived' ? 'archived' : 'running';
+            $clients[$clientId][$status][] = [
+                'id' => (int) $need->rowid,
+                'label' => (string) $need->label,
+                'status' => $status,
+            ];
+        }
+    }
+
+    return array_values($clients);
+}
+
+function monday_get_client_need_client_options($db, $cityId = 0)
+{
+    monday_ensure_client_needs_tables($db);
+
+    $out = [];
+    $cityId = (int) $cityId;
+    $cityCondition = $cityId > 0 ? " WHERE fk_city_option = $cityId" : '';
+    $res = $db->query("SELECT rowid, label FROM llx_monday_client_need_client".$cityCondition." ORDER BY position ASC, rowid ASC");
+    while ($res && $client = $db->fetch_object($res)) {
+        $out[] = [
+            'id' => (int) $client->rowid,
+            'label' => (string) $client->label,
+            'color' => '#7fbfe5',
+        ];
+    }
+
+    return $out;
+}
+
+function monday_get_client_need_running_options($db, $clientId)
+{
+    monday_ensure_client_needs_tables($db);
+
+    $clientId = (int) $clientId;
+    if ($clientId <= 0) {
+        return [];
+    }
+
+    $out = [];
+    $res = $db->query("SELECT rowid, label
+                         FROM llx_monday_client_need_item
+                        WHERE fk_client = $clientId AND status = 'running'
+                     ORDER BY position ASC, rowid ASC");
+    while ($res && $need = $db->fetch_object($res)) {
+        $out[] = [
+            'id' => (int) $need->rowid,
+            'label' => (string) $need->label,
+            'color' => '#7fbfe5',
+        ];
+    }
+
+    return $out;
+}
+
+function monday_get_client_need_client_label($db, $clientId)
+{
+    $clientId = (int) $clientId;
+    if ($clientId <= 0) {
+        return '';
+    }
+
+    monday_ensure_client_needs_tables($db);
+    $res = $db->query("SELECT label FROM llx_monday_client_need_client WHERE rowid = $clientId");
+    if ($res && $client = $db->fetch_object($res)) {
+        return (string) $client->label;
+    }
+
+    return '';
+}
+
+function monday_get_client_need_item_labels($db, $rawValue)
+{
+    $ids = json_decode((string) $rawValue, true);
+    if (!is_array($ids)) {
+        return [];
+    }
+
+    $ids = array_values(array_filter(array_map('intval', $ids)));
+    if (empty($ids)) {
+        return [];
+    }
+
+    monday_ensure_client_needs_tables($db);
+    $labels = [];
+    $res = $db->query("SELECT rowid, label
+                         FROM llx_monday_client_need_item
+                        WHERE rowid IN (".implode(',', $ids).")
+                     ORDER BY position ASC, rowid ASC");
+    while ($res && $need = $db->fetch_object($res)) {
+        $labels[] = (string) $need->label;
+    }
+
+    return $labels;
+}
+
+function monday_ensure_kpi_recruitment_client_need_columns($db, $workspaceId)
+{
+    $workspaceId = (int) $workspaceId;
+    $kpiWorkspaceId = monday_get_kpi_recruitment_workspace_id($db);
+    if ($workspaceId <= 0 || $workspaceId !== $kpiWorkspaceId) {
+        return;
+    }
+
+    $resGroups = $db->query("SELECT rowid FROM llx_myworkspace_group WHERE fk_workspace = $workspaceId");
+    while ($resGroups && $group = $db->fetch_object($resGroups)) {
+        $groupId = (int) $group->rowid;
+        $existing = [];
+        $resColumns = $db->query("SELECT rowid, label, type FROM llx_myworkspace_column WHERE fk_group = $groupId");
+        while ($resColumns && $column = $db->fetch_object($resColumns)) {
+            $existing[monday_normalize_kpi_label($column->label)] = [
+                'id' => (int) $column->rowid,
+                'type' => (string) $column->type,
+            ];
+        }
+
+        $resPosition = $db->query("SELECT MAX(position) as m FROM llx_myworkspace_column WHERE fk_group = $groupId");
+        $position = ($resPosition && $row = $db->fetch_object($resPosition)) ? (int) $row->m : -1;
+
+        if (!isset($existing['client'])) {
+            $position++;
+            $db->query("INSERT INTO llx_myworkspace_column (fk_workspace, fk_group, label, position, type) VALUES ($workspaceId, $groupId, 'Client', $position, 'select')");
+        } elseif ($existing['client']['type'] !== 'select') {
+            $db->query("UPDATE llx_myworkspace_column SET type = 'select' WHERE rowid = ".(int) $existing['client']['id']);
+        }
+        if (!isset($existing['besoins']) && !isset($existing['besoin'])) {
+            $position++;
+            $db->query("INSERT INTO llx_myworkspace_column (fk_workspace, fk_group, label, position, type) VALUES ($workspaceId, $groupId, 'Besoins', $position, 'tags')");
+        } else {
+            $needColumn = isset($existing['besoins']) ? $existing['besoins'] : $existing['besoin'];
+            if ($needColumn['type'] !== 'tags') {
+                $db->query("UPDATE llx_myworkspace_column SET type = 'tags' WHERE rowid = ".(int) $needColumn['id']);
+            }
+        }
+    }
+}
+
+function monday_ensure_client_need_workspace_table($db, $workspaceId)
+{
+    $workspaceId = (int) $workspaceId;
+    if ($workspaceId <= 0) {
+        return 0;
+    }
+
+    $resWorkspace = $db->query("SELECT label FROM llx_myworkspace WHERE rowid = $workspaceId");
+    $workspace = $resWorkspace ? $db->fetch_object($resWorkspace) : null;
+    if (!$workspace || !monday_is_client_need_workspace($workspaceId, $workspace->label)) {
+        return 0;
+    }
+
+    $groupLabel = 'Clients - Besoins';
+    $safeGroupLabel = $db->escape($groupLabel);
+    $resGroup = $db->query("SELECT rowid, task_column_label FROM llx_myworkspace_group WHERE fk_workspace = $workspaceId AND label = '$safeGroupLabel'");
+    $group = $resGroup ? $db->fetch_object($resGroup) : null;
+    if (!$group) {
+        $resPosition = $db->query("SELECT MAX(position) as m FROM llx_myworkspace_group WHERE fk_workspace = $workspaceId");
+        $position = ($resPosition && $row = $db->fetch_object($resPosition)) ? ((int) $row->m + 1) : 0;
+        $db->query("INSERT INTO llx_myworkspace_group (fk_workspace, label, position, task_column_label) VALUES ($workspaceId, '$safeGroupLabel', $position, 'Identifiant')");
+        $groupId = (int) $db->last_insert_id('llx_myworkspace_group');
+    } else {
+        $groupId = (int) $group->rowid;
+        if ((string) $group->task_column_label !== 'Identifiant') {
+            $db->query("UPDATE llx_myworkspace_group SET task_column_label = 'Identifiant' WHERE rowid = $groupId");
+        }
+    }
+
+    if ($groupId <= 0) {
+        return 0;
+    }
+
+    $existing = [];
+    $resColumns = $db->query("SELECT rowid, label, type FROM llx_myworkspace_column WHERE fk_group = $groupId");
+    while ($resColumns && $column = $db->fetch_object($resColumns)) {
+        $existing[monday_normalize_kpi_label($column->label)] = [
+            'id' => (int) $column->rowid,
+            'type' => (string) $column->type,
+        ];
+    }
+
+    $resPosition = $db->query("SELECT MAX(position) as m FROM llx_myworkspace_column WHERE fk_group = $groupId");
+    $position = ($resPosition && $row = $db->fetch_object($resPosition)) ? (int) $row->m : -1;
+
+    if (!isset($existing['client'])) {
+        $position++;
+        $db->query("INSERT INTO llx_myworkspace_column (fk_workspace, fk_group, label, position, type) VALUES ($workspaceId, $groupId, 'Client', $position, 'select')");
+    } elseif ($existing['client']['type'] !== 'select') {
+        $db->query("UPDATE llx_myworkspace_column SET type = 'select' WHERE rowid = ".(int) $existing['client']['id']);
+    }
+
+    if (!isset($existing['besoins']) && !isset($existing['besoin'])) {
+        $position++;
+        $db->query("INSERT INTO llx_myworkspace_column (fk_workspace, fk_group, label, position, type) VALUES ($workspaceId, $groupId, 'Besoins', $position, 'text')");
+    }
+
+    return $groupId;
 }
 
 function monday_get_missing_required_mail_fields($eventType, $subject, $body)
@@ -577,6 +871,7 @@ function monday_get_kpi_columns($db, $workspaceId = 0)
         'actioncorrective' => 'action_corrective',
         'actionclient' => 'action_client',
         'besoin' => 'besoin',
+        'besoins' => 'besoin',
     ];
 
     $workspaceCondition = '';
@@ -1457,7 +1752,7 @@ function monday_get_users_for_export($db)
     return $users;
 }
 
-function monday_format_export_cell_value($value, $column, $optionsByColumn, $usersById)
+function monday_format_export_cell_value($db, $value, $column, $optionsByColumn, $usersById)
 {
     $value = (string) $value;
     if ($value === '') {
@@ -1465,12 +1760,25 @@ function monday_format_export_cell_value($value, $column, $optionsByColumn, $use
     }
 
     $columnId = (int) $column['id'];
+    $normalizedColumn = monday_normalize_kpi_label($column['label']);
     switch ($column['type']) {
         case 'select':
+            if ($normalizedColumn === 'client') {
+                $clientLabel = monday_get_client_need_client_label($db, (int) $value);
+                if ($clientLabel !== '') {
+                    return $clientLabel;
+                }
+            }
             $optionId = (int) $value;
             return isset($optionsByColumn[$columnId][$optionId]) ? $optionsByColumn[$columnId][$optionId] : $value;
 
         case 'tags':
+            if ($normalizedColumn === 'besoin' || $normalizedColumn === 'besoins') {
+                $needLabels = monday_get_client_need_item_labels($db, $value);
+                if (!empty($needLabels)) {
+                    return implode(', ', $needLabels);
+                }
+            }
             $tagIds = json_decode($value, true);
             if (!is_array($tagIds)) {
                 return $value;
@@ -1535,6 +1843,30 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['tasks_group_id'])) {
     }
     header('Content-Type: application/json');
     echo json_encode($out);
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['client_need_dynamic_options'])) {
+    if (!isset($_GET['token']) || $_GET['token'] !== $_SESSION['newtoken']) {
+        accessforbidden('CSRF token invalid');
+    }
+
+    header('Content-Type: application/json');
+    $type = (string) $_GET['client_need_dynamic_options'];
+    if ($type === 'clients') {
+        echo json_encode(monday_get_client_need_client_options($db, (int) ($_GET['city_id'] ?? 0)));
+        exit;
+    }
+    if ($type === 'cities') {
+        echo json_encode(monday_get_client_need_city_options($db));
+        exit;
+    }
+    if ($type === 'needs') {
+        echo json_encode(monday_get_client_need_running_options($db, (int) ($_GET['client_id'] ?? 0)));
+        exit;
+    }
+
+    echo json_encode([]);
     exit;
 }
 
@@ -1643,48 +1975,78 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['client_need_candidates_gr
     $needs = [];
     $clients = [];
     $needsByClient = [];
-    $currentClientId = 0;
-    $taskRes = $db->query("SELECT rowid, label, parent_task_id, level_depth
-                             FROM llx_myworkspace_task
-                            WHERE fk_group = ".$gid."
-                         ORDER BY position ASC, rowid ASC");
-    while ($taskRes && $task = $db->fetch_object($taskRes)) {
-        $taskId = (int) $task->rowid;
-        $levelDepth = (int) $task->level_depth;
-        $parentTaskId = !empty($task->parent_task_id) ? (int) $task->parent_task_id : 0;
-        $isNeed = $parentTaskId > 0 || $levelDepth > 0;
-        if (!$isNeed) {
-            $currentClientId = $taskId;
-            $clients[$taskId] = [
-                'id' => $taskId,
-                'label' => (string) $task->label,
-                'normalized' => monday_normalize_kpi_label($task->label),
-            ];
-        } else {
-            $parentId = $parentTaskId > 0 ? $parentTaskId : $currentClientId;
-            if ($parentId <= 0) {
-                continue;
-            }
-            $needs[$taskId] = [
-                'id' => $taskId,
-                'label' => (string) $task->label,
-                'parent_id' => $parentId,
-                'candidates' => [],
-                'candidate_ids' => [],
-            ];
-            if (isset($clients[$parentId])) {
-                $clientKey = $clients[$parentId]['normalized'];
+    $baseClientId = (int) ($_GET['client_base_id'] ?? 0);
+    if ($baseClientId > 0) {
+        monday_ensure_client_needs_tables($db);
+        $clientRes = $db->query("SELECT rowid, label FROM llx_monday_client_need_client WHERE rowid = $baseClientId");
+        $client = $clientRes ? $db->fetch_object($clientRes) : null;
+        if ($client) {
+            $clientKey = monday_normalize_kpi_label($client->label);
+            $needRes = $db->query("SELECT rowid, label FROM llx_monday_client_need_item WHERE fk_client = $baseClientId AND status = 'running' ORDER BY position ASC, rowid ASC");
+            while ($needRes && $need = $db->fetch_object($needRes)) {
+                $needId = (int) $need->rowid;
+                if ($requestedNeedId > 0 && $needId !== $requestedNeedId) {
+                    continue;
+                }
+                $needs[$needId] = [
+                    'id' => $needId,
+                    'label' => (string) $need->label,
+                    'parent_id' => 0,
+                    'candidates' => [],
+                    'candidate_ids' => [],
+                ];
                 if ($clientKey !== '') {
                     if (!isset($needsByClient[$clientKey])) {
                         $needsByClient[$clientKey] = [];
                     }
-                    $needsByClient[$clientKey][] = $taskId;
+                    $needsByClient[$clientKey][] = $needId;
+                }
+            }
+        }
+    } else {
+        $currentClientId = 0;
+        $taskRes = $db->query("SELECT rowid, label, parent_task_id, level_depth
+                                 FROM llx_myworkspace_task
+                                WHERE fk_group = ".$gid."
+                             ORDER BY position ASC, rowid ASC");
+        while ($taskRes && $task = $db->fetch_object($taskRes)) {
+            $taskId = (int) $task->rowid;
+            $levelDepth = (int) $task->level_depth;
+            $parentTaskId = !empty($task->parent_task_id) ? (int) $task->parent_task_id : 0;
+            $isNeed = $parentTaskId > 0 || $levelDepth > 0;
+            if (!$isNeed) {
+                $currentClientId = $taskId;
+                $clients[$taskId] = [
+                    'id' => $taskId,
+                    'label' => (string) $task->label,
+                    'normalized' => monday_normalize_kpi_label($task->label),
+                ];
+            } else {
+                $parentId = $parentTaskId > 0 ? $parentTaskId : $currentClientId;
+                if ($parentId <= 0) {
+                    continue;
+                }
+                $needs[$taskId] = [
+                    'id' => $taskId,
+                    'label' => (string) $task->label,
+                    'parent_id' => $parentId,
+                    'candidates' => [],
+                    'candidate_ids' => [],
+                ];
+                if (isset($clients[$parentId])) {
+                    $clientKey = $clients[$parentId]['normalized'];
+                    if ($clientKey !== '') {
+                        if (!isset($needsByClient[$clientKey])) {
+                            $needsByClient[$clientKey] = [];
+                        }
+                        $needsByClient[$clientKey][] = $taskId;
+                    }
                 }
             }
         }
     }
 
-    if ($requestedNeedId > 0) {
+    if ($requestedNeedId > 0 && $baseClientId <= 0) {
         if (empty($needs[$requestedNeedId])) {
             echo json_encode(['enabled' => true, 'candidates_by_need' => []]);
             exit;
@@ -1771,7 +2133,10 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['client_need_candidates_gr
         }
 
         $clientValue = isset($candidateTask['cells'][$clientColumnId]) ? $candidateTask['cells'][$clientColumnId] : '';
-        $clientLabel = monday_get_kpi_cell_label($clientValue, $options);
+        $clientLabel = monday_get_client_need_client_label($db, (int) $clientValue);
+        if ($clientLabel === '') {
+            $clientLabel = monday_get_kpi_cell_label($clientValue, $options);
+        }
         $clientKey = monday_normalize_kpi_label($clientLabel);
         if ($clientKey === '') {
             continue;
@@ -1781,8 +2146,19 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['client_need_candidates_gr
         }
 
         $needValue = isset($candidateTask['cells'][$needColumnId]) ? $candidateTask['cells'][$needColumnId] : '';
-        $candidateNeedLabels = monday_split_kpi_needs(monday_get_kpi_cell_label($needValue, $options));
+        $candidateNeedLabels = monday_get_client_need_item_labels($db, $needValue);
         if (empty($candidateNeedLabels)) {
+            $candidateNeedLabels = monday_split_kpi_needs(monday_get_kpi_cell_label($needValue, $options));
+        }
+        if (empty($candidateNeedLabels)) {
+            continue;
+        }
+
+        $returnColumnId = isset($groupColumns['retour_client']) ? (int) $groupColumns['retour_client'] : 0;
+        $returnClientValue = $returnColumnId && isset($candidateTask['cells'][$returnColumnId]) ? $candidateTask['cells'][$returnColumnId] : '';
+        $returnClientLabel = monday_get_kpi_cell_label($returnClientValue, $options);
+        $returnClientKey = monday_normalize_kpi_label($returnClientLabel);
+        if (in_array($returnClientKey, ['positif', 'negatif'], true)) {
             continue;
         }
 
@@ -1860,6 +2236,146 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['kpi_export_groups'])) {
     header('Content-Type: application/json');
     echo json_encode($groups);
     exit;
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['client_needs_board'])) {
+    if (!isset($_GET['token']) || !hash_equals((string) $_SESSION['newtoken'], (string) $_GET['token'])) {
+        monday_json_response(['success' => false, 'message' => 'CSRF token invalid'], 403);
+    }
+    if (!monday_user_can_read_workspace()) {
+        monday_json_response(['success' => false, 'message' => 'Permission denied'], 403);
+    }
+
+    monday_json_response([
+        'success' => true,
+        'clients' => monday_get_client_needs_payload($db),
+    ]);
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['client_needs_action'])) {
+    if (!isset($_POST['token']) || !hash_equals((string) $_SESSION['newtoken'], (string) $_POST['token'])) {
+        monday_json_response(['success' => false, 'message' => 'CSRF token invalid'], 403);
+    }
+    if (!monday_user_can_read_workspace()) {
+        monday_json_response(['success' => false, 'message' => 'Permission denied'], 403);
+    }
+
+    $action = (string) $_POST['client_needs_action'];
+    monday_ensure_client_needs_tables($db);
+
+    if ($action === 'add_client') {
+        $label = trim((string) ($_POST['label'] ?? ''));
+        if ($label === '' || dol_strlen($label) > 255) {
+            monday_json_response(['success' => false, 'message' => 'Nom client invalide.'], 400);
+        }
+        $safeLabel = $db->escape($label);
+        $resPosition = $db->query("SELECT MAX(position) as m FROM llx_monday_client_need_client");
+        $position = ($resPosition && $row = $db->fetch_object($resPosition)) ? ((int) $row->m + 1) : 0;
+        $datec = date('Y-m-d H:i:s');
+        $db->query("INSERT INTO llx_monday_client_need_client (label, position, datec) VALUES ('$safeLabel', $position, '$datec')");
+        monday_json_response(['success' => true, 'clients' => monday_get_client_needs_payload($db)]);
+    }
+
+    if ($action === 'add_need') {
+        $clientId = (int) ($_POST['client_id'] ?? 0);
+        $label = trim((string) ($_POST['label'] ?? ''));
+        if ($clientId <= 0 || $label === '' || dol_strlen($label) > 255) {
+            monday_json_response(['success' => false, 'message' => 'Besoin invalide.'], 400);
+        }
+        $resClient = $db->query("SELECT rowid FROM llx_monday_client_need_client WHERE rowid = $clientId");
+        if (!$resClient || !$db->fetch_object($resClient)) {
+            monday_json_response(['success' => false, 'message' => 'Client introuvable.'], 404);
+        }
+        $safeLabel = $db->escape($label);
+        $resPosition = $db->query("SELECT MAX(position) as m FROM llx_monday_client_need_item WHERE fk_client = $clientId AND status = 'running'");
+        $position = ($resPosition && $row = $db->fetch_object($resPosition)) ? ((int) $row->m + 1) : 0;
+        $datec = date('Y-m-d H:i:s');
+        $db->query("INSERT INTO llx_monday_client_need_item (fk_client, label, status, position, datec) VALUES ($clientId, '$safeLabel', 'running', $position, '$datec')");
+        monday_json_response(['success' => true, 'clients' => monday_get_client_needs_payload($db)]);
+    }
+
+    if ($action === 'update_client_city') {
+        $clientId = (int) ($_POST['client_id'] ?? 0);
+        $cityId = (int) ($_POST['city_id'] ?? 0);
+        if ($clientId <= 0) {
+            monday_json_response(['success' => false, 'message' => 'Client invalide.'], 400);
+        }
+        if ($cityId > 0) {
+            $resCity = $db->query("SELECT rowid FROM llx_monday_client_need_city_option WHERE rowid = $cityId");
+            if (!$resCity || !$db->fetch_object($resCity)) {
+                monday_json_response(['success' => false, 'message' => 'Ville introuvable.'], 404);
+            }
+        }
+
+        $db->query("UPDATE llx_monday_client_need_client SET fk_city_option = $cityId WHERE rowid = $clientId");
+        monday_json_response(['success' => true, 'clients' => monday_get_client_needs_payload($db)]);
+    }
+
+    if ($action === 'add_city_option') {
+        $label = trim((string) ($_POST['label'] ?? ''));
+        if ($label === '' || dol_strlen($label) > 255) {
+            monday_json_response(['success' => false, 'message' => 'Ville invalide.'], 400);
+        }
+
+        $safeLabel = $db->escape($label);
+        $resExisting = $db->query("SELECT rowid FROM llx_monday_client_need_city_option WHERE label = '$safeLabel'");
+        if ($resExisting && $existing = $db->fetch_object($resExisting)) {
+            monday_json_response(['success' => true, 'city_id' => (int) $existing->rowid, 'cities' => monday_get_client_need_city_options($db)]);
+        }
+
+        $resPosition = $db->query("SELECT MAX(position) as m FROM llx_monday_client_need_city_option");
+        $position = ($resPosition && $row = $db->fetch_object($resPosition)) ? ((int) $row->m + 1) : 0;
+        $db->query("INSERT INTO llx_monday_client_need_city_option (label, position) VALUES ('$safeLabel', $position)");
+        monday_json_response(['success' => true, 'city_id' => (int) $db->last_insert_id('llx_monday_client_need_city_option'), 'cities' => monday_get_client_need_city_options($db)]);
+    }
+
+    if ($action === 'move_need') {
+        $needId = (int) ($_POST['need_id'] ?? 0);
+        $status = (string) ($_POST['status'] ?? '');
+        if ($needId <= 0 || !in_array($status, ['running', 'archived'], true)) {
+            monday_json_response(['success' => false, 'message' => 'Déplacement invalide.'], 400);
+        }
+        $resNeed = $db->query("SELECT fk_client FROM llx_monday_client_need_item WHERE rowid = $needId");
+        $need = $resNeed ? $db->fetch_object($resNeed) : null;
+        if (!$need) {
+            monday_json_response(['success' => false, 'message' => 'Besoin introuvable.'], 404);
+        }
+        $clientId = (int) $need->fk_client;
+        $safeStatus = $db->escape($status);
+        $resPosition = $db->query("SELECT MAX(position) as m FROM llx_monday_client_need_item WHERE fk_client = $clientId AND status = '$safeStatus'");
+        $position = ($resPosition && $row = $db->fetch_object($resPosition)) ? ((int) $row->m + 1) : 0;
+        $db->query("UPDATE llx_monday_client_need_item SET status = '$safeStatus', position = $position WHERE rowid = $needId");
+        monday_json_response(['success' => true, 'clients' => monday_get_client_needs_payload($db)]);
+    }
+
+    if ($action === 'delete_need') {
+        $needId = (int) ($_POST['need_id'] ?? 0);
+        if ($needId <= 0) {
+            monday_json_response(['success' => false, 'message' => 'Besoin invalide.'], 400);
+        }
+
+        $db->query("DELETE FROM llx_monday_client_need_item WHERE rowid = $needId");
+        monday_json_response(['success' => true, 'clients' => monday_get_client_needs_payload($db)]);
+    }
+
+    if ($action === 'delete_client') {
+        $clientId = (int) ($_POST['client_id'] ?? 0);
+        if ($clientId <= 0) {
+            monday_json_response(['success' => false, 'message' => 'Client invalide.'], 400);
+        }
+
+        $db->begin();
+        $resNeeds = $db->query("DELETE FROM llx_monday_client_need_item WHERE fk_client = $clientId");
+        $resClient = $db->query("DELETE FROM llx_monday_client_need_client WHERE rowid = $clientId");
+        if (!$resNeeds || !$resClient) {
+            $db->rollback();
+            monday_json_response(['success' => false, 'message' => 'Suppression impossible.'], 500);
+        }
+        $db->commit();
+        monday_json_response(['success' => true, 'clients' => monday_get_client_needs_payload($db)]);
+    }
+
+    monday_json_response(['success' => false, 'message' => 'Action inconnue.'], 400);
 }
 
 if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['kpi_export_csv'])) {
@@ -1994,7 +2510,7 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['kpi_export_csv'])) {
             $row = [$task['label']];
             foreach ($group['columns'] as $column) {
                 $value = isset($task['cells'][$column['id']]) ? $task['cells'][$column['id']] : '';
-                $row[] = monday_format_export_cell_value($value, $column, $optionsByColumn, $usersById);
+                $row[] = monday_format_export_cell_value($db, $value, $column, $optionsByColumn, $usersById);
             }
             monday_csv_put_row($out, $row);
         }
@@ -2061,6 +2577,9 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['kpi_recruitment'])) {
     ];
 
     $clientChoices = [];
+    foreach (monday_get_client_need_client_options($db) as $clientOption) {
+        $clientChoices[$clientOption['label']] = true;
+    }
     foreach ($kpiColumns as $column) {
         if ($column['metric'] !== 'client') {
             continue;
@@ -2144,7 +2663,10 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['kpi_recruitment'])) {
 
         $clientColumnId = isset($groupColumns['client']) ? $groupColumns['client'] : 0;
         $clientOptionId = $clientColumnId && isset($task['cells'][$clientColumnId]) ? (int) $task['cells'][$clientColumnId] : 0;
-        $clientLabel = isset($options[$clientOptionId]) ? $options[$clientOptionId]['label'] : '';
+        $clientLabel = monday_get_client_need_client_label($db, $clientOptionId);
+        if ($clientLabel === '') {
+            $clientLabel = isset($options[$clientOptionId]) ? $options[$clientOptionId]['label'] : '';
+        }
 
         if ($clientFilter !== '' && strcasecmp($clientLabel, $clientFilter) !== 0) {
             continue;
@@ -2336,6 +2858,40 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['add_task_group_id'], $_
     }
     exit;
 }
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_client_need_workspace_row_group_id'])) {
+    if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
+    $gid = (int) $_POST['add_client_need_workspace_row_group_id'];
+
+    $resGroup = $db->query("SELECT g.fk_workspace, w.label AS workspace_label
+                              FROM llx_myworkspace_group g
+                              JOIN llx_myworkspace w ON w.rowid = g.fk_workspace
+                             WHERE g.rowid = $gid");
+    $group = $resGroup ? $db->fetch_object($resGroup) : null;
+    if (!$group || !monday_is_client_need_workspace((int) $group->fk_workspace, $group->workspace_label)) {
+        accessforbidden('Invalid workspace');
+    }
+
+    $managedGroupId = monday_ensure_client_need_workspace_table($db, (int) $group->fk_workspace);
+    if ($managedGroupId !== $gid) {
+        accessforbidden('Invalid table');
+    }
+
+    $maxNumber = 0;
+    $resTasks = $db->query("SELECT label FROM llx_myworkspace_task WHERE fk_group = $gid AND parent_task_id IS NULL");
+    while ($resTasks && $task = $db->fetch_object($resTasks)) {
+        if (preg_match('/^CLI-(\d+)$/', (string) $task->label, $matches)) {
+            $maxNumber = max($maxNumber, (int) $matches[1]);
+        }
+    }
+
+    $label = sprintf('CLI-%04d', $maxNumber + 1);
+    $safeLabel = $db->escape($label);
+    $datec = date('Y-m-d H:i:s');
+    $db->query("UPDATE llx_myworkspace_task SET position = position + 1 WHERE fk_group = $gid AND parent_task_id IS NULL");
+    $db->query("INSERT INTO llx_myworkspace_task (fk_group, label, position, datec, level_depth) VALUES ($gid, '$safeLabel', 0, '$datec', 0)");
+    exit;
+}
 if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['rename_task_id'], $_POST['rename_task_label'])) {
     if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
     $tid   = (int)$_POST['rename_task_id'];
@@ -2425,6 +2981,14 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['rename_group_id'],$_POS
     exit;
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ensure_client_need_workspace_table'])) {
+    if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
+    $workspaceId = (int) $_POST['ensure_client_need_workspace_table'];
+    header('Content-Type: application/json');
+    echo json_encode(['group_id' => monday_ensure_client_need_workspace_table($db, $workspaceId)]);
+    exit;
+}
+
 // Dupliquer un groupe vers un autre workspace
 if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['duplicate_group_id'], $_POST['target_workspace_id'])) {
     if ($_POST['token']!==$_SESSION['newtoken']) accessforbidden('CSRF token invalid');
@@ -2499,6 +3063,15 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['update_task_column_labe
 
 if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['columns_group_id'])) {
     $gid = (int)$_GET['columns_group_id'];
+    $resWorkspace = $db->query("SELECT g.fk_workspace, w.label AS workspace_label
+                                  FROM llx_myworkspace_group g
+                                  JOIN llx_myworkspace w ON w.rowid = g.fk_workspace
+                                 WHERE g.rowid = $gid");
+    $workspaceIdForColumns = 0;
+    if ($resWorkspace && $workspace = $db->fetch_object($resWorkspace)) {
+        $workspaceIdForColumns = (int) $workspace->fk_workspace;
+        monday_ensure_kpi_recruitment_client_need_columns($db, $workspaceIdForColumns);
+    }
     $res = $db->query("SELECT rowid, label, type FROM llx_myworkspace_column WHERE fk_group = $gid ORDER BY position ASC");
     $out = [];
     while ($o = $db->fetch_object($res)) {
@@ -3156,6 +3729,8 @@ $formtoken = newToken();
 $mondayJsConfig = [
     'clientNeedWorkspaceIds' => array_map('intval', array_keys(monday_parse_workspace_id_list(monday_get_global_string('MONDAY_CLIENT_NEED_WORKSPACE_IDS', '')))),
     'clientNeedWorkspaceLabels' => monday_get_configured_workspace_labels('MONDAY_CLIENT_NEED_WORKSPACE_LABELS', monday_get_default_client_need_workspace_labels()),
+    'kpiRecruitmentWorkspaceId' => monday_get_kpi_recruitment_workspace_id($db),
+    'kpiRecruitmentWorkspaceLabels' => monday_get_configured_workspace_labels('MONDAY_KPI_RECRUITMENT_WORKSPACE_LABELS', monday_get_default_kpi_recruitment_workspace_labels()),
 ];
 
 $leftmenu = '<h3>Espaces de travail</h3>'
@@ -3172,6 +3747,7 @@ foreach ($workspaces as $w) {
 }
 $leftmenu .= '</ul>';
 $leftmenu .= planity_kanban_render_left_menu();
+$leftmenu .= '<div class="workspace-client-needs-entry" id="client-needs-board-link">Clients - Besoins</div>';
 $leftmenu .= '<div class="workspace-kpi-entry" id="kpi-dashboard-link">Tableaux KPI</div>';
 
 ob_start();
