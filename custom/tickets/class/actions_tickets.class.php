@@ -35,7 +35,7 @@ class ActionsTickets extends CommonHookActions
 	 */
 	public function doActions($parameters, &$object, &$action, $hookmanager)
 	{
-		global $extrafields, $langs, $user;
+		global $extrafields, $langs, $search_array_options, $user;
 
 		$langs->load('tickets@tickets');
 
@@ -50,6 +50,7 @@ class ActionsTickets extends CommonHookActions
 					$allowedTemplateFields = $this->fetchTemplateExtraFieldKeys($templateid);
 					$this->filterTicketListExtraFields($extrafields, $parameters['arrayfields'], $object->table_element, $allowedTemplateFields);
 					$this->filterTicketListNativeFields($parameters['arrayfields']);
+					$this->filterTicketListSearchArrayOptions($search_array_options, $object->table_element);
 				}
 			}
 
@@ -391,6 +392,22 @@ class ActionsTickets extends CommonHookActions
 				);
 			}
 			$arrayfields[$arraykey]['checked'] = 1;
+		}
+	}
+
+	private function filterTicketListSearchArrayOptions(&$searchArrayOptions, $elementtype)
+	{
+		global $extrafields;
+
+		if (empty($searchArrayOptions) || !is_array($searchArrayOptions) || !is_object($extrafields)) {
+			return;
+		}
+
+		foreach (array_keys($searchArrayOptions) as $key) {
+			$attrname = preg_replace('/^search_options_/', '', $key);
+			if (empty($extrafields->attributes[$elementtype]['label'][$attrname])) {
+				unset($searchArrayOptions[$key]);
+			}
 		}
 	}
 
