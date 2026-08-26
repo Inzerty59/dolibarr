@@ -294,9 +294,16 @@ function monday_ensure_client_needs_tables($db)
     $db->query("CREATE TABLE IF NOT EXISTS llx_monday_client_need_client (
         rowid integer AUTO_INCREMENT PRIMARY KEY,
         label varchar(255) NOT NULL,
+        fk_city_option integer NOT NULL DEFAULT 0,
         position integer NOT NULL DEFAULT 0,
+        status varchar(20) NOT NULL DEFAULT 'active',
+        mail varchar(255) DEFAULT NULL,
+        contact varchar(255) DEFAULT NULL,
+        telephone varchar(255) DEFAULT NULL,
+        poste_occupe varchar(255) DEFAULT NULL,
         datec datetime NOT NULL,
-        tms timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        tms timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_monday_client_need_client_status (status)
     ) ENGINE=innodb DEFAULT CHARSET=utf8mb4");
 
     $db->query("CREATE TABLE IF NOT EXISTS llx_monday_client_need_item (
@@ -314,6 +321,24 @@ function monday_ensure_client_needs_tables($db)
     $resCityColumn = $db->query("SHOW COLUMNS FROM llx_monday_client_need_client LIKE 'fk_city_option'");
     if (!$resCityColumn || !$db->fetch_object($resCityColumn)) {
         $db->query("ALTER TABLE llx_monday_client_need_client ADD COLUMN fk_city_option integer NOT NULL DEFAULT 0 AFTER label");
+    }
+
+    $resStatusColumn = $db->query("SHOW COLUMNS FROM llx_monday_client_need_client LIKE 'status'");
+    if (!$resStatusColumn || !$db->fetch_object($resStatusColumn)) {
+        $db->query("ALTER TABLE llx_monday_client_need_client ADD COLUMN status varchar(20) NOT NULL DEFAULT 'active' AFTER position");
+    }
+
+    $clientTextColumns = [
+        'mail' => "ALTER TABLE llx_monday_client_need_client ADD COLUMN mail varchar(255) DEFAULT NULL AFTER status",
+        'contact' => "ALTER TABLE llx_monday_client_need_client ADD COLUMN contact varchar(255) DEFAULT NULL AFTER mail",
+        'telephone' => "ALTER TABLE llx_monday_client_need_client ADD COLUMN telephone varchar(255) DEFAULT NULL AFTER contact",
+        'poste_occupe' => "ALTER TABLE llx_monday_client_need_client ADD COLUMN poste_occupe varchar(255) DEFAULT NULL AFTER telephone",
+    ];
+    foreach ($clientTextColumns as $columnName => $alterSql) {
+        $resTextColumn = $db->query("SHOW COLUMNS FROM llx_monday_client_need_client LIKE '".$db->escape($columnName)."'");
+        if (!$resTextColumn || !$db->fetch_object($resTextColumn)) {
+            $db->query($alterSql);
+        }
     }
 
     $db->query("CREATE TABLE IF NOT EXISTS llx_monday_client_need_city_option (
@@ -349,17 +374,22 @@ function monday_get_client_need_city_options($db)
     return $out;
 }
 
-function monday_get_client_needs_payload($db)
+function monday_get_client_needs_payload($db, $clientStatus = 'active')
 {
     monday_ensure_client_needs_tables($db);
+    $safeStatus = $db->escape($clientStatus === 'archived' ? 'archived' : 'active');
 
     $clients = [];
-    $res = $db->query("SELECT rowid, label, fk_city_option FROM llx_monday_client_need_client ORDER BY position ASC, rowid ASC");
+    $res = $db->query("SELECT rowid, label, fk_city_option, mail, contact, telephone, poste_occupe FROM llx_monday_client_need_client WHERE status = '$safeStatus' ORDER BY position ASC, rowid ASC");
     while ($res && $client = $db->fetch_object($res)) {
         $clients[(int) $client->rowid] = [
             'id' => (int) $client->rowid,
             'label' => (string) $client->label,
             'city_id' => (int) $client->fk_city_option,
+            'mail' => (string) $client->mail,
+            'contact' => (string) $client->contact,
+            'telephone' => (string) $client->telephone,
+            'poste_occupe' => (string) $client->poste_occupe,
             'running' => [],
             'archived' => [],
         ];
@@ -393,8 +423,8 @@ function monday_get_client_need_client_options($db, $cityId = 0)
 
     $out = [];
     $cityId = (int) $cityId;
-    $cityCondition = $cityId > 0 ? " WHERE fk_city_option = $cityId" : '';
-    $res = $db->query("SELECT rowid, label FROM llx_monday_client_need_client".$cityCondition." ORDER BY position ASC, rowid ASC");
+    $cityCondition = $cityId > 0 ? " AND fk_city_option = $cityId" : '';
+    $res = $db->query("SELECT rowid, label FROM llx_monday_client_need_client WHERE status = 'active'".$cityCondition." ORDER BY position ASC, rowid ASC");
     while ($res && $client = $db->fetch_object($res)) {
         $out[] = [
             'id' => (int) $client->rowid,
@@ -416,10 +446,11 @@ function monday_get_client_need_running_options($db, $clientId)
     }
 
     $out = [];
-    $res = $db->query("SELECT rowid, label
-                         FROM llx_monday_client_need_item
-                        WHERE fk_client = $clientId AND status = 'running'
-                     ORDER BY position ASC, rowid ASC");
+    $res = $db->query("SELECT i.rowid, i.label
+                         FROM llx_monday_client_need_item i
+                         JOIN llx_monday_client_need_client c ON c.rowid = i.fk_client
+                        WHERE i.fk_client = $clientId AND i.status = 'running' AND c.status = 'active'
+                     ORDER BY i.position ASC, i.rowid ASC");
     while ($res && $need = $db->fetch_object($res)) {
         $out[] = [
             'id' => (int) $need->rowid,
@@ -1978,7 +2009,7 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['client_need_candidates_gr
     $baseClientId = (int) ($_GET['client_base_id'] ?? 0);
     if ($baseClientId > 0) {
         monday_ensure_client_needs_tables($db);
-        $clientRes = $db->query("SELECT rowid, label FROM llx_monday_client_need_client WHERE rowid = $baseClientId");
+        $clientRes = $db->query("SELECT rowid, label FROM llx_monday_client_need_client WHERE rowid = $baseClientId AND status = 'active'");
         $client = $clientRes ? $db->fetch_object($clientRes) : null;
         if ($client) {
             $clientKey = monday_normalize_kpi_label($client->label);
@@ -2249,6 +2280,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['client_needs_board'])) 
     monday_json_response([
         'success' => true,
         'clients' => monday_get_client_needs_payload($db),
+        'archived_clients' => monday_get_client_needs_payload($db, 'archived'),
     ]);
 }
 
@@ -2274,6 +2306,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['client_needs_action']
         $datec = date('Y-m-d H:i:s');
         $db->query("INSERT INTO llx_monday_client_need_client (label, position, datec) VALUES ('$safeLabel', $position, '$datec')");
         monday_json_response(['success' => true, 'clients' => monday_get_client_needs_payload($db)]);
+    }
+
+    if ($action === 'update_client_label') {
+        $clientId = (int) ($_POST['client_id'] ?? 0);
+        $label = trim((string) ($_POST['label'] ?? ''));
+        if ($clientId <= 0 || $label === '' || dol_strlen($label) > 255) {
+            monday_json_response(['success' => false, 'message' => 'Nom client invalide.'], 400);
+        }
+
+        $safeLabel = $db->escape($label);
+        $db->query("UPDATE llx_monday_client_need_client SET label = '$safeLabel' WHERE rowid = $clientId");
+        monday_json_response(['success' => true, 'clients' => monday_get_client_needs_payload($db), 'archived_clients' => monday_get_client_needs_payload($db, 'archived')]);
+    }
+
+    if ($action === 'update_client_text_field') {
+        $clientId = (int) ($_POST['client_id'] ?? 0);
+        $field = (string) ($_POST['field'] ?? '');
+        $value = trim((string) ($_POST['value'] ?? ''));
+        $allowedFields = ['mail', 'contact', 'telephone', 'poste_occupe'];
+        if ($clientId <= 0 || !in_array($field, $allowedFields, true) || dol_strlen($value) > 255) {
+            monday_json_response(['success' => false, 'message' => 'Champ client invalide.'], 400);
+        }
+
+        $safeValue = $db->escape($value);
+        $db->query("UPDATE llx_monday_client_need_client SET ".$field." = '$safeValue' WHERE rowid = $clientId");
+        monday_json_response(['success' => true]);
     }
 
     if ($action === 'add_need') {
@@ -2346,6 +2404,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['client_needs_action']
         $position = ($resPosition && $row = $db->fetch_object($resPosition)) ? ((int) $row->m + 1) : 0;
         $db->query("UPDATE llx_monday_client_need_item SET status = '$safeStatus', position = $position WHERE rowid = $needId");
         monday_json_response(['success' => true, 'clients' => monday_get_client_needs_payload($db)]);
+    }
+
+    if ($action === 'archive_client' || $action === 'restore_client') {
+        $clientId = (int) ($_POST['client_id'] ?? 0);
+        if ($clientId <= 0) {
+            monday_json_response(['success' => false, 'message' => 'Client invalide.'], 400);
+        }
+
+        $status = $action === 'archive_client' ? 'archived' : 'active';
+        $safeStatus = $db->escape($status);
+        $resPosition = $db->query("SELECT MAX(position) as m FROM llx_monday_client_need_client WHERE status = '$safeStatus'");
+        $position = ($resPosition && $row = $db->fetch_object($resPosition)) ? ((int) $row->m + 1) : 0;
+        $db->query("UPDATE llx_monday_client_need_client SET status = '$safeStatus', position = $position WHERE rowid = $clientId");
+        monday_json_response(['success' => true, 'clients' => monday_get_client_needs_payload($db), 'archived_clients' => monday_get_client_needs_payload($db, 'archived')]);
     }
 
     if ($action === 'delete_need') {

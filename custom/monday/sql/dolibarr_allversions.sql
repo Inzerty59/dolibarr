@@ -22,8 +22,14 @@ CREATE TABLE IF NOT EXISTS llx_monday_client_need_client (
     label varchar(255) NOT NULL,
     fk_city_option integer NOT NULL DEFAULT 0,
     position integer NOT NULL DEFAULT 0,
+    status varchar(20) NOT NULL DEFAULT 'active',
+    mail varchar(255) DEFAULT NULL,
+    contact varchar(255) DEFAULT NULL,
+    telephone varchar(255) DEFAULT NULL,
+    poste_occupe varchar(255) DEFAULT NULL,
     datec datetime NOT NULL,
-    tms timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    tms timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_monday_client_need_client_status (status)
 ) ENGINE=innodb DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS llx_monday_client_need_city_option (

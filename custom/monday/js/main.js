@@ -2379,6 +2379,22 @@ $(function(){
     }, '', 'Ajouter un besoin');
   });
 
+  $(document).on('click', '.client-needs-edit-client-btn', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const clientId = Number(this.dataset.clientId || 0);
+    const currentLabel = this.dataset.clientLabel || '';
+    if (!clientId) return;
+
+    CustomPopup.prompt('Nom du client :', function(label) {
+      if (!label) return;
+      postClientNeeds('update_client_label', {client_id: clientId, label})
+        .then(loadClientNeedsBoard)
+        .catch(error => CustomPopup.error(error.message, 'Clients - Besoins'));
+    }, currentLabel, 'Modifier le client');
+  });
+
   $(document).on('change', '.client-need-city-select', function() {
     const $select = $(this);
     const clientId = Number($select.data('client-id'));
@@ -2409,6 +2425,20 @@ $(function(){
 
   $(document).on('focus', '.client-need-city-select', function() {
     $(this).data('previous-value', String($(this).val() || ''));
+  });
+
+  $(document).on('blur', '.client-needs-textarea', function() {
+    const $textarea = $(this);
+    const value = String($textarea.val() || '');
+    if (value === String($textarea.data('saved-value') || '')) return;
+
+    postClientNeeds('update_client_text_field', {
+      client_id: Number($textarea.data('client-id') || 0),
+      field: String($textarea.data('field') || ''),
+      value
+    }).then(() => {
+      $textarea.data('saved-value', value);
+    }).catch(error => CustomPopup.error(error.message, 'Clients - Besoins'));
   });
 
   $(document).on('click', '.client-need-delete-btn', function(e) {
@@ -2448,7 +2478,29 @@ $(function(){
       .catch(error => CustomPopup.error(error.message, 'Client - Besoins'));
   });
 
-  $(document).on('click', '.client-needs-delete-client-btn', function(e) {
+  $(document).on('click', '.client-needs-archive-client-btn', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    const clientId = Number(this.dataset.clientId || 0);
+    if (!clientId) return;
+
+    postClientNeeds('archive_client', {client_id: clientId})
+      .then(loadClientNeedsBoard)
+      .catch(error => CustomPopup.error(error.message, 'Clients - Besoins'));
+  });
+
+  $(document).on('click', '.client-needs-restore-client-btn', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    const clientId = Number(this.dataset.clientId || 0);
+    if (!clientId) return;
+
+    postClientNeeds('restore_client', {client_id: clientId})
+      .then(loadClientNeedsBoard)
+      .catch(error => CustomPopup.error(error.message, 'Clients - Besoins'));
+  });
+
+  $(document).on('click', '.client-needs-archive-table .client-needs-delete-client-btn', function(e) {
     e.preventDefault();
     e.stopPropagation();
 
@@ -2463,7 +2515,7 @@ $(function(){
 
     const confirmCell = document.createElement('td');
     confirmCell.className = 'client-needs-row-confirm-cell';
-    confirmCell.colSpan = 5;
+    confirmCell.colSpan = 9;
     confirmCell.innerHTML = `
       <div class="client-needs-row-confirm">
         <span class="client-needs-warning-icon" aria-hidden="true">⚠</span>
@@ -2848,7 +2900,7 @@ $(function(){
     });
   }
 
-  function renderClientNeedPill(need, targetStatus) {
+  function renderClientNeedPill(need) {
     return `
       <span class="client-need-pill client-need-pill-${escapeHtml(need.status || 'running')}" draggable="true" data-need-id="${Number(need.id)}" data-status="${escapeHtml(need.status || 'running')}">
         <span class="client-need-pill-label">${escapeHtml(decodeHtmlEntities(need.label))}</span>
@@ -2872,54 +2924,108 @@ $(function(){
     `;
   }
 
-  function renderClientNeedsBoard(clients, cities = []) {
-    const rows = (clients || []).map(client => `
+  function renderClientNeedsTextInput(client, field) {
+    const value = String(client[field] || '');
+    return `
+      <div class="cell-expandable client-needs-text-cell" data-expanded="0">
+        <textarea class="cell-input cell-textarea client-needs-textarea"
+          data-client-id="${Number(client.id)}"
+          data-field="${escapeHtml(field)}"
+          data-saved-value="${escapeHtml(value)}"
+          rows="1"
+          oninput="handleExpandableTextareaInput(this, false)">${escapeHtml(value)}</textarea>
+        <span class="cell-expandable-toggle" onclick="toggleCellPreview(this, event)" style="display:none;"></span>
+      </div>
+    `;
+  }
+
+  function renderClientNeedsRows(clients, cities = [], archivedTable = false) {
+    return (clients || []).map(client => `
       <tr data-client-id="${Number(client.id)}">
-        <td class="client-needs-client-cell">${escapeHtml(decodeHtmlEntities(client.label))}</td>
+        <td class="client-needs-client-cell">
+          <span class="client-needs-client-label">
+            ${escapeHtml(decodeHtmlEntities(client.label))}
+            <button type="button" class="client-needs-edit-client-btn" data-client-id="${Number(client.id)}" data-client-label="${escapeHtml(decodeHtmlEntities(client.label))}" title="Modifier le client" aria-label="Modifier le client">
+              <span aria-hidden="true">✎</span>
+            </button>
+          </span>
+        </td>
         <td class="client-needs-city-cell">${renderClientNeedCitySelect(client, cities)}</td>
         <td class="client-needs-dropzone" data-status="running">
           <div class="client-needs-cell-content">
             <div class="client-need-pills">
-              ${(client.running || []).map(need => renderClientNeedPill(need, 'archived')).join('')}
+              ${(client.running || []).map(need => renderClientNeedPill(need)).join('')}
             </div>
-            <button type="button" class="client-need-add-btn" data-client-id="${Number(client.id)}" title="Ajouter un besoin" aria-label="Ajouter un besoin">+</button>
+            ${archivedTable ? '' : `<button type="button" class="client-need-add-btn" data-client-id="${Number(client.id)}" title="Ajouter un besoin" aria-label="Ajouter un besoin">+</button>`}
           </div>
         </td>
         <td class="client-needs-dropzone" data-status="archived">
           <div class="client-need-pills">
-            ${(client.archived || []).map(need => renderClientNeedPill(need, 'running')).join('')}
+            ${(client.archived || []).map(need => renderClientNeedPill(need)).join('')}
           </div>
         </td>
+        <td>${renderClientNeedsTextInput(client, 'mail')}</td>
+        <td>${renderClientNeedsTextInput(client, 'contact')}</td>
+        <td>${renderClientNeedsTextInput(client, 'telephone')}</td>
+        <td>${renderClientNeedsTextInput(client, 'poste_occupe')}</td>
         <td class="client-needs-actions-cell">
-          <button type="button" class="client-needs-delete-client-btn" data-client-id="${Number(client.id)}" data-client-label="${escapeHtml(decodeHtmlEntities(client.label))}" title="Supprimer le client" aria-label="Supprimer le client">
-            <span class="fa fa-trash" aria-hidden="true"></span>
-          </button>
+          <span class="client-needs-actions-inner">
+            ${archivedTable ? `
+              <button type="button" class="client-needs-restore-client-btn" data-client-id="${Number(client.id)}" title="Restaurer le client" aria-label="Restaurer le client">
+                <span class="fa fa-undo" aria-hidden="true"></span>
+              </button>
+              <button type="button" class="client-needs-delete-client-btn" data-client-id="${Number(client.id)}" data-client-label="${escapeHtml(decodeHtmlEntities(client.label))}" title="Supprimer le client" aria-label="Supprimer le client">
+                <span class="fa fa-trash" aria-hidden="true"></span>
+              </button>
+            ` : `
+              <button type="button" class="client-needs-archive-client-btn" data-client-id="${Number(client.id)}" title="Archiver le client" aria-label="Archiver le client">
+                <span class="fa fa-archive" aria-hidden="true"></span>
+              </button>
+            `}
+          </span>
         </td>
       </tr>
     `).join('');
+  }
 
+  function renderClientNeedsTable(title, clients, cities = [], archivedTable = false) {
+    const rows = renderClientNeedsRows(clients, cities, archivedTable);
     return `
-      <div class="client-needs-page">
-        <div class="client-needs-header">
-          <h2>Clients - Besoins</h2>
-          <button type="button" id="add-client-need-client" class="add-row-btn">+ Ajouter un client</button>
-        </div>
+      <section class="client-needs-section">
+        ${title ? `<h3>${escapeHtml(title)}</h3>` : ''}
         <div class="client-needs-table-wrap">
-          <table class="client-needs-table">
+          <table class="client-needs-table ${archivedTable ? 'client-needs-archive-table' : ''}">
             <thead>
               <tr>
                 <th>Client</th>
                 <th>Ville</th>
                 <th>Besoins en cours</th>
                 <th>Besoins archivés</th>
+                <th>Mail</th>
+                <th>Contact</th>
+                <th>Téléphone</th>
+                <th>Poste occupé</th>
                 <th class="client-needs-actions-head"></th>
               </tr>
             </thead>
             <tbody>
-              ${rows || '<tr><td colspan="5" class="client-needs-empty">Aucun client pour le moment.</td></tr>'}
+              ${rows || `<tr><td colspan="9" class="client-needs-empty">${archivedTable ? 'Aucun client archivé.' : 'Aucun client pour le moment.'}</td></tr>`}
             </tbody>
           </table>
         </div>
+      </section>
+    `;
+  }
+
+  function renderClientNeedsBoard(clients, cities = [], archivedClients = []) {
+    return `
+      <div class="client-needs-page">
+        <div class="client-needs-header">
+          <h2>Clients - Besoins</h2>
+          <button type="button" id="add-client-need-client" class="add-row-btn">+ Ajouter un client</button>
+        </div>
+        ${renderClientNeedsTable('', clients, cities)}
+        ${renderClientNeedsTable('Archives', archivedClients, cities, true)}
       </div>
     `;
   }
@@ -2953,7 +3059,8 @@ $(function(){
       }))
       .then(data => {
         getClientNeedCityOptions().then(cities => {
-          $('#main-content').html(renderClientNeedsBoard(data.clients || [], cities));
+          $('#main-content').html(renderClientNeedsBoard(data.clients || [], cities, data.archived_clients || []));
+          updateExpandableTextareasBatch($('#main-content textarea.client-needs-textarea').get());
           initClientNeedsDragDrop();
         });
       })

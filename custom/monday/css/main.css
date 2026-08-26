@@ -1984,20 +1984,33 @@ form[method="POST"] input[name="new_workspace"]:focus {
   border: 1px solid #d7e0eb;
   border-radius: 8px;
   background: #ffffff;
+  max-width: 100%;
   overflow-x: auto;
+  overflow-y: hidden;
   box-shadow: 0 8px 18px rgba(23, 43, 77, 0.06);
 }
 
 .client-needs-table {
   width: 100%;
-  min-width: 760px;
+  min-width: 1838px;
   border-collapse: collapse;
   table-layout: fixed;
+}
+
+.client-needs-section + .client-needs-section {
+  margin-top: 28px;
+}
+
+.client-needs-section h3 {
+  margin: 0 0 10px;
+  color: #172b4d;
+  font-size: 18px;
 }
 
 .client-needs-table th,
 .client-needs-table td {
   border: 1px solid #dbe3ee;
+  box-sizing: border-box;
   padding: 12px;
   text-align: left;
   vertical-align: top;
@@ -2012,18 +2025,29 @@ form[method="POST"] input[name="new_workspace"]:focus {
   z-index: 1;
 }
 
-.client-needs-table th:first-child,
-.client-needs-table td:first-child {
-  width: 28%;
+.client-needs-table th:nth-child(1),
+.client-needs-table td:nth-child(1) { width: 260px; }
+.client-needs-table th:nth-child(2),
+.client-needs-table td:nth-child(2) { width: 140px; }
+.client-needs-table th:nth-child(3),
+.client-needs-table td:nth-child(3) { width: 280px; }
+.client-needs-table th:nth-child(4),
+.client-needs-table td:nth-child(4) { width: 240px; }
+.client-needs-table th:nth-child(5),
+.client-needs-table td:nth-child(5) { width: 220px; }
+.client-needs-table th:nth-child(6),
+.client-needs-table td:nth-child(6) { width: 220px; }
+.client-needs-table th:nth-child(7),
+.client-needs-table td:nth-child(7) { width: 170px; }
+.client-needs-table th:nth-child(8),
+.client-needs-table td:nth-child(8) {
+  width: 220px;
 }
-
-.client-needs-city-cell {
-  width: 140px;
-}
-
-.client-needs-actions-head,
-.client-needs-actions-cell {
-  width: 52px;
+.client-needs-table th:nth-child(9),
+.client-needs-table td:nth-child(9) {
+  width: 88px;
+  padding-left: 6px;
+  padding-right: 6px;
   text-align: center !important;
 }
 
@@ -2036,9 +2060,50 @@ form[method="POST"] input[name="new_workspace"]:focus {
   padding: 5px 8px;
 }
 
+.client-needs-text-cell {
+  width: 100%;
+  max-width: 100%;
+  min-width: 120px;
+}
+
+.client-needs-table .cell-expandable-toggle {
+  display: inline-block;
+  margin-top: 4px;
+  font-weight: 700;
+  font-size: inherit;
+  line-height: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.client-needs-table .cell-textarea {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 24px;
+  height: auto;
+  overflow: hidden;
+  resize: none;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  box-sizing: border-box;
+  border: none;
+  background: transparent;
+  padding: 2px;
+}
+
 .client-needs-client-cell {
   color: #172b4d;
   font-weight: 700;
+}
+
+.client-needs-client-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .client-needs-table tbody tr:nth-child(odd) td {
@@ -2111,6 +2176,9 @@ form[method="POST"] input[name="new_workspace"]:focus {
 
 .client-need-add-btn,
 .client-need-delete-btn,
+.client-needs-edit-client-btn,
+.client-needs-archive-client-btn,
+.client-needs-restore-client-btn,
 .client-needs-delete-client-btn {
   flex: 0 0 auto;
   width: 28px;
@@ -2126,6 +2194,9 @@ form[method="POST"] input[name="new_workspace"]:focus {
 
 .client-need-add-btn:hover,
 .client-need-delete-btn:hover,
+.client-needs-edit-client-btn:hover,
+.client-needs-archive-client-btn:hover,
+.client-needs-restore-client-btn:hover,
 .client-needs-delete-client-btn:hover {
   border-color: #6f93bf;
   color: #315f92;
@@ -2139,17 +2210,42 @@ form[method="POST"] input[name="new_workspace"]:focus {
   color: inherit;
 }
 
+.client-needs-edit-client-btn,
+.client-needs-archive-client-btn,
+.client-needs-restore-client-btn,
 .client-needs-delete-client-btn {
   width: 30px;
   height: 30px;
+  border: 1px solid #cbd5e1;
   color: #64748b;
-  background: transparent;
+  background: #ffffff;
+}
+
+.client-needs-edit-client-btn {
+  width: 24px;
+  height: 24px;
+}
+
+.client-needs-actions-cell {
+  white-space: nowrap;
+}
+
+.client-needs-actions-inner {
+  display: inline-flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 6px;
+}
+
+.client-needs-archive-client-btn:hover,
+.client-needs-restore-client-btn:hover {
+  color: #315f92;
+  background: #ffffff;
 }
 
 .client-needs-delete-client-btn:hover {
   color: #b4232f;
-  border-color: #f1b5bb;
-  background: #fff1f2;
+  background: #ffffff;
 }
 
 .client-need-pill.is-confirming-delete {
