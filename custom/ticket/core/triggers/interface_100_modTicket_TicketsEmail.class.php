@@ -196,6 +196,10 @@ class InterfaceTicketsEmail extends DolibarrTriggers
 			return (int) $object->context['contact_id'];
 		}
 
+		if (GETPOSTISSET('contactid')) {
+			return GETPOSTINT('contactid');
+		}
+
 		return 0;
 	}
 
@@ -366,6 +370,10 @@ class InterfaceTicketsEmail extends DolibarrTriggers
 	{
 		if (isset($object->context['newstatus'])) {
 			return (int) $object->context['newstatus'];
+		}
+
+		if (GETPOST('action', 'alpha') === 'confirm_set_status' && GETPOSTISSET('new_status')) {
+			return GETPOSTINT('new_status');
 		}
 
 		if (isset($object->status)) {
