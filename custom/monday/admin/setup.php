@@ -185,6 +185,56 @@ $item->cssClass = 'minwidth500';
 
 //$item = $formSetup->newItem('MONDAY_MYPARAM13')->setAsDate();	// Not yet implemented
 
+$item = $formSetup->newItem('MONDAY_INBOUND_EMAIL_BASE')->setAsEmail();
+$item->fieldAttr['placeholder'] = 'reception@domaine.tld';
+$item->helpText = 'Adresse de base utilisée pour générer les adresses e-mail uniques des candidats.';
+
+$item = $formSetup->newItem('MONDAY_GRAPH_INBOUND_ENABLE')->setAsYesNo();
+$item->defaultFieldValue = '0';
+$item->helpText = 'Active le cron Microsoft Graph qui lit les éléments envoyés des recruteurs au lieu du collecteur IMAP Dolibarr.';
+
+$item = $formSetup->newItem('MONDAY_GRAPH_TENANT_ID');
+$item->cssClass = 'minwidth500';
+$item->helpText = 'Tenant ID Microsoft Entra ID utilisé par l’application Graph.';
+
+$item = $formSetup->newItem('MONDAY_GRAPH_CLIENT_ID');
+$item->cssClass = 'minwidth500';
+$item->helpText = 'Application ID Microsoft Entra ID utilisé par l’application Graph.';
+
+$item = $formSetup->newItem('MONDAY_GRAPH_RECRUITER_MAILBOXES');
+$item->cssClass = 'minwidth500';
+$item->fieldAttr['placeholder'] = 'melina@domaine.fr, autre.recruteur@domaine.fr';
+$item->helpText = 'Boîtes recruteurs dont le dossier Éléments envoyés est lu par Graph. La même liste sert de filtre expéditeur autorisé.';
+
+$item = $formSetup->newItem('MONDAY_GRAPH_BOOTSTRAP_LOOKBACK_DAYS');
+$item->fieldAttr['type'] = 'number';
+$item->fieldAttr['min'] = '0';
+$item->defaultFieldValue = '30';
+$item->helpText = 'Nombre de jours à importer au premier passage Graph avant stockage du deltaLink. Mettre 0 pour ne pas limiter.';
+
+$item = $formSetup->newItem('MONDAY_INBOUND_ATTACHMENT_MAX_SIZE');
+$item->fieldAttr['type'] = 'number';
+$item->fieldAttr['min'] = '1';
+$item->defaultFieldValue = '26214400';
+$item->helpText = 'Taille maximale autorisée pour une pièce jointe entrante, en octets.';
+
+$item = $formSetup->newItem('MONDAY_INBOUND_ATTACHMENT_MAX_COUNT');
+$item->fieldAttr['type'] = 'number';
+$item->fieldAttr['min'] = '1';
+$item->defaultFieldValue = '20';
+$item->helpText = 'Nombre maximal de pièces jointes autorisées par e-mail entrant.';
+
+$item = $formSetup->newItem('MONDAY_INBOUND_EMAIL_MAX_SIZE');
+$item->fieldAttr['type'] = 'number';
+$item->fieldAttr['min'] = '1';
+$item->defaultFieldValue = '104857600';
+$item->helpText = 'Taille maximale cumulée des pièces jointes par e-mail entrant, en octets.';
+
+$item = $formSetup->newItem('MONDAY_INBOUND_ATTACHMENT_FORBIDDEN_EXTENSIONS');
+$item->fieldAttr['placeholder'] = 'exe,msi,bat,cmd,com,scr,ps1,vbs,js,jar,dll,iso,sh,run,bin,php,phtml,html,htm,htaccess';
+$item->defaultFieldValue = 'exe,msi,bat,cmd,com,scr,ps1,vbs,js,jar,dll,iso,sh,run,bin,php,phtml,html,htm,htaccess';
+$item->helpText = 'Extensions de pièces jointes refusées, séparées par des virgules.';
+
 // End of definition of parameters
 
 

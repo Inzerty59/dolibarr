@@ -425,6 +425,10 @@
   font-size: 14px;
 }
 
+.candidate-email-meta-item {
+  align-items: flex-start;
+}
+
 .edit-btn {
   background: none;
   border: none;
@@ -561,6 +565,14 @@
   margin-bottom: 10px;
   font-size: 14px;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.candidate-mail-copy {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .comment-actions {
@@ -2665,7 +2677,14 @@ form[method="POST"] input[name="new_workspace"]:focus {
   margin-bottom: 14px;
 }
 
+
 .group-body-toolbar{
   padding-bottom: 8px;
 
+}
+.candidate-email-inline-text {
+  display: inline;
+  max-width: 100%;
+  word-break: break-all;
+  white-space: normal;
 }

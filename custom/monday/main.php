@@ -4,12 +4,12 @@ require_once DOL_DOCUMENT_ROOT.'/core/lib/admin.lib.php';
 require_once DOL_DOCUMENT_ROOT.'/core/lib/functions.lib.php';
 require_once __DIR__.'/planity_kanban.php';
 require_once DOL_DOCUMENT_ROOT.'/core/class/CMailFile.class.php';
+require_once __DIR__.'/class/mondayinboundemailprocessor.class.php';
 
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
-
-$langs->load("mymodule@mymodule");
+$langs->loadLangs(array("mymodule@mymodule", "monday@monday"));
 
 function monday_normalize_kpi_label($label)
 {
@@ -2849,10 +2849,34 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['delete_comment_id'])) {
     $cid = (int)$_POST['delete_comment_id'];
     $uid = $user->id;
 
-    $res = $db->query("SELECT fk_user FROM llx_myworkspace_comment WHERE rowid = $cid");
-    $owner = $db->fetch_object($res);
+    $res = $db->query("
+        SELECT c.fk_user, i.rowid AS inbound_id
+        FROM llx_myworkspace_comment c
+        LEFT JOIN llx_monday_inbound_email i ON i.fk_comment = c.rowid
+        WHERE c.rowid = $cid
+    ");
+    $comment = $db->fetch_object($res);
 
-    if ($owner && $owner->fk_user == $uid) {
+    $canDelete = false;
+    if ($comment) {
+        $canDelete = ((int) $comment->fk_user === (int) $uid);
+        if (!$canDelete && !empty($comment->inbound_id) && (int) $comment->fk_user === 0 && monday_user_can_read_workspace()) {
+            $canDelete = true;
+        }
+    }
+
+    if ($comment && $canDelete) {
+        if (!empty($comment->inbound_id)) {
+            $fileRes = $db->query("SELECT rowid, filename FROM llx_myworkspace_task_file WHERE fk_inbound_email = ".((int) $comment->inbound_id));
+            while ($fileRes && ($file = $db->fetch_object($fileRes))) {
+                $filepath = '/var/www/documents/myworkspace/tasks/' . $file->filename;
+                if (file_exists($filepath)) {
+                    unlink($filepath);
+                }
+                $db->query("DELETE FROM llx_myworkspace_task_file WHERE rowid = ".((int) $file->rowid));
+            }
+            $db->query("UPDATE llx_monday_inbound_email SET fk_comment = 0 WHERE rowid = ".((int) $comment->inbound_id));
+        }
         $db->query("DELETE FROM llx_myworkspace_comment_file WHERE fk_comment = $cid");
         $db->query("DELETE FROM llx_myworkspace_comment WHERE rowid = $cid");
         echo 'OK';
@@ -3063,7 +3087,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['delete_file_id'])) {
     $uid = $user->id;
 
     if ($type === 'task') {
-        $res = $db->query("SELECT filename, fk_user FROM llx_myworkspace_task_file WHERE rowid = $file_id");
+        $res = $db->query("SELECT filename, fk_user, fk_task FROM llx_myworkspace_task_file WHERE rowid = $file_id");
         $subdir = 'tasks';
         $table = 'llx_myworkspace_task_file';
     } else {
@@ -3073,8 +3097,15 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['delete_file_id'])) {
     }
 
     $file = $db->fetch_object($res);
+    $canDelete = false;
+    if ($file) {
+        $canDelete = !empty($user->admin) || ((int) $file->fk_user === (int) $uid);
+        if (!$canDelete && $type === 'task' && (int) $file->fk_user === 0 && monday_user_can_read_workspace()) {
+            $canDelete = true;
+        }
+    }
 
-    if ($file && $file->fk_user == $uid) {
+    if ($file && $canDelete) {
         $filepath = '/var/www/documents/myworkspace/'.$subdir.'/' . $file->filename;
         if (file_exists($filepath)) {
             unlink($filepath);
@@ -3147,6 +3178,10 @@ ob_start();
             <strong>Créée :</strong>
             <span id="task-created-display"></span>
           </div>
+          <div class="task-meta-item candidate-email-meta-item" style="display:none;">
+            <strong><?php echo $langs->transnoentities('CandidateEmailLabel'); ?> :</strong>
+            <span id="candidate-email-block" class="candidate-email-inline" hidden></span>
+          </div>
         </div>
       </div>
 
@@ -3198,9 +3233,19 @@ window.t24TransferConfig = <?php echo json_encode(monday_get_t24_transfer_client
 window.mondayConfig = <?php echo json_encode($mondayJsConfig); ?>;
 window.planityKanbanUrl = <?php echo json_encode(DOL_URL_ROOT.'/custom/monday/ajax/planity_kanban.php'); ?>;
 window.planityKanbanIsAdmin = <?php echo planity_kanban_user_is_admin($user) ? 'true' : 'false'; ?>;
+window.mondayCandidateEmailConfig = <?php echo json_encode(array(
+    'endpoint' => DOL_URL_ROOT.'/custom/monday/ajax/candidate_email.php',
+    'token' => $formtoken,
+    'labels' => array(
+        'copy' => $langs->transnoentities('CandidateEmailCopy'),
+        'loading' => $langs->transnoentities('CandidateEmailLoading'),
+        'notConfigured' => $langs->transnoentities('CandidateEmailConfigMissing')
+    )
+)); ?>;
 
 </script>
 <script src="<?php echo DOL_URL_ROOT ?>/custom/monday/js/main.js?v=<?php echo time(); ?>"></script>
+<script src="<?php echo DOL_URL_ROOT ?>/custom/monday/js/candidate-email.js?v=<?php echo time(); ?>"></script>
 <script src="<?php echo DOL_URL_ROOT ?>/custom/monday/js/candidate-status-mail.js?v=<?php echo time(); ?>"></script>
 <?php
 echo ob_get_clean();

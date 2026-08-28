@@ -120,10 +120,8 @@ class modMonday extends DolibarrModules
 			// Set here all hooks context managed by module. To find available hook context, make a "grep -r '>initHooks(' *" on source code. You can also set hook context to 'all'
 			/* BEGIN MODULEBUILDER HOOKSCONTEXTS */
 			'hooks' => array(
-				//   'data' => array(
-				//       'hookcontext1',
-				//       'hookcontext2',
-				//   ),
+				'data' => array(
+				),
 				//   'entity' => '0',
 			),
 			/* END MODULEBUILDER HOOKSCONTEXTS */
@@ -266,20 +264,20 @@ class modMonday extends DolibarrModules
 		// unit_frequency must be 60 for minute, 3600 for hour, 86400 for day, 604800 for week
 		/* BEGIN MODULEBUILDER CRON */
 		$this->cronjobs = array(
-			//  0 => array(
-			//      'label' => 'MyJob label',
-			//      'jobtype' => 'method',
-			//      'class' => '/monday/class/myobject.class.php',
-			//      'objectname' => 'MyObject',
-			//      'method' => 'doScheduledJob',
-			//      'parameters' => '',
-			//      'comment' => 'Comment',
-			//      'frequency' => 2,
-			//      'unitfrequency' => 3600,
-			//      'status' => 0,
-			//      'test' => 'isModEnabled("monday")',
-			//      'priority' => 50,
-			//  ),
+			0 => array(
+				'label' => 'MondayGraphInboundSentItemsSync',
+				'jobtype' => 'method',
+				'class' => '/monday/class/mondaygraphinboundsync.class.php',
+				'objectname' => 'MondayGraphInboundSync',
+				'method' => 'runScheduledSync',
+				'parameters' => '',
+				'comment' => 'Import candidate follow-up emails from Microsoft Graph SentItems',
+				'frequency' => 5,
+				'unitfrequency' => 60,
+				'status' => 0,
+				'test' => 'isModEnabled("monday") && getDolGlobalInt("MONDAY_GRAPH_INBOUND_ENABLE")',
+				'priority' => 50,
+			),
 		);
 		/* END MODULEBUILDER CRON */
 		// Example: $this->cronjobs=array(
@@ -520,7 +518,11 @@ class modMonday extends DolibarrModules
 			}
 		}
 
-		return $this->_init($sql, $options);
+		$result = $this->_init($sql, $options);
+		if ($result > 0) {
+			$this->cleanupLegacyInboundMailIntegration();
+		}
+		return $result;
 	}
 
 	/**
@@ -536,4 +538,21 @@ class modMonday extends DolibarrModules
 		$sql = array();
 		return $this->_remove($sql, $options);
 	}
+
+	private function cleanupLegacyInboundMailIntegration()
+	{
+		$actionTable = MAIN_DB_PREFIX.'emailcollector_emailcollectoraction';
+		$sql = "SELECT 1
+				  FROM information_schema.tables
+				 WHERE table_schema = DATABASE()
+				   AND table_name = '".$this->db->escape($actionTable)."'
+				 LIMIT 1";
+		$res = $this->db->query($sql);
+		if ($res && $this->db->num_rows($res) > 0) {
+			$this->db->query("DELETE FROM ".$actionTable." WHERE type = 'hookmondayinbound'");
+		}
+
+		$this->db->query("DELETE FROM ".MAIN_DB_PREFIX."const WHERE name = 'MAIN_MODULE_MONDAY_HOOKS' AND value LIKE '%emailcolector%'");
+	}
+
 }
