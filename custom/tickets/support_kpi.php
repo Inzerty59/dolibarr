@@ -34,13 +34,7 @@ window.supportKpiConfig = <?php echo json_encode(array(
 }
 .vmenu a[href*="/custom/tickets/support_kpi.php"]::before,
 .vmenu a[href*="support_kpi.php"]::before {
-	content: "\f201";
-	display: inline-block;
-	width: 18px;
-	margin-right: 6px;
-	color: #655aa8;
-	font-family: FontAwesome, "Font Awesome 5 Free";
-	font-weight: 900;
+	content: none;
 }
 </style>
 
