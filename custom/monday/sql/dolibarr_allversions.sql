@@ -18,6 +18,18 @@ CREATE TABLE IF NOT EXISTS llx_monday_inbound_email (
     INDEX idx_monday_inbound_email_fk_task (fk_task)
 ) ENGINE=innodb;
 
+CREATE TABLE IF NOT EXISTS llx_monday_graph_sync_state (
+    rowid int(11) AUTO_INCREMENT PRIMARY KEY,
+    mailbox_email varchar(255) NOT NULL,
+    folder_name varchar(64) NOT NULL DEFAULT 'SentItems',
+    delta_link text,
+    last_success_at datetime DEFAULT NULL,
+    last_error text,
+    datec datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    tms timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_monday_graph_sync_state_mailbox_folder (mailbox_email, folder_name)
+) ENGINE=innodb;
+
 ALTER TABLE llx_myworkspace_task_file
     ADD COLUMN IF NOT EXISTS fk_inbound_email int(11) DEFAULT NULL AFTER fk_task;
 

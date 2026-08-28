@@ -103,6 +103,18 @@ CREATE TABLE llx_monday_inbound_email (
     INDEX idx_monday_inbound_email_fk_task (fk_task)
 ) ENGINE=innodb;
 
+CREATE TABLE llx_monday_graph_sync_state (
+    rowid int(11) AUTO_INCREMENT PRIMARY KEY,
+    mailbox_email varchar(255) NOT NULL,
+    folder_name varchar(64) NOT NULL DEFAULT 'SentItems',
+    delta_link text,
+    last_success_at datetime DEFAULT NULL,
+    last_error text,
+    datec datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    tms timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_monday_graph_sync_state_mailbox_folder (mailbox_email, folder_name)
+) ENGINE=innodb;
+
 -- ================================================================================
 -- 6. Table des cellules (valeurs des colonnes pour chaque tâche)
 -- ================================================================================

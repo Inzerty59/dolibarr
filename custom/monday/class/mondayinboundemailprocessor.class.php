@@ -6,8 +6,6 @@ require_once __DIR__.'/mondayinboundemailresolver.class.php';
 
 class MondayInboundEmailProcessor
 {
-    const HOOK_TYPE = 'hookmondayinbound';
-    const HOOK_CONTEXT = 'emailcolector';
     const TASK_FILES_DIR = '/myworkspace/tasks/';
     const PROCESSED_TABLE = 'monday_inbound_email';
     const DEFAULT_ATTACHMENT_MAX_SIZE = 26214400;
@@ -24,193 +22,7 @@ class MondayInboundEmailProcessor
         $this->resolver = new MondayInboundEmailResolver($db);
     }
 
-    public function ensureEmailCollectorHookActions()
-    {
-        global $conf, $user;
-
-        if (!isModEnabled('emailcollector')) {
-            return true;
-        }
-
-        if (!$this->ensureHookContextDeclaration()) {
-            return false;
-        }
-
-        $sql = "SELECT rowid
-                  FROM ".MAIN_DB_PREFIX."emailcollector_emailcollector
-                 WHERE entity = ".((int) $conf->entity)."
-                   AND status = 1";
-        $res = $this->db->query($sql);
-        if (!$res) {
-            return false;
-        }
-
-        $collectorIds = array();
-        while ($obj = $this->db->fetch_object($res)) {
-            $collectorIds[] = (int) $obj->rowid;
-        }
-
-        if (empty($collectorIds)) {
-            return true;
-        }
-
-        $collectorIdsSql = implode(',', array_map('intval', $collectorIds));
-        $existingSql = "SELECT rowid, fk_emailcollector, status
-                          FROM ".MAIN_DB_PREFIX."emailcollector_emailcollectoraction
-                         WHERE fk_emailcollector IN (".$collectorIdsSql.")
-                           AND type = '".$this->db->escape(self::HOOK_TYPE)."'";
-        $existingRes = $this->db->query($existingSql);
-        $existing = array();
-        if ($existingRes) {
-            while ($obj = $this->db->fetch_object($existingRes)) {
-                $existing[(int) $obj->fk_emailcollector] = (int) $obj->status;
-            }
-        }
-
-        $now = $this->db->idate(dol_now());
-        $creatorId = !empty($user->id) ? (int) $user->id : 0;
-        $inserted = false;
-
-        foreach ($collectorIds as $collectorId) {
-            if (isset($existing[$collectorId])) {
-                if ((int) $existing[$collectorId] === 0) {
-                    $updateSql = "UPDATE ".MAIN_DB_PREFIX."emailcollector_emailcollectoraction
-                                     SET status = 1, position = 999
-                                   WHERE fk_emailcollector = ".$collectorId."
-                                     AND type = '".$this->db->escape(self::HOOK_TYPE)."'";
-                    if (!$this->db->query($updateSql)) {
-                        dol_syslog(__CLASS__.' failed to reactivate hook action for collector='.$collectorId, LOG_ERR);
-                        return false;
-                    }
-                }
-                continue;
-            }
-
-            $insertSql = "INSERT INTO ".MAIN_DB_PREFIX."emailcollector_emailcollectoraction
-                (fk_emailcollector, type, actionparam, date_creation, fk_user_creat, status, position)
-                VALUES
-                (".$collectorId.", '".$this->db->escape(self::HOOK_TYPE)."', '', '".$now."', ".$creatorId.", 1, 999)";
-            if (!$this->db->query($insertSql)) {
-                dol_syslog(__CLASS__.' failed to seed hook action for collector='.$collectorId, LOG_ERR);
-                return false;
-            }
-
-            $inserted = true;
-        }
-
-        if ($inserted) {
-            dol_syslog(__CLASS__.' hook action seeded for emailcollector', LOG_INFO);
-        }
-
-        return $this->ensureEmailCollectorCcFilters($collectorIds, $creatorId, $now);
-    }
-
-    private function ensureEmailCollectorCcFilters(array $collectorIds, $creatorId, $now)
-    {
-        $baseEmail = strtolower(trim((string) getDolGlobalString('MONDAY_INBOUND_EMAIL_BASE', '')));
-        if ($baseEmail === '' || strpos($baseEmail, '@') === false) {
-            return true;
-        }
-
-        $localPart = substr($baseEmail, 0, strpos($baseEmail, '@'));
-        if ($localPart === '') {
-            return true;
-        }
-
-        foreach ($collectorIds as $collectorId) {
-            $legacySql = "UPDATE ".MAIN_DB_PREFIX."emailcollector_emailcollectorfilter
-                             SET status = 0
-                           WHERE fk_emailcollector = ".((int) $collectorId)."
-                             AND type = 'header'
-                             AND rulevalue = '".$this->db->escape('Cc '.$localPart)."'";
-            if (!$this->db->query($legacySql)) {
-                dol_syslog(__CLASS__.' failed to disable legacy emailcollector header Cc filter for collector='.$collectorId, LOG_ERR);
-                return false;
-            }
-
-            $sql = "SELECT rowid, status
-                      FROM ".MAIN_DB_PREFIX."emailcollector_emailcollectorfilter
-                     WHERE fk_emailcollector = ".((int) $collectorId)."
-                       AND type = 'cc'
-                       AND rulevalue = '".$this->db->escape($localPart)."'
-                     LIMIT 1";
-            $res = $this->db->query($sql);
-            if (!$res) {
-                dol_syslog(__CLASS__.' failed to read emailcollector Cc filter for collector='.$collectorId, LOG_ERR);
-                return false;
-            }
-
-            $existing = $this->db->fetch_object($res);
-            if ($existing) {
-                if ((int) $existing->status === 0) {
-                    $updateSql = "UPDATE ".MAIN_DB_PREFIX."emailcollector_emailcollectorfilter
-                                     SET status = 1
-                                   WHERE rowid = ".((int) $existing->rowid);
-                    if (!$this->db->query($updateSql)) {
-                        dol_syslog(__CLASS__.' failed to reactivate emailcollector Cc filter for collector='.$collectorId, LOG_ERR);
-                        return false;
-                    }
-                }
-                continue;
-            }
-
-            $insertSql = "INSERT INTO ".MAIN_DB_PREFIX."emailcollector_emailcollectorfilter
-                (fk_emailcollector, type, rulevalue, date_creation, fk_user_creat, status)
-                VALUES
-                (".((int) $collectorId).", 'cc', '".$this->db->escape($localPart)."', '".$now."', ".((int) $creatorId).", 1)";
-            if (!$this->db->query($insertSql)) {
-                dol_syslog(__CLASS__.' failed to seed emailcollector Cc filter for collector='.$collectorId, LOG_ERR);
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    private function ensureHookContextDeclaration()
-    {
-        $expectedValue = '["'.self::HOOK_CONTEXT.'"]';
-        $safeName = $this->db->escape('MAIN_MODULE_MONDAY_HOOKS');
-        $safeValue = $this->db->escape($expectedValue);
-
-        $sql = "SELECT rowid, value
-                  FROM ".MAIN_DB_PREFIX."const
-                 WHERE name = '".$safeName."'
-                 LIMIT 1";
-        $res = $this->db->query($sql);
-        if (!$res) {
-            dol_syslog(__CLASS__.' failed to read Monday hook declaration', LOG_ERR);
-            return false;
-        }
-
-        $row = $this->db->fetch_object($res);
-        if ($row) {
-            if ((string) $row->value === $expectedValue) {
-                return true;
-            }
-
-            $updateSql = "UPDATE ".MAIN_DB_PREFIX."const
-                             SET value = '".$safeValue."', type = 'chaine', visible = 0
-                           WHERE rowid = ".((int) $row->rowid);
-            if (!$this->db->query($updateSql)) {
-                dol_syslog(__CLASS__.' failed to update Monday hook declaration', LOG_ERR);
-                return false;
-            }
-
-            return true;
-        }
-
-        $insertSql = "INSERT INTO ".MAIN_DB_PREFIX."const (name, entity, value, type, visible, note)
-                      VALUES ('".$safeName."', 0, '".$safeValue."', 'chaine', 0, 'Monday hook contexts')";
-        if (!$this->db->query($insertSql)) {
-            dol_syslog(__CLASS__.' failed to create Monday hook declaration', LOG_ERR);
-            return false;
-        }
-
-        return true;
-    }
-
-    public function processCollectorMessage(array $parameters)
+    public function processMessage(array $parameters)
     {
         $headers = $this->buildResolvableHeaders($parameters);
         $resolution = $this->resolver->resolveFromHeaders($headers);
@@ -327,6 +139,17 @@ class MondayInboundEmailProcessor
             $merged['Cc'] = trim(($existingValue !== '' ? $existingValue.', ' : '').$value);
         }
 
+        $headerBcc = $this->extractHeaderValues($parameters, 'Bcc');
+        if (!empty($headerBcc)) {
+            $merged['Bcc'] = implode(', ', $headerBcc);
+        }
+
+        $value = $this->readValue($parameters, 'bcc');
+        if ($value !== '') {
+            $existingValue = isset($merged['Bcc']) ? $this->flattenValue($merged['Bcc']) : '';
+            $merged['Bcc'] = trim(($existingValue !== '' ? $existingValue.', ' : '').$value);
+        }
+
         return $merged;
     }
 
@@ -342,40 +165,30 @@ class MondayInboundEmailProcessor
             return false;
         }
 
-        return strtolower($sender) === $baseEmail && $this->hasTrustedAuthenticationResults($parameters, $baseEmail);
+        $allowedSenders = $this->getAllowedSenderEmails();
+        if (!empty($allowedSenders)) {
+            return in_array(strtolower($sender), $allowedSenders, true);
+        }
+
+        return strtolower($sender) === $baseEmail;
     }
 
-    private function hasTrustedAuthenticationResults(array $parameters, $baseEmail)
+    private function getAllowedSenderEmails()
     {
-        if (!getDolGlobalInt('MONDAY_INBOUND_REQUIRE_AUTH_RESULTS')) {
-            return true;
+        $configured = (string) getDolGlobalString('MONDAY_GRAPH_RECRUITER_MAILBOXES', '');
+        if ($configured === '') {
+            return array();
         }
 
-        $domain = strtolower((string) substr(strrchr($baseEmail, '@'), 1));
-        if ($domain === '') {
-            return false;
-        }
-
-        $headers = $this->extractHeaderValues($parameters, 'Authentication-Results');
-        if (empty($headers)) {
-            dol_syslog(__CLASS__.' Authentication-Results header unavailable, rejecting inbound email', LOG_WARNING);
-            return false;
-        }
-
-        foreach ($headers as $header) {
-            $normalized = strtolower($header);
-            if (preg_match('/dmarc=pass\b[^;]*header\.from='.preg_quote($domain, '/').'\b/', $normalized)) {
-                return true;
-            }
-            if (preg_match('/dkim=pass\b[^;]*header\.i=(?:[^@;\s]+@|@)?'.preg_quote($domain, '/').'\b/', $normalized)) {
-                return true;
-            }
-            if (preg_match('/spf=pass\b[^;]*smtp\.mailfrom=(?:[^@;\s]+@)?'.preg_quote($domain, '/').'\b/', $normalized)) {
-                return true;
+        $emails = array();
+        foreach (preg_split('/[,;\n]+/', $configured) as $email) {
+            $email = strtolower(trim((string) $email));
+            if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                $emails[$email] = true;
             }
         }
 
-        return false;
+        return array_keys($emails);
     }
 
     private function extractHeaderValues(array $parameters, $headerName)
@@ -582,14 +395,15 @@ class MondayInboundEmailProcessor
     private function buildMessageKey(array $parameters, $recipient, $subject, $body, $receivedDate)
     {
         $messageId = $this->extractMessageId($parameters);
+        $sourceKey = $this->readValue($parameters, 'source_key');
         $collectorId = isset($parameters['collector_id']) ? (int) $parameters['collector_id'] : 0;
         if ($messageId !== '') {
-            return hash('sha256', $collectorId.'|message-id|'.$messageId);
+            return hash('sha256', ($sourceKey !== '' ? $sourceKey : (string) $collectorId).'|message-id|'.$messageId);
         }
 
         $uid = $this->extractMessageUid($parameters);
         if ($uid !== '') {
-            return hash('sha256', $collectorId.'|uid|'.$uid);
+            return hash('sha256', ($sourceKey !== '' ? $sourceKey : (string) $collectorId).'|uid|'.$uid);
         }
 
         return hash('sha256', strtolower(trim($recipient)).'|'.strtolower(trim($subject)).'|'.$receivedDate.'|'.$this->normalizeBody($body));

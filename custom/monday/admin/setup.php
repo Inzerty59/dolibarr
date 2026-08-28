@@ -58,7 +58,6 @@ if (!$res) {
 // Libraries
 require_once DOL_DOCUMENT_ROOT."/core/lib/admin.lib.php";
 require_once '../lib/monday.lib.php';
-require_once __DIR__.'/../class/mondayinboundemailprocessor.class.php';
 //require_once "../class/myclass.class.php";
 
 /**
@@ -71,9 +70,6 @@ require_once __DIR__.'/../class/mondayinboundemailprocessor.class.php';
 
 // Translations
 $langs->loadLangs(array("admin", "monday@monday"));
-
-$mondayInboundEmailProcessor = new MondayInboundEmailProcessor($db);
-$mondayInboundEmailProcessor->ensureEmailCollectorHookActions();
 
 // Initialize a technical object to manage hooks of page. Note that conf->hooks_modules contains an array of hook context
 /** @var HookManager $hookmanager */
@@ -193,9 +189,28 @@ $item = $formSetup->newItem('MONDAY_INBOUND_EMAIL_BASE')->setAsEmail();
 $item->fieldAttr['placeholder'] = 'reception@domaine.tld';
 $item->helpText = 'Adresse de base utilisée pour générer les adresses e-mail uniques des candidats.';
 
-$item = $formSetup->newItem('MONDAY_INBOUND_REQUIRE_AUTH_RESULTS')->setAsYesNo();
+$item = $formSetup->newItem('MONDAY_GRAPH_INBOUND_ENABLE')->setAsYesNo();
 $item->defaultFieldValue = '0';
-$item->helpText = 'Si activé, les e-mails entrants doivent contenir un résultat SPF, DKIM ou DMARC valide pour le domaine de l’adresse de base.';
+$item->helpText = 'Active le cron Microsoft Graph qui lit les éléments envoyés des recruteurs au lieu du collecteur IMAP Dolibarr.';
+
+$item = $formSetup->newItem('MONDAY_GRAPH_TENANT_ID');
+$item->cssClass = 'minwidth500';
+$item->helpText = 'Tenant ID Microsoft Entra ID utilisé par l’application Graph.';
+
+$item = $formSetup->newItem('MONDAY_GRAPH_CLIENT_ID');
+$item->cssClass = 'minwidth500';
+$item->helpText = 'Application ID Microsoft Entra ID utilisé par l’application Graph.';
+
+$item = $formSetup->newItem('MONDAY_GRAPH_RECRUITER_MAILBOXES');
+$item->cssClass = 'minwidth500';
+$item->fieldAttr['placeholder'] = 'melina@domaine.fr, autre.recruteur@domaine.fr';
+$item->helpText = 'Boîtes recruteurs dont le dossier Éléments envoyés est lu par Graph. La même liste sert de filtre expéditeur autorisé.';
+
+$item = $formSetup->newItem('MONDAY_GRAPH_BOOTSTRAP_LOOKBACK_DAYS');
+$item->fieldAttr['type'] = 'number';
+$item->fieldAttr['min'] = '0';
+$item->defaultFieldValue = '30';
+$item->helpText = 'Nombre de jours à importer au premier passage Graph avant stockage du deltaLink. Mettre 0 pour ne pas limiter.';
 
 $item = $formSetup->newItem('MONDAY_INBOUND_ATTACHMENT_MAX_SIZE');
 $item->fieldAttr['type'] = 'number';
