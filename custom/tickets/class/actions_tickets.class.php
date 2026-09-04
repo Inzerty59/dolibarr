@@ -26,6 +26,23 @@ class ActionsTickets extends CommonHookActions
 	}
 
 	/**
+	 * Load the ticket list layout fix even when module JS constants were not
+	 * refreshed after an update.
+	 */
+	public function printCommonFooter($parameters, &$object, &$action, $hookmanager)
+	{
+		if (strpos($_SERVER['PHP_SELF'] ?? '', '/ticket/list.php') === false) {
+			return 0;
+		}
+
+		$jsfile = DOL_DOCUMENT_ROOT.'/custom/tickets/js/tickets.js';
+		$version = file_exists($jsfile) ? filemtime($jsfile) : time();
+		$this->resprints = '<script nonce="'.getNonce().'" src="'.DOL_URL_ROOT.'/custom/tickets/js/tickets.js?v='.$version.'"></script>'."\n";
+
+		return 0;
+	}
+
+	/**
 	 * Main hook entry point for actions executed before native page processing.
 	 *
 	 * For ticket creation, it synchronizes template fields into Dolibarr

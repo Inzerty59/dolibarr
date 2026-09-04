@@ -144,6 +144,114 @@ header('Content-Type: text/css; charset=UTF-8');
 	padding-right: 10px;
 	height: 28px;
 }
+.thirdpartynotify-dialog-overlay {
+	position: fixed;
+	inset: 0;
+	z-index: 100000;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 16px;
+	background: rgba(17, 24, 39, .36);
+}
+.thirdpartynotify-dialog {
+	width: min(460px, 100%);
+	padding: 20px;
+	border: 1px solid #e5e7eb;
+	border-radius: 8px;
+	background: #fff;
+	box-shadow: 0 18px 48px rgba(17, 24, 39, .22);
+}
+.thirdpartynotify-dialog-title {
+	margin-bottom: 16px;
+	color: #111827;
+	font-size: 16px;
+	font-weight: 700;
+}
+.thirdpartynotify-dialog-list {
+	display: grid;
+	gap: 10px;
+	max-height: 260px;
+	overflow: auto;
+}
+.thirdpartynotify-dialog-user {
+	display: flex;
+	gap: 10px;
+	align-items: center;
+	min-height: 38px;
+	padding: 9px 11px;
+	border: 1px solid #d8dee8;
+	border-radius: 7px;
+	background: #f9fafb;
+	color: #111827;
+	cursor: pointer;
+	transition: border-color .15s ease, background-color .15s ease, box-shadow .15s ease;
+}
+.thirdpartynotify-dialog-user:hover {
+	border-color: #9db4d8;
+	background: #f3f7fc;
+}
+.thirdpartynotify-dialog-user input {
+	width: 16px;
+	height: 16px;
+	margin: 0;
+	accent-color: #0b65c2;
+}
+.thirdpartynotify-dialog-user span {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.thirdpartynotify-dialog-select-all {
+	margin-bottom: 10px;
+	background: #eef5ff;
+	border-color: #b8cff0;
+	font-weight: 600;
+}
+.thirdpartynotify-dialog-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 10px;
+	margin-top: 18px;
+	padding-top: 14px;
+	border-top: 1px solid #edf0f4;
+}
+.thirdpartynotify-dialog-actions .button {
+	min-width: 92px;
+	height: 34px;
+	border-radius: 6px;
+	font-weight: 700;
+}
+.thirdpartynotify-dialog-confirm {
+	color: #fff;
+	background: #0b65c2;
+	border-color: #0b65c2;
+}
+.planity-kanban-delete {
+	margin-left: 8px;
+	border: 0;
+	background: transparent;
+	color: #c62828;
+	cursor: pointer;
+}
+.planity-kanban-delete:disabled {
+	opacity: .5;
+	cursor: default;
+}
+.planity-delete-confirm {
+	width: min(300px, calc(100vw - 32px));
+	padding: 14px;
+}
+.planity-delete-confirm .thirdpartynotify-dialog-title {
+	margin-bottom: 12px;
+	font-weight: 600;
+}
+.planity-delete-confirm .planity-delete-ok {
+	color: #fff;
+	background: #c62828;
+	border-color: #c62828;
+}
 
 
 ul.timeline li .timeline-item .timeline-header-action2,
