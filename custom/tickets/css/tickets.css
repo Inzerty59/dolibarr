@@ -31,3 +31,35 @@
 	padding: 20px;
 	text-align: center;
 }
+
+body.mod-ticket.page-list {
+	overflow-x: hidden !important;
+}
+
+body.mod-ticket.page-list .fiche,
+body.mod-ticket.page-list #searchFormList {
+	min-width: 0 !important;
+	overflow-x: hidden !important;
+}
+
+body.mod-ticket.page-list #searchFormList > .div-table-responsive {
+	display: block;
+	min-width: 0 !important;
+	overflow-x: auto !important;
+	overflow-y: visible;
+	box-sizing: border-box;
+	border: 1px solid #d8d8d8;
+	border-radius: 4px;
+	background: #fff;
+}
+
+body.mod-ticket.page-list #searchFormList > .div-table-responsive > .div-table-responsive-inside {
+	width: max-content;
+	min-width: 100%;
+}
+
+body.mod-ticket.page-list #searchFormList table.liste {
+	width: max-content;
+	min-width: 100%;
+	table-layout: auto;
+}
