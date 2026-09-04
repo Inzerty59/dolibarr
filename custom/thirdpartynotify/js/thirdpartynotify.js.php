@@ -250,6 +250,68 @@ $config = array(
 
 		var socid = Number(new URLSearchParams(window.location.search).get('socid') || 0);
 		if (!socid) return;
+		var configuredUsers = [];
+
+		function openRecipientDialog(callback) {
+			var selectable = configuredUsers.filter(function (entry) { return entry.email; });
+			if (!selectable.length) {
+				notify('Aucun destinataire configure avec email valide.', true);
+				return;
+			}
+
+			var overlay = document.createElement('div');
+			overlay.className = 'thirdpartynotify-dialog-overlay';
+			var dialog = document.createElement('div');
+			dialog.className = 'thirdpartynotify-dialog';
+			dialog.innerHTML = [
+				'<div class="thirdpartynotify-dialog-title">Destinataires</div>',
+				'<label class="thirdpartynotify-dialog-user thirdpartynotify-dialog-select-all"><input type="checkbox"> <span>Tout sélectionner</span></label>',
+				'<div class="thirdpartynotify-dialog-list"></div>',
+				'<div class="thirdpartynotify-dialog-actions">',
+				'  <button type="button" class="button thirdpartynotify-dialog-cancel">Annuler</button>',
+				'  <button type="button" class="button thirdpartynotify-dialog-confirm">Notifier</button>',
+				'</div>'
+			].join('');
+			overlay.appendChild(dialog);
+			document.body.appendChild(overlay);
+
+			var list = dialog.querySelector('.thirdpartynotify-dialog-list');
+			selectable.forEach(function (entry) {
+				var label = document.createElement('label');
+				label.className = 'thirdpartynotify-dialog-user';
+				label.innerHTML = '<input type="checkbox" value="' + Number(entry.id) + '"> <span></span>';
+				label.querySelector('span').textContent = entry.name + ' (' + entry.email + ')';
+				list.appendChild(label);
+			});
+			var selectAll = dialog.querySelector('.thirdpartynotify-dialog-select-all input');
+			selectAll.addEventListener('change', function () {
+				Array.prototype.forEach.call(list.querySelectorAll('input[type="checkbox"]'), function (input) {
+					input.checked = selectAll.checked;
+				});
+			});
+			list.addEventListener('change', function () {
+				var inputs = list.querySelectorAll('input[type="checkbox"]');
+				var checked = list.querySelectorAll('input[type="checkbox"]:checked');
+				selectAll.checked = inputs.length > 0 && checked.length === inputs.length;
+			});
+
+			function close() {
+				if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+			}
+
+			dialog.querySelector('.thirdpartynotify-dialog-cancel').addEventListener('click', close);
+			dialog.querySelector('.thirdpartynotify-dialog-confirm').addEventListener('click', function () {
+				var ids = Array.prototype.map.call(dialog.querySelectorAll('input[type="checkbox"]:checked'), function (input) {
+					return Number(input.value);
+				}).filter(Boolean);
+				if (!ids.length) {
+					notify('Selectionnez au moins un destinataire.', true);
+					return;
+				}
+				close();
+				callback(ids);
+			});
+		}
 
 		document.querySelectorAll('ul.timeline li .timeline-item').forEach(function (item) {
 			if (item.querySelector('.thirdpartynotify-send-event')) return;
@@ -267,27 +329,36 @@ $config = array(
 			button.dataset.actioncommId = actionId;
 			button.innerHTML = '<span class="fa fa-envelope-o" aria-hidden="true"></span> Notifier';
 			button.addEventListener('click', function () {
-				var original = button.innerHTML;
-				button.disabled = true;
-				button.innerHTML = '<span class="fa fa-spinner fa-spin" aria-hidden="true"></span> Notifier...';
-				postForm(config.urls.sendEvent, {
-					socid: socid,
-					actioncomm_id: actionId
-				}).then(function (json) {
-					button.innerHTML = '<span class="fa fa-check" aria-hidden="true"></span> Notifié';
-					notify(json.message || 'Email envoye.', false);
-					window.setTimeout(function () {
+				openRecipientDialog(function (selectedIds) {
+					var original = button.innerHTML;
+					button.disabled = true;
+					button.innerHTML = '<span class="fa fa-spinner fa-spin" aria-hidden="true"></span> Notifier...';
+					postForm(config.urls.sendEvent, {
+						socid: socid,
+						actioncomm_id: actionId,
+						user_ids: selectedIds.join(',')
+					}).then(function (json) {
+						button.innerHTML = '<span class="fa fa-check" aria-hidden="true"></span> Notifié';
+						notify(json.message || 'Email envoye.', false);
+						window.setTimeout(function () {
+							button.disabled = false;
+							button.innerHTML = original;
+						}, 2500);
+					}).catch(function (error) {
 						button.disabled = false;
 						button.innerHTML = original;
-					}, 2500);
-				}).catch(function (error) {
-					button.disabled = false;
-					button.innerHTML = original;
-					notify(error.message, true);
+						notify(error.message, true);
+					});
 				});
 			});
 
 			target.appendChild(button);
+		});
+
+		postForm(config.urls.saveUsers, {mode: 'list'}).then(function (json) {
+			configuredUsers = json.selected || [];
+		}).catch(function (error) {
+			notify(error.message, true);
 		});
 	}
 

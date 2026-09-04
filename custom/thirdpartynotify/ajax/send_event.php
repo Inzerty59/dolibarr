@@ -68,7 +68,18 @@ if (!$user->hasRight('agenda', 'allactions', 'read')) {
 }
 
 $service = new ThirdpartyNotify($db);
-$recipients = $service->getRecipientEmails($conf->entity);
+$recipientUserIds = array();
+foreach (explode(',', GETPOST('user_ids', 'alphanohtml')) as $recipientUserId) {
+	$recipientUserId = (int) trim($recipientUserId);
+	if ($recipientUserId > 0) {
+		$recipientUserIds[$recipientUserId] = $recipientUserId;
+	}
+}
+if (empty($recipientUserIds)) {
+	thirdpartynotify_send_json(array('success' => false, 'error' => 'Aucun destinataire selectionne'), 400);
+}
+
+$recipients = $service->getRecipientEmailsForUsers($conf->entity, array_values($recipientUserIds));
 if ($recipients === -1) {
 	dol_syslog('ThirdpartyNotify recipients error: '.$db->lasterror(), LOG_ERR);
 	thirdpartynotify_send_json(array('success' => false, 'error' => 'Erreur technique'), 500);
@@ -114,7 +125,7 @@ if (is_array($event->socpeopleassigned)) {
 	}
 }
 
-$kanbanCount = $service->createKanbanCardsForSelectedUsers($conf->entity, $event, $thirdparty, $contacts);
+$kanbanCount = $service->createKanbanCardsForSelectedUsers($conf->entity, $event, $thirdparty, $contacts, array_values($recipientUserIds));
 if ($kanbanCount < 0) {
 	dol_syslog('ThirdpartyNotify kanban creation error: '.$db->lasterror(), LOG_ERR);
 	thirdpartynotify_send_json(array('success' => false, 'error' => 'Erreur technique'), 500);
