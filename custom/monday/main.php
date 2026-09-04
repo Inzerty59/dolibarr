@@ -886,6 +886,13 @@ function monday_user_can_read_workspace()
     return !empty($user->id);
 }
 
+function monday_user_can_write_workspace()
+{
+    global $user;
+
+    return !empty($user->admin);
+}
+
 
 function monday_get_kpi_columns($db, $workspaceId = 0)
 {
@@ -2288,7 +2295,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['client_needs_action']
     if (!isset($_POST['token']) || !hash_equals((string) $_SESSION['newtoken'], (string) $_POST['token'])) {
         monday_json_response(['success' => false, 'message' => 'CSRF token invalid'], 403);
     }
-    if (!monday_user_can_read_workspace()) {
+    if (!monday_user_can_write_workspace()) {
         monday_json_response(['success' => false, 'message' => 'Permission denied'], 403);
     }
 
