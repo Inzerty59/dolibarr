@@ -66,6 +66,7 @@ class ActionsTickets extends CommonHookActions
 		$projectid = $this->getProjectIdFromRequest($ticketForOptionals);
 
 		if (in_array($action, array('add', 'update'), true)) {
+			$this->ensureTicketLevelExtraField();
 			$this->syncAllTemplateExtraFieldsForStorage();
 			if (is_object($extrafields)) {
 				$extrafields->fetch_name_optionals_label($object->table_element, true);
@@ -139,24 +140,25 @@ class ActionsTickets extends CommonHookActions
 
 		if ($this->isTicketCard() && is_object($object) && $object->table_element === 'ticket' && !in_array($action, array('create', 'edit'), true)) {
 			$this->filterLoadedTicketTemplateExtraFields($object);
+			print $this->renderTicketStatusMailPopupScript($object);
 			return 0;
 		}
 
 		if ($this->isTicketCard() && in_array($action, array('create', 'edit'), true)) {
+			$this->ensureTicketLevelExtraField();
 			$ticketForOptionals = $this->fetchCurrentTicketForOptionals($object, $action);
 			$projectid = $this->getProjectIdFromRequest($ticketForOptionals);
 
 			$template = $projectid > 0 ? $this->fetchProjectTemplate($projectid) : null;
-			if (empty($template)) {
-				return 0;
-			}
-
-			$templateFields = $this->fetchTemplateFields((int) $template->rowid);
+			$templateFields = !empty($template) ? $this->fetchTemplateFields((int) $template->rowid) : array();
 			if (!empty($templateFields)) {
 				$this->syncDolibarrExtraFields($templateFields);
 			}
 
-			print $this->renderTicketTemplateOptionals($ticketForOptionals, $templateFields);
+			print $this->renderTicketLevelField($ticketForOptionals);
+			if (!empty($templateFields)) {
+				print $this->renderTicketTemplateOptionals($ticketForOptionals, $templateFields);
+			}
 
 			return 1;
 		}
@@ -203,6 +205,181 @@ class ActionsTickets extends CommonHookActions
 				$this->removeLoadedExtraField($extrafields, 'ticket', $key);
 			}
 		}
+	}
+
+	private function renderTicketStatusMailPopupScript($object)
+	{
+		static $done = false;
+		if ($done || empty($object->id)) {
+			return '';
+		}
+		$done = true;
+
+		$recipient = $this->getTicketExternalRecipient($object);
+		$ref = !empty($object->ref) ? $object->ref : '';
+		$subject = '[Inzerty] Complement attendu pour votre ticket '.$ref;
+		$message = $this->buildTicketNeedMoreInfoMessage($object);
+
+		return '<script type="text/javascript">
+(function() {
+	"use strict";
+
+	var recipient = '.json_encode($recipient).';
+	var defaultSubject = '.json_encode($subject).';
+	var defaultMessage = '.json_encode($message).';
+
+	function addHidden(form, name, value) {
+		var input = document.createElement("input");
+		input.type = "hidden";
+		input.name = name;
+		input.value = value;
+		form.appendChild(input);
+	}
+
+	function openPopup(actionUrl) {
+		var overlay = document.createElement("div");
+		overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:100000;display:flex;align-items:center;justify-content:center;padding:16px;";
+
+		var box = document.createElement("div");
+		box.style.cssText = "background:#fff;width:min(680px,100%);border-radius:6px;padding:18px;box-shadow:0 8px 30px rgba(0,0,0,.25);";
+		box.innerHTML = ""
+			+ "<h3 style=\"margin:0 0 18px;font-size:18px;\">Email ticket</h3>"
+			+ "<label style=\"display:block;font-weight:bold;margin-bottom:6px;\">Destinataire</label>"
+			+ "<input type=\"text\" class=\"flat\" style=\"box-sizing:border-box;width:100%;margin-bottom:12px;\">"
+			+ "<label style=\"display:block;font-weight:bold;margin-bottom:6px;\">Sujet</label>"
+			+ "<input type=\"text\" class=\"flat\" style=\"box-sizing:border-box;width:100%;margin-bottom:12px;\">"
+			+ "<label style=\"display:block;font-weight:bold;margin-bottom:6px;\">Message</label>"
+			+ "<textarea style=\"box-sizing:border-box;width:100%;height:190px;margin-bottom:18px;\"></textarea>"
+			+ "<div style=\"display:flex;justify-content:flex-end;gap:12px;\">"
+			+ "<button type=\"button\" class=\"button ticket-mail-cancel\">ANNULER</button>"
+			+ "<button type=\"button\" class=\"button button-save ticket-mail-send\">ENVOYER</button>"
+			+ "</div>";
+
+		overlay.appendChild(box);
+		document.body.appendChild(overlay);
+
+		var inputs = box.querySelectorAll("input");
+		var textarea = box.querySelector("textarea");
+		inputs[0].value = recipient.name ? recipient.name + " <" + recipient.email + ">" : recipient.email;
+		inputs[1].value = defaultSubject;
+		textarea.value = defaultMessage;
+
+		box.querySelector(".ticket-mail-cancel").addEventListener("click", function() {
+			document.body.removeChild(overlay);
+		});
+
+		box.querySelector(".ticket-mail-send").addEventListener("click", function() {
+			var url = new URL(actionUrl, window.location.href);
+			var targetUrl = new URL(url.pathname, window.location.origin);
+			var form = document.createElement("form");
+			form.method = "POST";
+			["track_id", "id", "token"].forEach(function(param) {
+				if (url.searchParams.has(param)) {
+					targetUrl.searchParams.set(param, url.searchParams.get(param));
+				}
+			});
+			form.action = targetUrl.pathname + targetUrl.search;
+			addHidden(form, "action", "confirm_set_status");
+			addHidden(form, "new_status", "5");
+			addHidden(form, "ticket_custom_customer_subject", inputs[1].value);
+			addHidden(form, "ticket_custom_customer_message", textarea.value);
+			addHidden(form, "ticket_custom_status_mail_confirm", "1");
+			document.body.appendChild(form);
+			form.submit();
+		});
+	}
+
+	document.addEventListener("click", function(e) {
+		var link = e.target.closest("a[href]");
+		if (!link) return;
+		var href = link.getAttribute("href") || "";
+		if (href.indexOf("action=confirm_set_status") !== -1 && href.indexOf("new_status=5") !== -1) {
+			e.preventDefault();
+			e.stopPropagation();
+			openPopup(href);
+		}
+	}, true);
+})();
+</script>';
+	}
+
+	private function getTicketExternalRecipient($object)
+	{
+		$contacts = $object->listeContact(-1, 'external');
+		if (empty($contacts) || !is_array($contacts)) {
+			return array('email' => '', 'name' => '');
+		}
+
+		foreach ($contacts as $contact) {
+			if (empty($contact['email']) || empty($contact['statuscontact'])) {
+				continue;
+			}
+
+			$name = trim(implode(' ', array_filter(array(
+				!empty($contact['firstname']) ? $contact['firstname'] : '',
+				!empty($contact['lastname']) ? $contact['lastname'] : '',
+			))));
+
+			return array('email' => $contact['email'], 'name' => $name);
+		}
+
+		return array('email' => '', 'name' => '');
+	}
+
+	private function buildTicketNeedMoreInfoMessage($object)
+	{
+		$lines = array(
+			'Bonjour,',
+			'',
+			'Votre ticket est en attente de retour de votre part.',
+			'',
+		);
+
+		if (!empty($object->ref)) {
+			$lines[] = 'Ticket : '.$object->ref;
+		}
+		if (!empty($object->subject)) {
+			$lines[] = 'Sujet : '.$object->subject;
+		}
+		if (!empty($object->severity_label)) {
+			$lines[] = 'Severite : '.$object->severity_label;
+		}
+		if (!empty($object->datec)) {
+			$lines[] = 'Date : '.dol_print_date($object->datec, 'dayhour');
+		}
+
+		$levelLabel = $this->getTicketLevelLabel($object);
+		if ($levelLabel !== '') {
+			$lines[] = 'Niveau : '.$levelLabel;
+		}
+
+		$lines[] = '';
+		$lines[] = 'Vous pouvez repondre a ce message avec les informations attendues.';
+
+		return implode("\n", $lines);
+	}
+
+	private function getTicketLevelLabel($object)
+	{
+		if (method_exists($object, 'fetch_optionals')) {
+			$object->fetch_optionals();
+		}
+
+		$value = '';
+		if (!empty($object->array_options['options_ticket_niveau'])) {
+			$value = (string) $object->array_options['options_ticket_niveau'];
+		}
+		if ($value === '') {
+			return '';
+		}
+
+		$labels = array(
+			'1' => 'Niveau 1',
+			'2' => 'Niveau 2',
+			'3' => 'Niveau 3',
+		);
+
+		return !empty($labels[$value]) ? $labels[$value] : $value;
 	}
 
 	/**
@@ -297,6 +474,66 @@ class ActionsTickets extends CommonHookActions
 		}
 
 		return $out;
+	}
+
+	private function renderTicketLevelField($ticket)
+	{
+		$extrafields = new ExtraFields($this->db);
+		$extrafields->fetch_name_optionals_label('ticket', true);
+
+		if (empty($extrafields->attributes['ticket']['label']['ticket_niveau'])) {
+			return '';
+		}
+
+		$value = GETPOSTISSET('options_ticket_niveau') ? GETPOST('options_ticket_niveau', 'alphanohtml') : '';
+		if ($value === '' && is_object($ticket) && !empty($ticket->array_options['options_ticket_niveau'])) {
+			$value = $ticket->array_options['options_ticket_niveau'];
+		}
+
+		return '<tr>'
+			.'<td class="titlefieldcreate">'.$extrafields->attributes['ticket']['label']['ticket_niveau'].'</td>'
+			.'<td>'.$extrafields->showInputField('ticket_niveau', $value, '', '', 'options_', '', $ticket, 'ticket').'</td>'
+			.'</tr>';
+	}
+
+	private function ensureTicketLevelExtraField()
+	{
+		global $conf;
+
+		$sql = "SELECT rowid FROM ".MAIN_DB_PREFIX."extrafields";
+		$sql .= " WHERE elementtype = 'ticket'";
+		$sql .= " AND name = 'ticket_niveau'";
+		$sql .= " AND entity = ".((int) $conf->entity);
+		$resql = $this->db->query($sql);
+		if ($resql && $this->db->num_rows($resql) > 0) {
+			return;
+		}
+
+		$extrafields = new ExtraFields($this->db);
+		$extrafields->addExtraField(
+			'ticket_niveau',
+			'Niveau',
+			'select',
+			95,
+			'',
+			'ticket',
+			0,
+			0,
+			'',
+			array('options' => array(
+				'1' => 'Niveau 1',
+				'2' => 'Niveau 2',
+				'3' => 'Niveau 3',
+			)),
+			1,
+			'',
+			'1',
+			'',
+			'',
+			$conf->entity,
+			'tickets@tickets',
+			'1'
+		);
 	}
 
 	/**
