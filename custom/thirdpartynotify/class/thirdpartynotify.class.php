@@ -166,7 +166,39 @@ class ThirdpartyNotify
 		return array_values($recipients);
 	}
 
-	public function createKanbanCardsForSelectedUsers($entity, $event, $thirdparty, array $contacts)
+	public function getRecipientEmailsForUsers($entity, array $userIds, $contextType = self::CONTEXT_GLOBAL, $fkContext = 0)
+	{
+		$ids = array();
+		foreach ($userIds as $userId) {
+			$userId = (int) $userId;
+			if ($userId > 0) {
+				$ids[$userId] = $userId;
+			}
+		}
+		if (empty($ids)) {
+			return array();
+		}
+
+		$recipients = array();
+		$users = $this->getSelectedUsers($entity, $contextType, $fkContext);
+		if ($users === -1) {
+			return -1;
+		}
+
+		foreach ($users as $user) {
+			if (!isset($ids[(int) $user['id']])) {
+				continue;
+			}
+			$email = trim($user['email']);
+			if ($email !== '' && isValidEmail($email)) {
+				$recipients[$email] = $user['name'].' <'.$email.'>';
+			}
+		}
+
+		return array_values($recipients);
+	}
+
+	public function createKanbanCardsForSelectedUsers($entity, $event, $thirdparty, array $contacts, array $recipientUserIds = array())
 	{
 		if ($this->ensureKanbanTable() < 0) {
 			return -1;
@@ -176,40 +208,138 @@ class ThirdpartyNotify
 		if ($selectedUsers === -1) {
 			return -1;
 		}
+		$allowedIds = array();
+		foreach ($recipientUserIds as $userId) {
+			$userId = (int) $userId;
+			if ($userId > 0) {
+				$allowedIds[$userId] = $userId;
+			}
+		}
+		if (!empty($allowedIds)) {
+			$selectedUsers = array_values(array_filter($selectedUsers, function ($selectedUser) use ($allowedIds) {
+				return isset($allowedIds[(int) $selectedUser['id']]);
+			}));
+		}
+		if (empty($selectedUsers)) {
+			return 0;
+		}
 
 		$status = $this->mapProgressToKanbanStatus((int) $event->percentage);
 		$contactsJson = json_encode(array_values($contacts));
-		$count = 0;
-
+		$recipientIds = array();
+		$recipientNames = array();
 		foreach ($selectedUsers as $selectedUser) {
-			$sql = "INSERT INTO ".MAIN_DB_PREFIX."thirdpartynotify_kanban_card (";
-			$sql .= "entity, fk_user_dest, fk_actioncomm, fk_soc, event_ref, event_label, event_date_start, event_date_end, contacts_json, status, date_creation";
-			$sql .= ") VALUES (";
-			$sql .= ((int) $entity).", ";
-			$sql .= ((int) $selectedUser['id']).", ";
-			$sql .= ((int) $event->id).", ";
-			$sql .= ((int) $thirdparty->id).", ";
-			$sql .= "'".$this->db->escape('#'.((int) $event->id))."', ";
-			$sql .= "'".$this->db->escape((string) $event->label)."', ";
-			$sql .= ($event->datep ? "'".$this->db->idate($event->datep)."'" : "NULL").", ";
-			$sql .= ($event->datef ? "'".$this->db->idate($event->datef)."'" : "NULL").", ";
-			$sql .= "'".$this->db->escape((string) $contactsJson)."', ";
-			$sql .= "'".$this->db->escape($status)."', ";
-			$sql .= "'".$this->db->idate(dol_now())."'";
-			$sql .= ") ON DUPLICATE KEY UPDATE ";
-			$sql .= "event_label = VALUES(event_label), ";
-			$sql .= "event_date_start = VALUES(event_date_start), ";
-			$sql .= "event_date_end = VALUES(event_date_end), ";
-			$sql .= "contacts_json = VALUES(contacts_json), ";
-			$sql .= "status = VALUES(status)";
+			$recipientIds[] = (int) $selectedUser['id'];
+			$recipientNames[] = (string) $selectedUser['name'];
+		}
+		$recipientIdsJson = json_encode(array_values($recipientIds));
+		$recipientNamesJson = json_encode(array_values($recipientNames));
+		$primaryUserId = (int) $recipientIds[0];
 
-			if (!$this->db->query($sql)) {
-				return -1;
-			}
-			$count++;
+		$sql = "SELECT rowid, recipient_ids_json, recipient_names_json FROM ".MAIN_DB_PREFIX."thirdpartynotify_kanban_card";
+		$sql .= " WHERE entity = ".((int) $entity);
+		$sql .= " AND fk_actioncomm = ".((int) $event->id);
+		$sql .= " ORDER BY rowid ASC";
+		$resql = $this->db->query($sql);
+		if (!$resql) {
+			return -1;
 		}
 
-		return $count;
+		$keepRowId = 0;
+		$duplicateIds = array();
+		$existingRecipientIds = array();
+		$existingRecipientNames = array();
+		while ($obj = $this->db->fetch_object($resql)) {
+			if (!$keepRowId) {
+				$keepRowId = (int) $obj->rowid;
+				$decodedIds = json_decode((string) $obj->recipient_ids_json, true);
+				$decodedNames = json_decode((string) $obj->recipient_names_json, true);
+				if (is_array($decodedIds)) {
+					foreach ($decodedIds as $index => $existingId) {
+						$existingId = (int) $existingId;
+						if ($existingId <= 0) {
+							continue;
+						}
+						$existingRecipientIds[$existingId] = $existingId;
+						if (is_array($decodedNames) && isset($decodedNames[$index])) {
+							$existingRecipientNames[$existingId] = (string) $decodedNames[$index];
+						}
+					}
+				}
+			} else {
+				$duplicateIds[] = (int) $obj->rowid;
+			}
+		}
+
+		$this->db->begin();
+		if ($keepRowId > 0) {
+			foreach ($recipientIds as $index => $recipientId) {
+				$recipientId = (int) $recipientId;
+				$existingRecipientIds[$recipientId] = $recipientId;
+				$existingRecipientNames[$recipientId] = isset($recipientNames[$index]) ? (string) $recipientNames[$index] : '';
+			}
+			$recipientIds = array_values($existingRecipientIds);
+			$recipientNames = array();
+			foreach ($recipientIds as $recipientId) {
+				$recipientNames[] = isset($existingRecipientNames[$recipientId]) && $existingRecipientNames[$recipientId] !== '' ? $existingRecipientNames[$recipientId] : '#'.$recipientId;
+			}
+			$recipientIdsJson = json_encode(array_values($recipientIds));
+			$recipientNamesJson = json_encode(array_values($recipientNames));
+			$primaryUserId = (int) $recipientIds[0];
+
+			$sql = "UPDATE ".MAIN_DB_PREFIX."thirdpartynotify_kanban_card SET";
+			$sql .= " fk_user_dest = ".$primaryUserId;
+			$sql .= ", fk_soc = ".((int) $thirdparty->id);
+			$sql .= ", event_ref = '".$this->db->escape('#'.((int) $event->id))."'";
+			$sql .= ", event_label = '".$this->db->escape((string) $event->label)."'";
+			$sql .= ", event_date_start = ".($event->datep ? "'".$this->db->idate($event->datep)."'" : "NULL");
+			$sql .= ", event_date_end = ".($event->datef ? "'".$this->db->idate($event->datef)."'" : "NULL");
+			$sql .= ", contacts_json = '".$this->db->escape((string) $contactsJson)."'";
+			$sql .= ", recipient_ids_json = '".$this->db->escape((string) $recipientIdsJson)."'";
+			$sql .= ", recipient_names_json = '".$this->db->escape((string) $recipientNamesJson)."'";
+			$sql .= ", status = '".$this->db->escape($status)."'";
+			$sql .= " WHERE rowid = ".$keepRowId;
+			if (!$this->db->query($sql)) {
+				$this->db->rollback();
+				return -1;
+			}
+			if (!empty($duplicateIds)) {
+				$sql = "DELETE FROM ".MAIN_DB_PREFIX."thirdpartynotify_kanban_card";
+				$sql .= " WHERE entity = ".((int) $entity);
+				$sql .= " AND rowid IN (".$this->db->sanitize(implode(',', $duplicateIds)).")";
+				if (!$this->db->query($sql)) {
+					$this->db->rollback();
+					return -1;
+				}
+			}
+			$this->db->commit();
+			return 1;
+		}
+
+		$sql = "INSERT INTO ".MAIN_DB_PREFIX."thirdpartynotify_kanban_card (";
+		$sql .= "entity, fk_user_dest, fk_actioncomm, fk_soc, event_ref, event_label, event_date_start, event_date_end, contacts_json, recipient_ids_json, recipient_names_json, status, date_creation";
+		$sql .= ") VALUES (";
+		$sql .= ((int) $entity).", ";
+		$sql .= $primaryUserId.", ";
+		$sql .= ((int) $event->id).", ";
+		$sql .= ((int) $thirdparty->id).", ";
+		$sql .= "'".$this->db->escape('#'.((int) $event->id))."', ";
+		$sql .= "'".$this->db->escape((string) $event->label)."', ";
+		$sql .= ($event->datep ? "'".$this->db->idate($event->datep)."'" : "NULL").", ";
+		$sql .= ($event->datef ? "'".$this->db->idate($event->datef)."'" : "NULL").", ";
+		$sql .= "'".$this->db->escape((string) $contactsJson)."', ";
+		$sql .= "'".$this->db->escape((string) $recipientIdsJson)."', ";
+		$sql .= "'".$this->db->escape((string) $recipientNamesJson)."', ";
+		$sql .= "'".$this->db->escape($status)."', ";
+		$sql .= "'".$this->db->idate(dol_now())."'";
+		$sql .= ")";
+		if (!$this->db->query($sql)) {
+			$this->db->rollback();
+			return -1;
+		}
+
+		$this->db->commit();
+		return 1;
 	}
 
 	public function fetchKanbanCardsForUser($entity, $userId, $includeAll = false)
@@ -224,14 +354,19 @@ class ThirdpartyNotify
 			self::KANBAN_STATUS_ARCHIVED => array(),
 		);
 
-		$sql = "SELECT k.rowid, k.fk_user_dest, k.fk_actioncomm, k.fk_soc, k.event_ref, k.event_label, k.event_date_start, k.event_date_end, k.contacts_json, k.status, s.nom as thirdparty_name,";
+		$sql = "SELECT k.rowid, k.fk_user_dest, k.fk_actioncomm, k.fk_soc, k.event_ref, k.event_label, k.event_date_start, k.event_date_end, k.contacts_json, k.recipient_ids_json, k.recipient_names_json, k.status, s.nom as thirdparty_name,";
 		$sql .= " u.firstname, u.lastname, u.login";
 		$sql .= " FROM ".MAIN_DB_PREFIX."thirdpartynotify_kanban_card as k";
 		$sql .= " LEFT JOIN ".MAIN_DB_PREFIX."societe as s ON s.rowid = k.fk_soc";
 		$sql .= " LEFT JOIN ".MAIN_DB_PREFIX."user as u ON u.rowid = k.fk_user_dest";
 		$sql .= " WHERE k.entity = ".((int) $entity);
 		if (!$includeAll) {
-			$sql .= " AND k.fk_user_dest = ".((int) $userId);
+			$sql .= " AND (k.fk_user_dest = ".((int) $userId);
+			$sql .= " OR k.recipient_ids_json LIKE '%\"".((int) $userId)."\"%'";
+			$sql .= " OR k.recipient_ids_json = '[".((int) $userId)."]'";
+			$sql .= " OR k.recipient_ids_json LIKE '%[".((int) $userId).",%'";
+			$sql .= " OR k.recipient_ids_json LIKE '%,".((int) $userId).",%'";
+			$sql .= " OR k.recipient_ids_json LIKE '%,".((int) $userId)."]%')";
 		}
 		$sql .= " ORDER BY k.date_creation DESC, k.rowid DESC";
 
@@ -243,6 +378,7 @@ class ThirdpartyNotify
 		while ($obj = $this->db->fetch_object($resql)) {
 			$status = $this->normalizeKanbanStatus($obj->status);
 			$contacts = json_decode((string) $obj->contacts_json, true);
+			$recipientNames = json_decode((string) $obj->recipient_names_json, true);
 			$recipientName = trim($obj->firstname.' '.$obj->lastname);
 			if ($recipientName === '') {
 				$recipientName = $obj->login;
@@ -251,6 +387,7 @@ class ThirdpartyNotify
 				'id' => (int) $obj->rowid,
 				'recipient_id' => (int) $obj->fk_user_dest,
 				'recipient_name' => (string) $recipientName,
+				'recipient_names' => is_array($recipientNames) && !empty($recipientNames) ? implode(', ', $recipientNames) : (string) $recipientName,
 				'actioncomm_id' => (int) $obj->fk_actioncomm,
 				'socid' => (int) $obj->fk_soc,
 				'thirdparty_name' => (string) $obj->thirdparty_name,
@@ -280,7 +417,12 @@ class ThirdpartyNotify
 		$sql .= " WHERE rowid = ".((int) $cardId);
 		$sql .= " AND entity = ".((int) $entity);
 		if (!$allowAnyUserCard) {
-			$sql .= " AND fk_user_dest = ".((int) $userId);
+			$sql .= " AND (fk_user_dest = ".((int) $userId);
+			$sql .= " OR recipient_ids_json LIKE '%\"".((int) $userId)."\"%'";
+			$sql .= " OR recipient_ids_json = '[".((int) $userId)."]'";
+			$sql .= " OR recipient_ids_json LIKE '%[".((int) $userId).",%'";
+			$sql .= " OR recipient_ids_json LIKE '%,".((int) $userId).",%'";
+			$sql .= " OR recipient_ids_json LIKE '%,".((int) $userId)."]%')";
 		}
 
 		$resql = $this->db->query($sql);
@@ -316,6 +458,31 @@ class ThirdpartyNotify
 		return 1;
 	}
 
+	public function deleteKanbanCard($entity, $userId, $cardId, $allowAnyUserCard = false)
+	{
+		if ($this->ensureKanbanTable() < 0) {
+			return -1;
+		}
+
+		$sql = "DELETE FROM ".MAIN_DB_PREFIX."thirdpartynotify_kanban_card";
+		$sql .= " WHERE rowid = ".((int) $cardId);
+		$sql .= " AND entity = ".((int) $entity);
+		if (!$allowAnyUserCard) {
+			$sql .= " AND (fk_user_dest = ".((int) $userId);
+			$sql .= " OR recipient_ids_json LIKE '%\"".((int) $userId)."\"%'";
+			$sql .= " OR recipient_ids_json = '[".((int) $userId)."]'";
+			$sql .= " OR recipient_ids_json LIKE '%[".((int) $userId).",%'";
+			$sql .= " OR recipient_ids_json LIKE '%,".((int) $userId).",%'";
+			$sql .= " OR recipient_ids_json LIKE '%,".((int) $userId)."]%')";
+		}
+
+		if (!$this->db->query($sql)) {
+			return -1;
+		}
+
+		return $this->db->affected_rows($this->db->lastquery());
+	}
+
 	public function ensureKanbanTable()
 	{
 		$sql = "CREATE TABLE IF NOT EXISTS ".MAIN_DB_PREFIX."thirdpartynotify_kanban_card (";
@@ -329,6 +496,8 @@ class ThirdpartyNotify
 		$sql .= "event_date_start datetime DEFAULT NULL,";
 		$sql .= "event_date_end datetime DEFAULT NULL,";
 		$sql .= "contacts_json text DEFAULT NULL,";
+		$sql .= "recipient_ids_json text DEFAULT NULL,";
+		$sql .= "recipient_names_json text DEFAULT NULL,";
 		$sql .= "status varchar(32) NOT NULL DEFAULT 'pending',";
 		$sql .= "date_creation datetime NOT NULL,";
 		$sql .= "tms timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,";
@@ -336,7 +505,29 @@ class ThirdpartyNotify
 		$sql .= "KEY idx_thirdpartynotify_kanban_user_status (entity, fk_user_dest, status)";
 		$sql .= ") ENGINE=innodb";
 
-		return $this->db->query($sql) ? 1 : -1;
+		if (!$this->db->query($sql)) {
+			return -1;
+		}
+
+		$this->ensureKanbanColumn('recipient_ids_json', 'text DEFAULT NULL');
+		$this->ensureKanbanColumn('recipient_names_json', 'text DEFAULT NULL');
+
+		return 1;
+	}
+
+	private function ensureKanbanColumn($column, $definition)
+	{
+		$column = preg_replace('/[^a-zA-Z0-9_]/', '', (string) $column);
+		if ($column === '') {
+			return;
+		}
+		$sql = "SHOW COLUMNS FROM ".MAIN_DB_PREFIX."thirdpartynotify_kanban_card LIKE '".$this->db->escape($column)."'";
+		$resql = $this->db->query($sql);
+		if ($resql && $this->db->num_rows($resql) > 0) {
+			return;
+		}
+		$sql = "ALTER TABLE ".MAIN_DB_PREFIX."thirdpartynotify_kanban_card ADD COLUMN ".$column." ".$definition;
+		$this->db->query($sql);
 	}
 
 	private function mapProgressToKanbanStatus($progress)

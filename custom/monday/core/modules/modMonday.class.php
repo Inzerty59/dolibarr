@@ -278,6 +278,20 @@ class modMonday extends DolibarrModules
 				'test' => 'isModEnabled("monday") && getDolGlobalInt("MONDAY_GRAPH_INBOUND_ENABLE")',
 				'priority' => 50,
 			),
+			1 => array(
+				'label' => 'Envoi automatique des emails candidats de plus de 2 ans',
+				'jobtype' => 'method',
+				'class' => '/monday/class/candidateretentionmailservice.class.php',
+				'objectname' => 'CandidateRetentionMailService',
+				'method' => 'doScheduledJob',
+				'parameters' => 'limit=100',
+				'comment' => 'Envoie une seule fois le mail de conservation des données aux candidats âgés de 2 ans ou plus dans les tableaux ciblés.',
+				'frequency' => 1,
+				'unitfrequency' => 86400,
+				'status' => 1,
+				'test' => 'isModEnabled("monday")',
+				'priority' => 50,
+			),
 		);
 		/* END MODULEBUILDER CRON */
 		// Example: $this->cronjobs=array(
