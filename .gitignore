@@ -1,2 +1,4 @@
 data/
 .env
+.codebase-memory/
+dolibarr_source/

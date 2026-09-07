@@ -66,4 +66,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'update_status') {
 	planity_kanban_response(array('success' => true));
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'delete') {
+	$token = GETPOST('token', 'alpha');
+	if (empty($token) || !hash_equals((string) currentToken(), (string) $token)) {
+		planity_kanban_response(array('success' => false, 'error' => 'token invalide'), 403);
+	}
+
+	$cardId = GETPOSTINT('planity_kanban_card_id');
+	if ($cardId <= 0) {
+		planity_kanban_response(array('success' => false, 'error' => 'Paramètres invalides'), 400);
+	}
+
+	$result = $service->deleteKanbanCard($conf->entity, $user->id, $cardId, $isAdminView);
+	if ($result < 0) {
+		dol_syslog('Planity Kanban delete error: '.$db->lasterror(), LOG_ERR);
+		planity_kanban_response(array('success' => false, 'error' => 'Erreur technique'), 500);
+	}
+	if ($result === 0) {
+		planity_kanban_response(array('success' => false, 'error' => 'Carte introuvable'), 404);
+	}
+
+	planity_kanban_response(array('success' => true));
+}
+
 planity_kanban_response(array('success' => false, 'error' => 'Action invalide'), 400);

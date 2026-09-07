@@ -1,0 +1,9 @@
+OutlooksyncDescription=Synchronisation Outlook
+OutlooksyncDescriptionLong=Synchronisation des événements agenda Dolibarr vers Outlook avec Microsoft Graph
+OutlooksyncSetup=Configuration synchronisation Outlook
+OutlooksyncSetupHelp=Renseignez les paramètres Entra ID. Les boîtes autorisées sont les emails des organisateurs Dolibarr séparés par des virgules. Le secret client doit être fourni par la variable d'environnement OUTLOOKSYNC_CLIENT_SECRET.
+OutlooksyncTenantId=Tenant ID
+OutlooksyncClientId=Application ID
+OutlooksyncClientSecretExpiresAt=Expiration du secret
+OutlooksyncAllowedMailboxes=Boîtes internes autorisées
+OutlooksyncSettingsSaved=Configuration enregistrée
