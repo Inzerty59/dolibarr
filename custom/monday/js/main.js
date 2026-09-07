@@ -1246,6 +1246,9 @@ $(function(){
 
     loadComments(taskId);
     loadTaskFiles(taskId);
+    if (typeof window.mondayLoadCandidateEmail === 'function') {
+      window.mondayLoadCandidateEmail(taskId);
+    }
   };
 
   window.closeTaskDetail = function(options = {}) {
