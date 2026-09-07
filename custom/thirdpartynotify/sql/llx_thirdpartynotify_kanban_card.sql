@@ -9,6 +9,8 @@ CREATE TABLE IF NOT EXISTS llx_thirdpartynotify_kanban_card (
 	event_date_start datetime DEFAULT NULL,
 	event_date_end datetime DEFAULT NULL,
 	contacts_json text DEFAULT NULL,
+	recipient_ids_json text DEFAULT NULL,
+	recipient_names_json text DEFAULT NULL,
 	status varchar(32) NOT NULL DEFAULT 'pending',
 	date_creation datetime NOT NULL,
 	tms timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

@@ -19,10 +19,6 @@ function thirdpartynotify_json($payload, $status = 200)
 	exit;
 }
 
-if (empty($user->admin)) {
-	thirdpartynotify_json(array('success' => false, 'error' => 'Accès interdit'), 403);
-}
-
 $token = GETPOST('token', 'alpha');
 if (empty($token) || !hash_equals((string) currentToken(), (string) $token)) {
 	thirdpartynotify_json(array('success' => false, 'error' => 'token invalide'), 403);
@@ -32,6 +28,23 @@ $mode = GETPOST('mode', 'alpha');
 $service = new ThirdpartyNotify($db);
 
 if ($mode === 'list') {
+	if (empty($user->admin)) {
+		if (!$user->hasRight('societe', 'lire')) {
+			thirdpartynotify_json(array('success' => false, 'error' => 'Accès interdit'), 403);
+		}
+		$selected = $service->getSelectedUsers($conf->entity);
+		if ($selected === -1) {
+			dol_syslog('ThirdpartyNotify save_users selected list error: '.$db->lasterror(), LOG_ERR);
+			thirdpartynotify_json(array('success' => false, 'error' => 'Erreur technique'), 500);
+		}
+		thirdpartynotify_json(array(
+			'success' => true,
+			'users' => array(),
+			'selected' => $selected,
+			'newToken' => currentToken(),
+		));
+	}
+
 	$users = $service->getSelectableUsers($conf->entity);
 	$selected = $service->getSelectedUsers($conf->entity);
 	if ($users === -1 || $selected === -1) {
@@ -47,6 +60,10 @@ if ($mode === 'list') {
 }
 
 if ($mode === 'save') {
+	if (empty($user->admin)) {
+		thirdpartynotify_json(array('success' => false, 'error' => 'Accès interdit'), 403);
+	}
+
 	$userIdsRaw = GETPOST('users', 'alphanohtml');
 	$userIds = array();
 	if ($userIdsRaw !== '') {

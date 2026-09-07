@@ -81,11 +81,38 @@ CREATE TABLE llx_myworkspace_task (
     fk_group int(11) NOT NULL,
     label varchar(255) NOT NULL,
     position int(11) DEFAULT 0,
+    inbound_email_token varchar(64) DEFAULT NULL,
     datec datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
     tms timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_fk_group (fk_group),
     INDEX idx_position (position),
+    UNIQUE KEY uk_inbound_email_token (inbound_email_token),
     FOREIGN KEY (fk_group) REFERENCES llx_myworkspace_group(rowid) ON DELETE CASCADE
+) ENGINE=innodb;
+
+-- ================================================================================
+-- 5b. Table des e-mails candidats déjà importés
+-- ================================================================================
+CREATE TABLE llx_monday_inbound_email (
+    rowid int(11) AUTO_INCREMENT PRIMARY KEY,
+    message_key varchar(64) NOT NULL,
+    fk_task int(11) NOT NULL,
+    fk_comment int(11) NOT NULL DEFAULT 0,
+    datec datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_monday_inbound_email_message_key (message_key),
+    INDEX idx_monday_inbound_email_fk_task (fk_task)
+) ENGINE=innodb;
+
+CREATE TABLE llx_monday_graph_sync_state (
+    rowid int(11) AUTO_INCREMENT PRIMARY KEY,
+    mailbox_email varchar(255) NOT NULL,
+    folder_name varchar(64) NOT NULL DEFAULT 'SentItems',
+    delta_link text,
+    last_success_at datetime DEFAULT NULL,
+    last_error text,
+    datec datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    tms timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_monday_graph_sync_state_mailbox_folder (mailbox_email, folder_name)
 ) ENGINE=innodb;
 
 -- ================================================================================
@@ -127,6 +154,7 @@ CREATE TABLE llx_myworkspace_comment (
 CREATE TABLE llx_myworkspace_task_file (
     rowid int(11) AUTO_INCREMENT PRIMARY KEY,
     fk_task int(11) NOT NULL,
+    fk_inbound_email int(11) DEFAULT NULL,
     original_name varchar(255) NOT NULL,
     filename varchar(255) NOT NULL,
     filesize int(11) NOT NULL,
@@ -135,6 +163,7 @@ CREATE TABLE llx_myworkspace_task_file (
     datec datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
     tms timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_fk_task (fk_task),
+    INDEX idx_fk_inbound_email (fk_inbound_email),
     INDEX idx_fk_user (fk_user),
     INDEX idx_datec (datec),
     FOREIGN KEY (fk_task) REFERENCES llx_myworkspace_task(rowid) ON DELETE CASCADE

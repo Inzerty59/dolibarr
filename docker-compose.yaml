@@ -16,6 +16,8 @@ services:
     container_name: dolibarr_app
     depends_on:
       - db
+    env_file:
+      - .env
     ports:
       - "8080:80"
     restart: unless-stopped
@@ -26,6 +28,47 @@ services:
       DOLI_DB_USER: dolibarr_user
       DOLI_DB_PASSWORD: secret_password
       DOLI_MAIN_DOCUMENTS_DIR: /var/www/html/documents
+      PHP_INI_ALLOW_URL_FOPEN: 1
+      PHP_INI_MEMORY_LIMIT: 1024M
     volumes:
+      - ./dolibarr_source/conf/conf.php:/var/www/html/conf/conf.php:ro
+      - ./data/dolibarr:/var/www/documents
       - ./data/dolibarr:/var/www/html/documents
       - ./custom:/var/www/html/custom
+
+  dolibarr_cron:
+    image: dolibarr/dolibarr:latest
+    container_name: dolibarr_cron
+    depends_on:
+      - dolibarr
+    env_file:
+      - .env
+    restart: unless-stopped
+    environment:
+      DOLI_DB_HOST: db
+      DOLI_DB_PORT: 3306
+      DOLI_DB_NAME: dolibarr
+      DOLI_DB_USER: dolibarr_user
+      DOLI_DB_PASSWORD: secret_password
+      DOLI_MAIN_DOCUMENTS_DIR: /var/www/html/documents
+      PHP_INI_ALLOW_URL_FOPEN: 1
+      PHP_INI_MEMORY_LIMIT: 1024M
+      DOLI_CRON_USER: amina.chelighem
+    volumes:
+      - ./dolibarr_source/conf/conf.php:/var/www/html/conf/conf.php:ro
+      - ./data/dolibarr:/var/www/documents
+      - ./data/dolibarr:/var/www/html/documents
+      - ./custom:/var/www/html/custom
+    command: >
+      sh -c 'while true; do
+        php -r '\''define("NOLOGIN", 1);
+        require "/var/www/html/main.inc.php";
+        if (getDolGlobalString("CRON_KEY") === "") {
+          echo date("c")." CRON_KEY is empty\n";
+        } else {
+          echo date("c")." run Dolibarr cron\n";
+          $$context = stream_context_create(["http" => ["timeout" => 300]]);
+          $$result = @file_get_contents("http://dolibarr/public/cron/cron_run_jobs_by_url.php?securitykey=".urlencode(getDolGlobalString("CRON_KEY"))."&userlogin=".urlencode(getenv("DOLI_CRON_USER") ?: "admin"), false, $$context);
+          echo date("c").($$result === false ? " cron call failed\n" : " cron call done\n");
+        }'\''; sleep 60;
+      done'
