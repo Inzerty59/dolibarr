@@ -2708,7 +2708,7 @@ $(function(){
     const status = card.status || 'pending';
 
     return `
-      <div class="kanban-card planity-kanban-card" draggable="true" data-id="${card.id}" data-status="${escapeHtml(status)}">
+      <div class="kanban-card planity-kanban-card" draggable="true" data-id="${card.id}" data-status="${escapeHtml(status)}" data-actioncomm-id="${escapeHtml(card.actioncomm_id)}">
         <span class="kanban-task-label">Référence événement : ${escapeHtml(card.ref)}</span>
         ${card.recipient_names ? `<span class="kanban-task-user">Destinataire : ${escapeHtml(card.recipient_names)}</span>` : (planityKanbanIsAdmin && card.recipient_name ? `<span class="kanban-task-user">Destinataire : ${escapeHtml(card.recipient_name)}</span>` : '')}
         <span class="kanban-task-user">Tiers : ${escapeHtml(card.thirdparty_name || ('#' + card.socid))}</span>
@@ -2765,6 +2765,7 @@ $(function(){
         initPlanityKanbanDragDrop();
         initPlanityKanbanStatusSelect();
         initPlanityKanbanDelete();
+        initPlanityKanbanCardClick();
       })
       .catch(error => {
         $('#main-content').append(`<div class="error">${escapeHtml(error.message)}</div>`);
@@ -2855,6 +2856,17 @@ $(function(){
       return response.json().then(json => {
         if (!response.ok || json.success === false) throw new Error(json.error || 'Erreur serveur');
         return json;
+      });
+    });
+  }
+
+  function initPlanityKanbanCardClick() {
+    document.querySelectorAll('.planity-kanban-card').forEach(card => {
+      card.addEventListener('click', () => {
+        const actionId = card.dataset.actioncommId;
+        if (!actionId) return;
+        const dolUrlRoot = planityKanbanUrl.replace(/\/custom\/monday\/ajax\/planity_kanban\.php$/, '');
+        window.location.href = `${dolUrlRoot}/comm/action/card.php?id=${encodeURIComponent(actionId)}`;
       });
     });
   }
