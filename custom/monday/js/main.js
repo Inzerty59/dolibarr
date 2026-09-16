@@ -494,6 +494,7 @@ $(function(){
   });
 
   let currentTaskId = null;
+  let currentPanelMode = 'task';
   let currentTaskColumnLabel = 'tâche';
   function getActiveWorkspaceId() {
     const $activeWorkspace = $('.workspace-item.active');
@@ -1184,11 +1185,17 @@ $(function(){
 
   window.openTaskDetail = function(taskId, taskName, groupName, taskColumnLabel) {
     currentTaskId = taskId;
+    currentPanelMode = 'task';
     window.currentMondayTaskId = taskId;
     currentTaskColumnLabel = taskColumnLabel ? taskColumnLabel.toLowerCase() : 'tâche';
 
     const detailTitle = 'Détail';
     const labelText = taskColumnLabel ? `${taskColumnLabel} :` : 'Tâche :';
+
+    $('#client-need-create-form').hide();
+    $('.client-need-status-meta-item').hide();
+    $('#edit-task-name, #delete-task-from-panel').show();
+    $('.comments-section, .task-files-section, .task-meta-group-item, .task-meta-created-item').show();
 
     $('#task-detail-title').text(detailTitle);
     $('#task-label-text').text(labelText);
@@ -1271,7 +1278,8 @@ $(function(){
   };
 
   function loadComments(taskId) {
-    fetch(`?task_comments=${taskId}`)
+    const contextQuery = currentPanelMode === 'need' ? '&context=need' : '';
+    fetch(`?task_comments=${taskId}${contextQuery}`)
       .then(r => r.json())
       .then(comments => {
         const $commentsList = $('#comments-list');
@@ -1330,7 +1338,8 @@ $(function(){
 
   function loadTaskFiles(taskId) {
     console.log('loadTaskFiles appelée avec taskId:', taskId);
-    fetch(`?task_files=${taskId}`)
+    const contextQuery = currentPanelMode === 'need' ? '&context=need' : '';
+    fetch(`?task_files=${taskId}${contextQuery}`)
       .then(r => {
         console.log('Réponse task_files reçue:', r.status);
         return r.json();
@@ -1420,6 +1429,7 @@ $(function(){
   window.viewTaskFile = function(fileId, fileName, mimeType) {
     const isImage = mimeType && mimeType.startsWith('image/');
     const isPdf = mimeType && mimeType.includes('pdf');
+    const fileType = currentPanelMode === 'need' ? 'client_need' : 'task';
 
     if (isImage || isPdf) {
       const modal = $(`
@@ -1428,8 +1438,8 @@ $(function(){
             <button id="close-viewer" style="position:absolute;top:10px;right:10px;background:none;border:none;font-size:24px;cursor:pointer;">✖</button>
             <h4 style="margin:0 0 15px 0;">${fileName}</h4>
             ${isImage ?
-              `<img src="?download_file=${fileId}&type=task" style="max-width:100%;max-height:70vh;" alt="${fileName}">` :
-              `<iframe src="?download_file=${fileId}&type=task" style="width:80vw;height:70vh;border:none;"></iframe>`
+              `<img src="?download_file=${fileId}&type=${fileType}" style="max-width:100%;max-height:70vh;" alt="${fileName}">` :
+              `<iframe src="?download_file=${fileId}&type=${fileType}" style="width:80vw;height:70vh;border:none;"></iframe>`
             }
           </div>
         </div>
@@ -1442,7 +1452,7 @@ $(function(){
         if (e.target === modal[0]) modal.remove();
       });
     } else {
-      window.open(`?download_file=${fileId}&type=task`, '_blank');
+      window.open(`?download_file=${fileId}&type=${fileType}`, '_blank');
     }
   };
 
@@ -1452,7 +1462,7 @@ $(function(){
 
       const fd = new FormData();
       fd.append('delete_file_id', fileId);
-      fd.append('type', 'task');
+      fd.append('type', currentPanelMode === 'need' ? 'client_need' : 'task');
       fd.append('token', token);
 
       fetch('', {method: 'POST', body: fd})
@@ -1506,6 +1516,9 @@ $(function(){
     fd.append('add_comment_task', currentTaskId);
     fd.append('comment_text', commentHTML);
     fd.append('token', token);
+    if (currentPanelMode === 'need') {
+      fd.append('context', 'need');
+    }
 
     fetch('', {method: 'POST', body: fd})
       .then(response => {
@@ -1736,6 +1749,9 @@ $(function(){
     fd.append('edit_comment_id', commentId);
     fd.append('edit_comment_text', newText);
     fd.append('token', token);
+    if (currentPanelMode === 'need') {
+      fd.append('context', 'need');
+    }
 
     fetch('', {method: 'POST', body: fd})
       .then(r => r.text())
@@ -1757,6 +1773,9 @@ $(function(){
       const fd = new FormData();
       fd.append('delete_comment_id', commentId);
       fd.append('token', token);
+      if (currentPanelMode === 'need') {
+        fd.append('context', 'need');
+      }
 
       fetch('', {method: 'POST', body: fd})
         .then(r => r.text())
@@ -1805,6 +1824,9 @@ $(function(){
       fd.append('upload_task_file', currentTaskId);
       fd.append('task_file', file);
       fd.append('token', token);
+      if (currentPanelMode === 'need') {
+        fd.append('context', 'need');
+      }
 
       fetch('', {method: 'POST', body: fd})
         .then(r => {
@@ -2007,10 +2029,13 @@ $(function(){
     const cards = (needs || []).map(need => {
       return `
         <div class="client-workspace-need-card" data-need-id="${Number(need.id)}">
-          <button type="button" class="client-workspace-need-card-header" aria-expanded="false">
-            <span class="client-workspace-need-caret">›</span>
-            <strong>${escapeHtml(decodeHtmlEntities(need.label))}</strong>
-          </button>
+          <div class="client-workspace-need-card-row" style="display:flex;align-items:center;gap:6px;">
+            <button type="button" class="client-workspace-need-card-header" aria-expanded="false">
+              <span class="client-workspace-need-caret">›</span>
+              <strong>${escapeHtml(decodeHtmlEntities(need.label))}</strong>
+            </button>
+            <button type="button" class="client-workspace-need-detail-btn" data-need-id="${Number(need.id)}" title="Voir le détail du besoin" aria-label="Voir le détail du besoin">+</button>
+          </div>
           <div class="client-workspace-need-panel" hidden></div>
         </div>
       `;
@@ -2373,13 +2398,44 @@ $(function(){
   $(document).on('click', '.client-need-add-btn', function() {
     const clientId = Number($(this).data('client-id'));
     if (!clientId) return;
+    openClientNeedCreateForm(clientId, $(this).data('client-label') || '');
+  });
 
-    CustomPopup.prompt('Nom du besoin :', function(label) {
-      if (!label) return;
-      postClientNeeds('add_need', {client_id: clientId, label})
-        .then(loadClientNeedsBoard)
-        .catch(error => CustomPopup.error(error.message, 'Client - Besoins'));
-    }, '', 'Ajouter un besoin');
+  $(document).on('click', '#client-need-create-save', function() {
+    const clientId = Number($('#client-need-create-form').data('client-id'));
+    const label = $('#client-need-create-input').val().trim();
+    if (!clientId) return;
+    if (!label) {
+      CustomPopup.error('Veuillez saisir un libellé', 'Champ obligatoire');
+      return;
+    }
+    postClientNeeds('add_need', {client_id: clientId, label})
+      .then(() => {
+        closeTaskDetail();
+        loadClientNeedsBoard();
+      })
+      .catch(error => CustomPopup.error(error.message, 'Client - Besoins'));
+  });
+
+  $(document).on('keydown', '#client-need-create-input', function(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      $('#client-need-create-save').trigger('click');
+    }
+  });
+
+  $(document).on('click', '.client-need-pill', function(e) {
+    if ($(e.target).closest('.client-need-delete-btn, .client-needs-confirm-delete-btn, .client-needs-cancel-delete-btn').length) return;
+    if ($(this).hasClass('is-confirming-delete')) return;
+    openClientNeedDetail(this);
+  });
+
+  $(document).on('click', '.client-workspace-need-detail-btn', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    const needId = Number($(this).data('need-id'));
+    if (!needId) return;
+    openClientNeedDetailById(needId);
   });
 
   $(document).on('click', '.client-needs-edit-client-btn', function(e) {
@@ -2915,9 +2971,9 @@ $(function(){
     });
   }
 
-  function renderClientNeedPill(need) {
+  function renderClientNeedPill(need, clientLabel) {
     return `
-      <span class="client-need-pill client-need-pill-${escapeHtml(need.status || 'running')}" draggable="true" data-need-id="${Number(need.id)}" data-status="${escapeHtml(need.status || 'running')}">
+      <span class="client-need-pill client-need-pill-${escapeHtml(need.status || 'running')}" draggable="true" data-need-id="${Number(need.id)}" data-status="${escapeHtml(need.status || 'running')}" data-need-label="${escapeHtml(decodeHtmlEntities(need.label))}" data-client-label="${escapeHtml(decodeHtmlEntities(clientLabel || ''))}" data-datec="${escapeHtml(need.datec || '')}">
         <span class="client-need-pill-label">${escapeHtml(decodeHtmlEntities(need.label))}</span>
         <button type="button" class="client-need-delete-btn" data-need-id="${Number(need.id)}" title="Supprimer" aria-label="Supprimer">×</button>
       </span>
@@ -2969,14 +3025,14 @@ $(function(){
         <td class="client-needs-dropzone" data-status="running">
           <div class="client-needs-cell-content">
             <div class="client-need-pills">
-              ${(client.running || []).map(need => renderClientNeedPill(need)).join('')}
+              ${(client.running || []).map(need => renderClientNeedPill(need, client.label)).join('')}
             </div>
-            ${archivedTable ? '' : `<button type="button" class="client-need-add-btn" data-client-id="${Number(client.id)}" title="Ajouter un besoin" aria-label="Ajouter un besoin">+</button>`}
+            ${archivedTable ? '' : `<button type="button" class="client-need-add-btn" data-client-id="${Number(client.id)}" data-client-label="${escapeHtml(decodeHtmlEntities(client.label))}" title="Ajouter un besoin" aria-label="Ajouter un besoin">+</button>`}
           </div>
         </td>
         <td class="client-needs-dropzone" data-status="archived">
           <div class="client-need-pills">
-            ${(client.archived || []).map(need => renderClientNeedPill(need)).join('')}
+            ${(client.archived || []).map(need => renderClientNeedPill(need, client.label)).join('')}
           </div>
         </td>
         <td>${renderClientNeedsTextInput(client, 'mail')}</td>
@@ -3146,6 +3202,79 @@ $(function(){
           .catch(error => CustomPopup.error(error.message, 'Client - Besoins'));
       });
     });
+  }
+
+  function populateClientNeedDetailPanel(data) {
+    currentTaskId = data.id;
+    currentPanelMode = 'need';
+    window.currentMondayTaskId = null;
+
+    $('#task-detail-title').text('Détail');
+    $('#task-label-text').text('Besoin :');
+    $('#task-name-display').text(data.label || '');
+    $('#task-group-display').text(data.client_label || '');
+
+    if (data.datec) {
+      const createdDate = new Date(String(data.datec).replace(' ', 'T'));
+      $('#task-created-display').text(isNaN(createdDate) ? String(data.datec) : createdDate.toLocaleDateString('fr-FR', {
+        day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
+      }));
+    } else {
+      $('#task-created-display').text('Date non disponible');
+    }
+    $('#client-need-status-display').text(data.status === 'archived' ? 'Archivé' : 'En cours');
+
+    $('#client-need-create-form').hide();
+    $('#edit-task-name, #delete-task-from-panel').hide();
+    $('.comments-section, .task-files-section, .task-meta-group-item, .task-meta-created-item, .client-need-status-meta-item').show();
+
+    $('#task-detail-panel').addClass('open');
+
+    loadComments(data.id);
+    loadTaskFiles(data.id);
+  }
+
+  function openClientNeedDetail(pillEl) {
+    const $pill = $(pillEl);
+    populateClientNeedDetailPanel({
+      id: $pill.data('need-id'),
+      label: $pill.data('need-label') || '',
+      client_label: $pill.data('client-label') || '',
+      status: $pill.data('status') || 'running',
+      datec: $pill.data('datec') || '',
+    });
+  }
+
+  function openClientNeedDetailById(needId) {
+    fetch(`?client_need_dynamic_options=item_detail&need_id=${encodeURIComponent(needId)}&token=${encodeURIComponent(token)}`, {credentials: 'same-origin'})
+      .then(r => r.json())
+      .then(data => {
+        if (!data) {
+          CustomPopup.error('Besoin introuvable.', 'Détail du besoin');
+          return;
+        }
+        populateClientNeedDetailPanel(data);
+      })
+      .catch(() => CustomPopup.error('Erreur de chargement du besoin.', 'Détail du besoin'));
+  }
+
+  function openClientNeedCreateForm(clientId, clientLabel) {
+    currentTaskId = null;
+    currentPanelMode = 'task';
+
+    $('#task-detail-title').text('Nouveau besoin');
+    $('#task-label-text').text('Client :');
+    $('#task-name-display').text(clientLabel || '');
+    $('#client-need-status-display').text('');
+
+    $('#edit-task-name, #delete-task-from-panel').hide();
+    $('.comments-section, .task-files-section, .task-meta-group-item, .task-meta-created-item, .client-need-status-meta-item').hide();
+
+    $('#client-need-create-form').show().data('client-id', clientId);
+    $('#client-need-create-input').val('');
+
+    $('#task-detail-panel').addClass('open');
+    setTimeout(() => $('#client-need-create-input').trigger('focus'), 50);
   }
 
   function resetClientNeedDeleteConfirm(pill) {

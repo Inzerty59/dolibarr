@@ -358,6 +358,34 @@ function monday_ensure_client_needs_tables($db)
     }
 }
 
+function monday_ensure_client_need_comment_file_tables($db)
+{
+    $db->query("CREATE TABLE IF NOT EXISTS llx_monday_client_need_comment (
+        rowid integer AUTO_INCREMENT PRIMARY KEY,
+        fk_need integer NOT NULL,
+        fk_user integer NOT NULL,
+        comment text NOT NULL,
+        font_family varchar(50) DEFAULT 'Arial',
+        font_size integer DEFAULT 14,
+        font_weight integer DEFAULT 400,
+        font_color varchar(20) DEFAULT '#000000',
+        datec datetime NOT NULL,
+        INDEX idx_monday_client_need_comment_need (fk_need)
+    ) ENGINE=innodb DEFAULT CHARSET=utf8mb4");
+
+    $db->query("CREATE TABLE IF NOT EXISTS llx_monday_client_need_file (
+        rowid integer AUTO_INCREMENT PRIMARY KEY,
+        fk_need integer NOT NULL,
+        original_name varchar(255) NOT NULL,
+        filename varchar(255) NOT NULL,
+        filesize integer NOT NULL,
+        mimetype varchar(150) DEFAULT NULL,
+        fk_user integer NOT NULL,
+        datec datetime NOT NULL,
+        INDEX idx_monday_client_need_file_need (fk_need)
+    ) ENGINE=innodb DEFAULT CHARSET=utf8mb4");
+}
+
 function monday_get_client_need_city_options($db)
 {
     monday_ensure_client_needs_tables($db);
@@ -396,7 +424,7 @@ function monday_get_client_needs_payload($db, $clientStatus = 'active')
     }
 
     if (!empty($clients)) {
-        $resNeeds = $db->query("SELECT rowid, fk_client, label, status
+        $resNeeds = $db->query("SELECT rowid, fk_client, label, status, datec
                                   FROM llx_monday_client_need_item
                                  WHERE fk_client IN (".implode(',', array_keys($clients)).")
                               ORDER BY position ASC, rowid ASC");
@@ -410,6 +438,7 @@ function monday_get_client_needs_payload($db, $clientStatus = 'active')
                 'id' => (int) $need->rowid,
                 'label' => (string) $need->label,
                 'status' => $status,
+                'datec' => (string) $need->datec,
             ];
         }
     }
@@ -460,6 +489,31 @@ function monday_get_client_need_running_options($db, $clientId)
     }
 
     return $out;
+}
+
+function monday_get_client_need_item_detail($db, $needId)
+{
+    $needId = (int) $needId;
+    if ($needId <= 0) {
+        return null;
+    }
+
+    monday_ensure_client_needs_tables($db);
+    $res = $db->query("SELECT i.rowid, i.label, i.status, i.datec, c.label as client_label
+                          FROM llx_monday_client_need_item i
+                          JOIN llx_monday_client_need_client c ON c.rowid = i.fk_client
+                         WHERE i.rowid = $needId");
+    if (!$res || !($need = $db->fetch_object($res))) {
+        return null;
+    }
+
+    return [
+        'id' => (int) $need->rowid,
+        'label' => (string) $need->label,
+        'status' => $need->status === 'archived' ? 'archived' : 'running',
+        'datec' => (string) $need->datec,
+        'client_label' => (string) $need->client_label,
+    ];
 }
 
 function monday_get_client_need_client_label($db, $clientId)
@@ -1901,6 +1955,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['client_need_dynamic_opt
     }
     if ($type === 'needs') {
         echo json_encode(monday_get_client_need_running_options($db, (int) ($_GET['client_id'] ?? 0)));
+        exit;
+    }
+    if ($type === 'item_detail') {
+        echo json_encode(monday_get_client_need_item_detail($db, (int) ($_GET['need_id'] ?? 0)));
         exit;
     }
 
@@ -3449,11 +3507,20 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['save_cell_task'], $_POS
 
 if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['task_comments'])) {
     $tid = (int)$_GET['task_comments'];
+    $isNeedContext = isset($_GET['context']) && $_GET['context'] === 'need';
+    if ($isNeedContext) {
+        monday_ensure_client_need_comment_file_tables($db);
+        $commentTable = 'llx_monday_client_need_comment';
+        $commentFkCol = 'fk_need';
+    } else {
+        $commentTable = 'llx_myworkspace_comment';
+        $commentFkCol = 'fk_task';
+    }
     $res = $db->query("
         SELECT c.rowid, c.comment, c.font_family, c.font_size, c.font_weight, c.font_color, c.datec, c.fk_user, u.firstname, u.lastname
-        FROM llx_myworkspace_comment c
+        FROM $commentTable c
         LEFT JOIN llx_user u ON u.rowid = c.fk_user
-        WHERE c.fk_task = $tid
+        WHERE c.$commentFkCol = $tid
         ORDER BY c.datec DESC
     ");
     $out = [];
@@ -3482,13 +3549,23 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['add_comment_task'], $_P
     $uid = $user->id;
     $date = date('Y-m-d H:i:s');
 
+    $isNeedContext = isset($_POST['context']) && $_POST['context'] === 'need';
+    if ($isNeedContext) {
+        monday_ensure_client_need_comment_file_tables($db);
+        $commentTable = 'llx_monday_client_need_comment';
+        $commentFkCol = 'fk_need';
+    } else {
+        $commentTable = 'llx_myworkspace_comment';
+        $commentFkCol = 'fk_task';
+    }
+
     // Paramètres de formatage optionnels
     $font_family = isset($_POST['font_family']) ? $db->escape($_POST['font_family']) : 'Arial';
     $font_size = isset($_POST['font_size']) ? (int)$_POST['font_size'] : 14;
     $font_weight = isset($_POST['font_weight']) ? (int)$_POST['font_weight'] : 400;
     $font_color = isset($_POST['font_color']) ? $db->escape($_POST['font_color']) : '#000000';
 
-    $sql = "INSERT INTO llx_myworkspace_comment (fk_task, fk_user, comment, font_family, font_size, font_weight, font_color, datec)
+    $sql = "INSERT INTO $commentTable ($commentFkCol, fk_user, comment, font_family, font_size, font_weight, font_color, datec)
             VALUES ($tid, $uid, '$comment', '$font_family', $font_size, $font_weight, '$font_color', '$date')";
     $result = $db->query($sql);
 
@@ -3499,7 +3576,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['add_comment_task'], $_P
         exit;
     }
 
-    $new_id = $db->last_insert_id('llx_myworkspace_comment');
+    $new_id = $db->last_insert_id($commentTable);
     if (!$new_id) {
         http_response_code(500);
         header('Content-Type: application/json');
@@ -3509,7 +3586,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['add_comment_task'], $_P
 
     $res = $db->query("
         SELECT c.rowid, c.comment, c.font_family, c.font_size, c.font_weight, c.font_color, c.datec, c.fk_user, u.firstname, u.lastname
-        FROM llx_myworkspace_comment c
+        FROM $commentTable c
         LEFT JOIN llx_user u ON u.rowid = c.fk_user
         WHERE c.rowid = $new_id
     ");
@@ -3538,12 +3615,13 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['edit_comment_id'], $_PO
     $cid = (int)$_POST['edit_comment_id'];
     $comment = $db->escape($_POST['edit_comment_text']);
     $uid = $user->id;
+    $commentTable = (isset($_POST['context']) && $_POST['context'] === 'need') ? 'llx_monday_client_need_comment' : 'llx_myworkspace_comment';
 
-    $res = $db->query("SELECT fk_user FROM llx_myworkspace_comment WHERE rowid = $cid");
+    $res = $db->query("SELECT fk_user FROM $commentTable WHERE rowid = $cid");
     $owner = $db->fetch_object($res);
 
     if ($owner && $owner->fk_user == $uid) {
-        $db->query("UPDATE llx_myworkspace_comment SET comment = '$comment' WHERE rowid = $cid");
+        $db->query("UPDATE $commentTable SET comment = '$comment' WHERE rowid = $cid");
         echo 'OK';
     } else {
         http_response_code(403);
@@ -3556,13 +3634,18 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['delete_comment_id'])) {
     if ($_POST['token'] !== $_SESSION['newtoken']) accessforbidden('CSRF token invalid');
     $cid = (int)$_POST['delete_comment_id'];
     $uid = $user->id;
+    $isNeedContext = isset($_POST['context']) && $_POST['context'] === 'need';
 
-    $res = $db->query("
-        SELECT c.fk_user, i.rowid AS inbound_id
-        FROM llx_myworkspace_comment c
-        LEFT JOIN llx_monday_inbound_email i ON i.fk_comment = c.rowid
-        WHERE c.rowid = $cid
-    ");
+    if ($isNeedContext) {
+        $res = $db->query("SELECT fk_user, NULL AS inbound_id FROM llx_monday_client_need_comment WHERE rowid = $cid");
+    } else {
+        $res = $db->query("
+            SELECT c.fk_user, i.rowid AS inbound_id
+            FROM llx_myworkspace_comment c
+            LEFT JOIN llx_monday_inbound_email i ON i.fk_comment = c.rowid
+            WHERE c.rowid = $cid
+        ");
+    }
     $comment = $db->fetch_object($res);
 
     $canDelete = false;
@@ -3585,8 +3668,12 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['delete_comment_id'])) {
             }
             $db->query("UPDATE llx_monday_inbound_email SET fk_comment = 0 WHERE rowid = ".((int) $comment->inbound_id));
         }
-        $db->query("DELETE FROM llx_myworkspace_comment_file WHERE fk_comment = $cid");
-        $db->query("DELETE FROM llx_myworkspace_comment WHERE rowid = $cid");
+        if ($isNeedContext) {
+            $db->query("DELETE FROM llx_monday_client_need_comment WHERE rowid = $cid");
+        } else {
+            $db->query("DELETE FROM llx_myworkspace_comment_file WHERE fk_comment = $cid");
+            $db->query("DELETE FROM llx_myworkspace_comment WHERE rowid = $cid");
+        }
         echo 'OK';
     } else {
         http_response_code(403);
@@ -3658,7 +3745,17 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['upload_task_file'], $_F
     }
 
     $task_id = (int)$_POST['upload_task_file'];
-    $upload_dir = '/var/www/documents/myworkspace/tasks/';
+    $isNeedContext = isset($_POST['context']) && $_POST['context'] === 'need';
+    if ($isNeedContext) {
+        monday_ensure_client_need_comment_file_tables($db);
+        $upload_dir = '/var/www/documents/myworkspace/client_needs/';
+        $fileTable = 'llx_monday_client_need_file';
+        $fileFkCol = 'fk_need';
+    } else {
+        $upload_dir = '/var/www/documents/myworkspace/tasks/';
+        $fileTable = 'llx_myworkspace_task_file';
+        $fileFkCol = 'fk_task';
+    }
     error_log("Upload dir: " . $upload_dir);
 
     if (!file_exists($upload_dir)) {
@@ -3702,12 +3799,12 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['upload_task_file'], $_F
         $uid = $user->id;
         $date = date('Y-m-d H:i:s');
 
-        $sql = "INSERT INTO llx_myworkspace_task_file (fk_task, original_name, filename, filesize, mimetype, fk_user, datec)
+        $sql = "INSERT INTO $fileTable ($fileFkCol, original_name, filename, filesize, mimetype, fk_user, datec)
                 VALUES ($task_id, '$original_name', '$unique_name', $filesize, '$mimetype', $uid, '$date')";
         error_log("SQL: " . $sql);
 
         if ($db->query($sql)) {
-            $file_id = $db->last_insert_id('llx_myworkspace_task_file');
+            $file_id = $db->last_insert_id($fileTable);
             error_log("File inserted with ID: " . $file_id);
             header('Content-Type: application/json');
             echo json_encode([
@@ -3735,11 +3832,20 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['upload_task_file'], $_F
 
 if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['task_files'])) {
     $task_id = (int)$_GET['task_files'];
+    $isNeedContext = isset($_GET['context']) && $_GET['context'] === 'need';
+    if ($isNeedContext) {
+        monday_ensure_client_need_comment_file_tables($db);
+        $fileTable = 'llx_monday_client_need_file';
+        $fileFkCol = 'fk_need';
+    } else {
+        $fileTable = 'llx_myworkspace_task_file';
+        $fileFkCol = 'fk_task';
+    }
     $res = $db->query("
         SELECT f.rowid, f.original_name, f.filename, f.filesize, f.mimetype, f.datec, u.firstname, u.lastname
-        FROM llx_myworkspace_task_file f
+        FROM $fileTable f
         LEFT JOIN llx_user u ON u.rowid = f.fk_user
-        WHERE f.fk_task = $task_id
+        WHERE f.$fileFkCol = $task_id
         ORDER BY f.datec ASC
     ");
     $out = [];
@@ -3766,6 +3872,9 @@ if ($_SERVER['REQUEST_METHOD']==='GET' && isset($_GET['download_file'])) {
     if ($type === 'task') {
         $res = $db->query("SELECT original_name, filename, mimetype FROM llx_myworkspace_task_file WHERE rowid = $file_id");
         $subdir = 'tasks';
+    } elseif ($type === 'client_need') {
+        $res = $db->query("SELECT original_name, filename, mimetype FROM llx_monday_client_need_file WHERE rowid = $file_id");
+        $subdir = 'client_needs';
     } else {
         $res = $db->query("SELECT original_name, filename, mimetype FROM llx_myworkspace_comment_file WHERE rowid = $file_id");
         $subdir = 'comments';
@@ -3800,6 +3909,10 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['delete_file_id'])) {
         $res = $db->query("SELECT filename, fk_user, fk_task FROM llx_myworkspace_task_file WHERE rowid = $file_id");
         $subdir = 'tasks';
         $table = 'llx_myworkspace_task_file';
+    } elseif ($type === 'client_need') {
+        $res = $db->query("SELECT filename, fk_user FROM llx_monday_client_need_file WHERE rowid = $file_id");
+        $subdir = 'client_needs';
+        $table = 'llx_monday_client_need_file';
     } else {
         $res = $db->query("SELECT filename, fk_user FROM llx_myworkspace_comment_file WHERE rowid = $file_id");
         $subdir = 'comments';
@@ -3883,11 +3996,11 @@ ob_start();
             <button id="edit-task-name" class="edit-btn">✎</button>
             <button id="delete-task-from-panel" class="delete-btn" style="margin-left: 5px;">✖</button>
           </div>
-          <div class="task-meta-item">
+          <div class="task-meta-item task-meta-group-item">
             <strong>Groupe :</strong>
             <span id="task-group-display"></span>
           </div>
-          <div class="task-meta-item">
+          <div class="task-meta-item task-meta-created-item">
             <strong>Créée :</strong>
             <span id="task-created-display"></span>
           </div>
@@ -3895,6 +4008,15 @@ ob_start();
             <strong><?php echo $langs->transnoentities('CandidateEmailLabel'); ?> :</strong>
             <span id="candidate-email-block" class="candidate-email-inline" hidden></span>
           </div>
+          <div class="task-meta-item client-need-status-meta-item" style="display:none;">
+            <strong>Statut :</strong>
+            <span id="client-need-status-display"></span>
+          </div>
+        </div>
+        <div id="client-need-create-form" class="task-meta-item" style="display:none;">
+          <strong>Nouveau besoin :</strong><br>
+          <input type="text" id="client-need-create-input" placeholder="Libellé du besoin" maxlength="255" style="width:100%;margin:6px 0;">
+          <button type="button" id="client-need-create-save" class="button">Créer</button>
         </div>
       </div>
 

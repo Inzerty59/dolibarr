@@ -2191,7 +2191,8 @@ form[method="POST"] input[name="new_workspace"]:focus {
 .client-needs-edit-client-btn,
 .client-needs-archive-client-btn,
 .client-needs-restore-client-btn,
-.client-needs-delete-client-btn {
+.client-needs-delete-client-btn,
+.client-workspace-need-detail-btn {
   flex: 0 0 auto;
   width: 28px;
   height: 28px;
@@ -2209,7 +2210,8 @@ form[method="POST"] input[name="new_workspace"]:focus {
 .client-needs-edit-client-btn:hover,
 .client-needs-archive-client-btn:hover,
 .client-needs-restore-client-btn:hover,
-.client-needs-delete-client-btn:hover {
+.client-needs-delete-client-btn:hover,
+.client-workspace-need-detail-btn:hover {
   border-color: #6f93bf;
   color: #315f92;
 }
