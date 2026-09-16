@@ -78,6 +78,10 @@ class ActionsTickets extends CommonHookActions
 			return 0;
 		}
 
+		if ($action === 'confirm_set_status') {
+			return $this->handleConfirmSetStatus($object, $user);
+		}
+
 		$this->cleanupDeletedTemplateExtraFields();
 
 		$ticketForOptionals = $this->fetchCurrentTicketForOptionals($object, $action);
@@ -123,6 +127,37 @@ class ActionsTickets extends CommonHookActions
 		}
 
 		return 0;
+	}
+
+	/**
+	 * Replace native ticket/card.php status change handling: the core action
+	 * calls Ticket::setStatut() without a trigger key, so TICKET_MODIFY never
+	 * fires and our custom email trigger (interface_100_modTicket_TicketsEmail)
+	 * never runs for status changes such as "En cours" or "En attente de retour".
+	 * We take over the whole action (reshook=1 skips the native duplicate) and
+	 * call setStatut() with the trigger key so the mail logic actually runs.
+	 */
+	private function handleConfirmSetStatus(&$object, $user)
+	{
+		if (!$user->hasRight('ticket', 'write') || GETPOST('cancel')) {
+			return 0;
+		}
+
+		if ($object->fetch(GETPOSTINT('id'), GETPOST('track_id', 'alpha')) < 0) {
+			return 0;
+		}
+
+		$newStatus = GETPOSTINT('new_status');
+		$res = $object->setStatut($newStatus, null, '', 'TICKET_MODIFY');
+
+		if ($res) {
+			header('Location: card.php?track_id='.$object->track_id);
+			exit;
+		}
+
+		setEventMessages($object->error, $object->errors, 'errors');
+
+		return 1;
 	}
 
 	/**
